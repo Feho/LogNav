@@ -186,7 +186,7 @@ impl App {
             scroll_offset: 0,
             selected_index: 0,
             focus: FocusState::Normal,
-            tail_enabled: false,
+            tail_enabled: true,
             wrap_enabled: false,
             horizontal_scroll: 0,
             file_path: String::new(),

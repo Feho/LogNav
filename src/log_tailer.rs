@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 const MAX_ENTRIES: usize = 500_000;
 
@@ -27,6 +28,7 @@ pub struct LogTailer {
     entry_count: usize,
     watcher: Option<RecommendedWatcher>,
     event_tx: mpsc::Sender<TailerEvent>,
+    cancel_token: Option<CancellationToken>,
 }
 
 impl LogTailer {
@@ -40,6 +42,7 @@ impl LogTailer {
             entry_count: 0,
             watcher: None,
             event_tx,
+            cancel_token: None,
         }
     }
 
@@ -92,10 +95,25 @@ impl LogTailer {
         Ok(())
     }
 
+    /// Check if currently watching the file
+    pub fn is_watching(&self) -> bool {
+        self.cancel_token.is_some()
+    }
+
     /// Start watching the file for changes
     pub fn start_watching(&mut self) -> Result<(), String> {
+        // Don't start if already watching
+        if self.is_watching() {
+            return Ok(());
+        }
+
         let path = self.path.clone();
         let tx = self.event_tx.clone();
+
+        // Create cancellation token
+        let cancel_token = CancellationToken::new();
+        let cancel_clone = cancel_token.clone();
+        self.cancel_token = Some(cancel_token);
 
         // Create channel for file events
         let (notify_tx, mut notify_rx) = mpsc::channel::<Event>(100);
@@ -130,6 +148,10 @@ impl LogTailer {
 
             loop {
                 tokio::select! {
+                    _ = cancel_clone.cancelled() => {
+                        // Stop watching
+                        break;
+                    }
                     Some(_event) = notify_rx.recv() => {
                         // File change detected
                         if let Err(e) = Self::check_for_changes(
@@ -188,7 +210,7 @@ impl LogTailer {
 
             // No new content
             if current_size == pos {
-                return Ok((None, 0, current_size, false));
+                return Ok((None, pos, current_size, false));
             }
 
             // Read new content
@@ -246,6 +268,9 @@ impl LogTailer {
 
     /// Stop watching the file
     pub fn stop_watching(&mut self) {
+        if let Some(token) = self.cancel_token.take() {
+            token.cancel();
+        }
         self.watcher = None;
     }
 }

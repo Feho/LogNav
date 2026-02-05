@@ -51,6 +51,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             config.add_recent_file(path);
             app.recent_files = config.recent_files.clone();
+            // Start watching since tail is enabled by default
+            if app.tail_enabled {
+                let _ = t.start_watching();
+            }
         }
         tailer = Some(t);
     }
@@ -122,6 +126,7 @@ async fn run_app(
                     if let Ok(evt) = event::read() {
                         // Check for file open request
                         let previous_path = app.file_path.clone();
+                        let previous_tail_enabled = app.tail_enabled;
                         
                         events::handle_event(app, evt);
                         
@@ -155,12 +160,14 @@ async fn run_app(
                             }
                         }
                         
-                        // Handle tail toggle
-                        if let Some(t) = tailer {
-                            if app.tail_enabled {
-                                let _ = t.start_watching();
-                            } else {
-                                t.stop_watching();
+                        // Handle tail toggle (only on state change)
+                        if app.tail_enabled != previous_tail_enabled {
+                            if let Some(t) = tailer {
+                                if app.tail_enabled {
+                                    let _ = t.start_watching();
+                                } else {
+                                    t.stop_watching();
+                                }
                             }
                         }
                     }
