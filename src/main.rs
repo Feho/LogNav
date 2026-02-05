@@ -10,10 +10,10 @@ use config::Config;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use log_tailer::{LogTailer, TailerEvent};
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -60,7 +60,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Main event loop
-    let result = run_app(&mut terminal, &mut app, &mut tailer_rx, &mut tailer, tailer_tx, &mut config).await;
+    let result = run_app(
+        &mut terminal,
+        &mut app,
+        &mut tailer_rx,
+        &mut tailer,
+        tailer_tx,
+        &mut config,
+    )
+    .await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -127,30 +135,30 @@ async fn run_app(
                         // Check for file open request
                         let previous_path = app.file_path.clone();
                         let previous_tail_enabled = app.tail_enabled;
-                        
+
                         events::handle_event(app, evt);
-                        
+
                         // If file path changed, load new file
                         if app.file_path != previous_path && !app.file_path.is_empty() {
                             let path = app.file_path.clone();
-                            
+
                             // Stop existing tailer
                             if let Some(t) = tailer {
                                 t.stop_watching();
                             }
-                            
+
                             // Create new tailer
                             let mut new_tailer = LogTailer::new(&path, tailer_tx.clone());
                             match new_tailer.load_initial().await {
                                 Ok(()) => {
                                     config.add_recent_file(&path);
                                     app.recent_files = config.recent_files.clone();
-                                    
+
                                     // Start watching if tail is enabled
                                     if app.tail_enabled {
                                         let _ = new_tailer.start_watching();
                                     }
-                                    
+
                                     *tailer = Some(new_tailer);
                                 }
                                 Err(e) => {
@@ -159,7 +167,7 @@ async fn run_app(
                                 }
                             }
                         }
-                        
+
                         // Handle tail toggle (only on state change)
                         if app.tail_enabled != previous_tail_enabled {
                             if let Some(t) = tailer {

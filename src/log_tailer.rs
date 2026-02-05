@@ -1,4 +1,6 @@
-use crate::log_entry::{detect_format, parse_incremental, parse_log_with_format, LogEntry, LogFormat};
+use crate::log_entry::{
+    LogEntry, LogFormat, detect_format, parse_incremental, parse_log_with_format,
+};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
@@ -54,7 +56,9 @@ impl LogTailer {
         // Read file in blocking task
         let result = tokio::task::spawn_blocking(move || {
             let file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
-            let metadata = file.metadata().map_err(|e| format!("Failed to get metadata: {}", e))?;
+            let metadata = file
+                .metadata()
+                .map_err(|e| format!("Failed to get metadata: {}", e))?;
             let size = metadata.len();
 
             let mut reader = BufReader::new(file);
@@ -200,7 +204,9 @@ impl LogTailer {
 
         let result = tokio::task::spawn_blocking(move || {
             let file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
-            let metadata = file.metadata().map_err(|e| format!("Failed to get metadata: {}", e))?;
+            let metadata = file
+                .metadata()
+                .map_err(|e| format!("Failed to get metadata: {}", e))?;
             let current_size = metadata.len();
 
             // Check for truncation (file rotation)
