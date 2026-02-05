@@ -1,8 +1,9 @@
 use crate::log_entry::{LogEntry, LogLevel};
 use chrono::NaiveDateTime;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use regex::Regex;
+use std::collections::HashSet;
 
 const MAX_ENTRIES: usize = 500_000;
 
@@ -154,6 +155,7 @@ pub struct App {
     pub tail_enabled: bool,
     pub wrap_enabled: bool,
     pub horizontal_scroll: usize,
+    pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
 
     // File state
     pub file_path: String,
@@ -189,6 +191,7 @@ impl App {
             tail_enabled: true,
             wrap_enabled: false,
             horizontal_scroll: 0,
+            expanded_entries: HashSet::new(),
             file_path: String::new(),
             recent_files: Vec::new(),
             status_message: None,
@@ -567,6 +570,25 @@ impl App {
     /// Toggle word wrap
     pub fn toggle_wrap(&mut self) {
         self.wrap_enabled = !self.wrap_enabled;
+    }
+
+    /// Toggle expand/collapse of selected entry's continuation lines
+    pub fn toggle_expand(&mut self) {
+        if let Some(&entry_idx) = self.filtered_indices.get(self.selected_index) {
+            // Only toggle if entry has continuation lines
+            if !self.entries[entry_idx].continuation_lines.is_empty() {
+                if self.expanded_entries.contains(&entry_idx) {
+                    self.expanded_entries.remove(&entry_idx);
+                } else {
+                    self.expanded_entries.insert(entry_idx);
+                }
+            }
+        }
+    }
+
+    /// Check if an entry is expanded
+    pub fn is_expanded(&self, entry_idx: usize) -> bool {
+        self.expanded_entries.contains(&entry_idx)
     }
 
     /// Execute a command action

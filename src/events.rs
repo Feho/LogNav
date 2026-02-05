@@ -81,6 +81,9 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         (_, KeyCode::Left) | (_, KeyCode::Char('h')) => app.scroll_left(4),
         (_, KeyCode::Right) | (_, KeyCode::Char('l')) => app.scroll_right(4),
 
+        // Expand/collapse entry
+        (_, KeyCode::Enter) => app.toggle_expand(),
+
         // Search navigation (when search was applied)
         (_, KeyCode::Char('n')) => {
             // Jump to next match if search is active
