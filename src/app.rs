@@ -207,8 +207,12 @@ impl App {
         }
     }
 
-    /// Add new entries from tailing
+    /// Add new entries from tailing - uses incremental filtering
     pub fn append_entries(&mut self, mut new_entries: Vec<LogEntry>) {
+        if new_entries.is_empty() {
+            return;
+        }
+
         // Re-index new entries
         let start_idx = self.entries.len();
         for (i, entry) in new_entries.iter_mut().enumerate() {
@@ -216,8 +220,17 @@ impl App {
         }
 
         self.entries.append(&mut new_entries);
-        self.apply_entry_cap();
-        self.apply_filters();
+
+        // Check if we need to cap entries
+        let needs_cap = self.entries.len() > MAX_ENTRIES;
+        if needs_cap {
+            self.apply_entry_cap();
+            // After capping, indices are invalidated - must refilter
+            self.apply_filters();
+        } else {
+            // Incremental filter - only process new entries
+            self.apply_filters_incremental(start_idx);
+        }
 
         if self.tail_enabled {
             self.scroll_to_bottom();
@@ -228,7 +241,8 @@ impl App {
     fn apply_entry_cap(&mut self) {
         if self.entries.len() > MAX_ENTRIES {
             let skip = self.entries.len() - MAX_ENTRIES;
-            self.entries = self.entries.drain(skip..).collect();
+            // Drop oldest entries (more efficient than creating new Vec)
+            self.entries.drain(..skip);
             // Re-index
             for (i, entry) in self.entries.iter_mut().enumerate() {
                 entry.index = i;
@@ -246,9 +260,9 @@ impl App {
                 continue;
             }
 
-            // Search filter
+            // Search filter - use searchable_text for fast path
             if let Some(ref regex) = self.search_regex {
-                if !regex.is_match(&entry.full_text()) {
+                if !regex.is_match(entry.searchable_text()) {
                     continue;
                 }
             }
@@ -285,6 +299,43 @@ impl App {
         self.clamp_scroll();
     }
 
+    /// Apply filters only to newly appended entries (starting from start_idx)
+    fn apply_filters_incremental(&mut self, start_idx: usize) {
+        for idx in start_idx..self.entries.len() {
+            let entry = &self.entries[idx];
+
+            // Level filter
+            if !self.passes_level_filter(entry.level) {
+                continue;
+            }
+
+            // Search filter - use searchable_text for fast path
+            if let Some(ref regex) = self.search_regex {
+                if !regex.is_match(entry.searchable_text()) {
+                    continue;
+                }
+            }
+
+            // Date range filter
+            if let Some(from) = self.date_from {
+                if let Some(ts) = entry.timestamp {
+                    if ts < from {
+                        continue;
+                    }
+                }
+            }
+            if let Some(to) = self.date_to {
+                if let Some(ts) = entry.timestamp {
+                    if ts > to {
+                        continue;
+                    }
+                }
+            }
+
+            self.filtered_indices.push(idx);
+        }
+    }
+
     fn passes_level_filter(&self, level: LogLevel) -> bool {
         match level {
             LogLevel::Error => self.level_filters[0],
@@ -318,22 +369,18 @@ impl App {
     }
 
     /// Update search match indices for navigation
+    /// When search is active, all filtered entries are matches
     pub fn update_search_matches(&mut self) {
         if let FocusState::Search {
-            ref query,
             ref mut match_indices,
             ref mut current_match,
+            ..
         } = self.focus
         {
             match_indices.clear();
-            if !query.is_empty() {
-                if let Ok(regex) = Regex::new(&format!("(?i){}", regex::escape(query))) {
-                    for (i, &entry_idx) in self.filtered_indices.iter().enumerate() {
-                        if regex.is_match(&self.entries[entry_idx].full_text()) {
-                            match_indices.push(i);
-                        }
-                    }
-                }
+            // All filtered entries are matches when search is applied
+            if self.search_regex.is_some() {
+                match_indices.extend(0..self.filtered_indices.len());
             }
             if !match_indices.is_empty() && *current_match >= match_indices.len() {
                 *current_match = 0;

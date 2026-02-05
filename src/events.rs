@@ -170,50 +170,52 @@ fn handle_search_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Enter => {
-            // Apply search and close - query already applied via set_search
+            // Apply search from focus state and close
+            let query = match &app.focus {
+                FocusState::Search { query, .. } => query.clone(),
+                _ => return,
+            };
+            app.set_search(&query);
+            app.update_search_matches();
             app.close_overlay();
         }
 
         KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Apply search first if not yet applied, then navigate
+            let query = match &app.focus {
+                FocusState::Search { query, .. } => query.clone(),
+                _ => return,
+            };
+            if app.search_query != query {
+                app.set_search(&query);
+                app.update_search_matches();
+            }
             app.next_search_match();
         }
 
         KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let query = match &app.focus {
+                FocusState::Search { query, .. } => query.clone(),
+                _ => return,
+            };
+            if app.search_query != query {
+                app.set_search(&query);
+                app.update_search_matches();
+            }
             app.prev_search_match();
         }
 
         KeyCode::Char(c) => {
-            // Get query, modify it, then set search
-            let new_query = match &app.focus {
-                FocusState::Search { query, .. } => {
-                    let mut q = query.clone();
-                    q.push(c);
-                    q
-                }
-                _ => return,
-            };
-            app.set_search(&new_query);
-            // Update focus state with new query
+            // Just update the focus state query, don't apply filter yet
             if let FocusState::Search { query, .. } = &mut app.focus {
-                *query = new_query;
+                query.push(c);
             }
-            app.update_search_matches();
         }
 
         KeyCode::Backspace => {
-            let new_query = match &app.focus {
-                FocusState::Search { query, .. } => {
-                    let mut q = query.clone();
-                    q.pop();
-                    q
-                }
-                _ => return,
-            };
-            app.set_search(&new_query);
             if let FocusState::Search { query, .. } = &mut app.focus {
-                *query = new_query;
+                query.pop();
             }
-            app.update_search_matches();
         }
 
         _ => {}

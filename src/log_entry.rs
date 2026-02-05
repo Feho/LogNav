@@ -34,20 +34,38 @@ pub struct LogEntry {
     pub timestamp: Option<NaiveDateTime>,
     pub raw_line: String,
     pub continuation_lines: Vec<String>,
+    /// Cached full text for search (raw_line + continuation_lines joined)
+    cached_full_text: Option<String>,
 }
 
 impl LogEntry {
-    pub fn full_text(&self) -> String {
-        if self.continuation_lines.is_empty() {
-            self.raw_line.clone()
-        } else {
-            let mut text = self.raw_line.clone();
-            for line in &self.continuation_lines {
-                text.push('\n');
-                text.push_str(line);
-            }
-            text
+    /// Get full text, using cache if available
+    pub fn full_text(&mut self) -> &str {
+        if self.cached_full_text.is_none() {
+            self.cached_full_text = Some(if self.continuation_lines.is_empty() {
+                self.raw_line.clone()
+            } else {
+                let mut text = self.raw_line.clone();
+                for line in &self.continuation_lines {
+                    text.push('\n');
+                    text.push_str(line);
+                }
+                text
+            });
         }
+        self.cached_full_text.as_ref().unwrap()
+    }
+
+    /// Get searchable text - returns raw_line reference for fast path
+    /// (most searches match the first line anyway)
+    pub fn searchable_text(&self) -> &str {
+        self.cached_full_text.as_deref().unwrap_or(&self.raw_line)
+    }
+
+    /// Add a continuation line, invalidating the cache
+    pub fn add_continuation(&mut self, line: String) {
+        self.cached_full_text = None;
+        self.continuation_lines.push(line);
     }
 }
 
@@ -195,7 +213,7 @@ pub fn parse_log_with_format(content: &str, format: LogFormat) -> Vec<LogEntry> 
         // Check if this is a continuation line
         if !entries.is_empty() && is_continuation_line(line, format) {
             if let Some(last) = entries.last_mut() {
-                last.continuation_lines.push(line.to_string());
+                last.add_continuation(line.to_string());
             }
             continue;
         }
@@ -214,12 +232,13 @@ pub fn parse_log_with_format(content: &str, format: LogFormat) -> Vec<LogEntry> 
                 timestamp,
                 raw_line: line.to_string(),
                 continuation_lines: Vec::new(),
+                cached_full_text: None,
             });
             index += 1;
         } else if !entries.is_empty() {
             // Doesn't match pattern, treat as continuation
             if let Some(last) = entries.last_mut() {
-                last.continuation_lines.push(line.to_string());
+                last.add_continuation(line.to_string());
             }
         }
     }
@@ -244,9 +263,9 @@ pub fn parse_incremental(
         if is_cont {
             // Add to last entry or pending continuation
             if let Some(last) = entries.last_mut() {
-                last.continuation_lines.push(line.to_string());
+                last.add_continuation(line.to_string());
             } else if let Some(pending) = pending_continuation.as_deref_mut() {
-                pending.continuation_lines.push(line.to_string());
+                pending.add_continuation(line.to_string());
             }
             continue;
         }
@@ -265,14 +284,15 @@ pub fn parse_incremental(
                 timestamp,
                 raw_line: line.to_string(),
                 continuation_lines: Vec::new(),
+                cached_full_text: None,
             });
             index += 1;
         } else {
             // Doesn't match pattern, treat as continuation
             if let Some(last) = entries.last_mut() {
-                last.continuation_lines.push(line.to_string());
+                last.add_continuation(line.to_string());
             } else if let Some(pending) = pending_continuation.as_deref_mut() {
-                pending.continuation_lines.push(line.to_string());
+                pending.add_continuation(line.to_string());
             }
         }
     }
