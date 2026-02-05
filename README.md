@@ -21,11 +21,14 @@ A terminal UI application that displays, filters, and live-tails log files. Supp
 
 ### Supported Formats
 
-**wd.log** - Lines starting with `[*!#]` prefix:
+**wd.log** - Lines with prefix (2 spaces or marker `*`/`!`) followed by level token:
 ```
-[*] INFO 03-21 14:23:01.234 Application started
-[!] ERROR 03-21 14:23:02.456 Connection failed
-  error details here
+  ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP|Connection  "Client disconnected"
+  ===== 02-03 18:11:02.570 [Alarm] SCHED|Scheduler      "Processing 1 alarm(s)..."
+  INFO  02-03 18:11:02.577 [Alarm] SPL|Context          "Server status: cpu=5.1%"
+  TRACE 02-03 18:10:39.720 [#10] HTTP|Server            "200 POST /api/ping"
+* ERROR 02-05 11:23:38.795 [#34] API|Controller         "Auth failed"
+! WARN  02-05 11:23:38.801 [#10] HTTP|Server            "401 POST /api/list"
 ```
 
 **wpc.log** - Lines starting with level token:

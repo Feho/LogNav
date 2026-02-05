@@ -59,8 +59,21 @@ pub enum LogFormat {
 }
 
 // Regex patterns for parsing
+// wd.log format:
+//   Prefix: 2 spaces OR marker char (*, !, #) + space
+//   Level: ~~~~~, =====, TRACE, INFO, WARN, ERROR (with optional trailing spaces)
+//   Timestamp: MM-dd HH:mm:ss.fff
+//   Rest: [thread] component|subcomponent "message"
+//
+// Examples:
+//   ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP|DspWebConnection "msg"
+//   ===== 02-03 18:11:02.570 [Alarm] SCHED|Scheduler "msg"
+//   TRACE 02-03 18:10:39.720 [#10] HTTP|DspWebServer "msg"
+//   INFO  02-03 18:11:02.577 [Alarm] SPL|WatchdocContext "msg"
+// * ERROR 02-05 11:23:38.795 [#34] API|PrintApiController10 "msg"
+// ! WARN  02-05 11:23:38.801 [#10] HTTP|DspWebServer "msg"
 static WD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\[([*!#])\]\s*(TRACE|INFO|WARN|ERROR|=====|~~~~~)\s+(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})").unwrap()
+    Regex::new(r"^([*!]?\s+|[*!#]\s)(~~~~~|=====|TRACE|INFO|WARN|ERROR)\s+(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})").unwrap()
 });
 
 static WPC_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -76,7 +89,8 @@ pub fn detect_format(content: &str) -> LogFormat {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if WD_PATTERN.is_match(trimmed) {
+        // Check wd.log pattern on the original line (not trimmed, prefix matters)
+        if WD_PATTERN.is_match(line) {
             return LogFormat::WdLog;
         }
         if WPC_PATTERN.is_match(trimmed) {
@@ -90,7 +104,7 @@ pub fn detect_format(content: &str) -> LogFormat {
 
 /// Parse log level from wd.log token
 fn parse_wd_level(token: &str) -> LogLevel {
-    match token {
+    match token.trim() {
         "TRACE" => LogLevel::Trace,
         "INFO" => LogLevel::Info,
         "WARN" => LogLevel::Warn,
@@ -125,15 +139,8 @@ fn is_continuation_line(line: &str, format: LogFormat) -> bool {
         return true;
     }
 
-    let trimmed = line.trim_start();
-
-    // Lines starting with these chars are always continuations
-    if trimmed.starts_with('{') || trimmed.starts_with('}') || trimmed.starts_with(']') {
-        return true;
-    }
-
-    // Lines with leading whitespace are continuations
-    if line.starts_with(' ') || line.starts_with('\t') {
+    // Comment lines in the middle of the file are continuation
+    if line.starts_with('#') {
         return true;
     }
 
@@ -176,13 +183,14 @@ pub fn parse_log(content: &str) -> Vec<LogEntry> {
 pub fn parse_log_with_format(content: &str, format: LogFormat) -> Vec<LogEntry> {
     let mut entries: Vec<LogEntry> = Vec::new();
     let mut index = 0;
+    let mut in_header = true;
 
     for line in content.lines() {
-        // Handle comment lines at start of file
-        if entries.is_empty() && line.trim_start().starts_with('#') {
-            // Skip comment lines at the beginning
+        // Handle comment lines at start of file (header section)
+        if in_header && line.starts_with('#') {
             continue;
         }
+        in_header = false;
 
         // Check if this is a continuation line
         if !entries.is_empty() && is_continuation_line(line, format) {
@@ -278,7 +286,19 @@ mod tests {
 
     #[test]
     fn test_detect_wd_format() {
-        let content = "[*] INFO 03-21 14:23:01.234 Test message";
+        let content = "  ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP|DspWebConnection \"msg\"";
+        assert_eq!(detect_format(content), LogFormat::WdLog);
+    }
+
+    #[test]
+    fn test_detect_wd_format_with_marker() {
+        let content = "* ERROR 02-05 11:23:38.795 [#34] API|PrintApiController10 \"msg\"";
+        assert_eq!(detect_format(content), LogFormat::WdLog);
+    }
+
+    #[test]
+    fn test_detect_wd_format_with_header() {
+        let content = "# Starting new log\n# Previous log was 20,974,832 bytes\n  ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP|DspWebConnection \"msg\"";
         assert_eq!(detect_format(content), LogFormat::WdLog);
     }
 
@@ -289,12 +309,60 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_wd_log() {
-        let content = "[*] INFO 03-21 14:23:01.234 Test message\n  continuation line";
+    fn test_parse_wd_log_profile() {
+        let content = "  ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP|DspWebConnection \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Profile);
+    }
+
+    #[test]
+    fn test_parse_wd_log_debug() {
+        let content = "  ===== 02-03 18:11:02.570 [Alarm] SCHED|Scheduler \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Debug);
+    }
+
+    #[test]
+    fn test_parse_wd_log_info() {
+        let content = "  INFO  02-03 18:11:02.577 [Alarm] SPL|WatchdocContext \"msg\"";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Info);
-        assert_eq!(entries[0].continuation_lines.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_wd_log_error_with_marker() {
+        let content = "* ERROR 02-05 11:23:38.795 [#34] API|PrintApiController10 \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Error);
+    }
+
+    #[test]
+    fn test_parse_wd_log_warn_with_marker() {
+        let content = "! WARN  02-05 11:23:38.801 [#10] HTTP|DspWebServer \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Warn);
+    }
+
+    #[test]
+    fn test_parse_wd_log_with_continuation() {
+        let content = "  ~~~~~ 02-03 18:11:11.526 [#32] MSGQ|HttpMessageSender \"Sending JSON batch => [\n\t{\n\t\t\"Id\": \"52dc5014\"\n\t}\n]\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Profile);
+        assert_eq!(entries[0].continuation_lines.len(), 4);
+    }
+
+    #[test]
+    fn test_parse_wd_log_skips_header() {
+        let content = "# Starting new log\n# Previous log\n  ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Profile);
     }
 
     #[test]
@@ -303,14 +371,5 @@ mod tests {
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Error);
-    }
-
-    #[test]
-    fn test_wd_special_levels() {
-        let content = "[*] ===== 03-21 14:23:01.234 Debug marker\n[*] ~~~~~ 03-21 14:23:02.234 Profile marker";
-        let entries = parse_log(content);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].level, LogLevel::Debug);
-        assert_eq!(entries[1].level, LogLevel::Profile);
     }
 }
