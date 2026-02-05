@@ -56,10 +56,22 @@ impl LogEntry {
         self.cached_full_text.as_ref().unwrap()
     }
 
-    /// Get searchable text - returns raw_line reference for fast path
-    /// (most searches match the first line anyway)
+    /// Get searchable text - includes continuation lines
     pub fn searchable_text(&self) -> &str {
+        // Cache should be populated during parsing via ensure_search_cache()
         self.cached_full_text.as_deref().unwrap_or(&self.raw_line)
+    }
+
+    /// Ensure the search cache is populated (call after parsing)
+    pub fn ensure_search_cache(&mut self) {
+        if self.cached_full_text.is_none() && !self.continuation_lines.is_empty() {
+            let mut text = self.raw_line.clone();
+            for line in &self.continuation_lines {
+                text.push('\n');
+                text.push_str(line);
+            }
+            self.cached_full_text = Some(text);
+        }
     }
 
     /// Add a continuation line, invalidating the cache
@@ -243,6 +255,11 @@ pub fn parse_log_with_format(content: &str, format: LogFormat) -> Vec<LogEntry> 
         }
     }
 
+    // Build search cache for entries with continuations
+    for entry in &mut entries {
+        entry.ensure_search_cache();
+    }
+
     entries
 }
 
@@ -295,6 +312,15 @@ pub fn parse_incremental(
                 pending.add_continuation(line.to_string());
             }
         }
+    }
+
+    // Build search cache for entries with continuations
+    for entry in &mut entries {
+        entry.ensure_search_cache();
+    }
+    // Also update pending entry's cache if it received continuations
+    if let Some(pending) = pending_continuation {
+        pending.ensure_search_cache();
     }
 
     entries
@@ -375,6 +401,18 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Profile);
         assert_eq!(entries[0].continuation_lines.len(), 4);
+    }
+
+    #[test]
+    fn test_searchable_text_includes_continuation() {
+        let content =
+            "  INFO  02-03 18:11:11.526 [#32] Test \"first line\nsecond line\nthird line\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        let search_text = entries[0].searchable_text();
+        assert!(search_text.contains("first line"));
+        assert!(search_text.contains("second line"));
+        assert!(search_text.contains("third line"));
     }
 
     #[test]
