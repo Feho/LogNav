@@ -1,5 +1,6 @@
 use crate::app::{App, FocusState};
 use crossterm::event::{Event, KeyEvent};
+use std::time::Instant;
 
 mod command;
 mod date_filter;
@@ -17,6 +18,7 @@ pub fn handle_event(app: &mut App, event: Event) {
     match event {
         Event::Key(key) => handle_key(app, key),
         Event::Mouse(mouse) => mouse::handle_mouse(app, mouse),
+        Event::Paste(text) => handle_paste(app, text),
         Event::Resize(_, _) => {} // Ratatui handles this
         _ => {}
     }
@@ -32,5 +34,64 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::FileOpen { .. } => file_open::handle_file_open_key(app, key),
         FocusState::Detail { .. } => detail::handle_detail_key(app, key),
         FocusState::Help { .. } => help::handle_help_key(app, key),
+    }
+}
+
+/// Clean a pasted/dropped path: trim whitespace, strip surrounding quotes,
+/// strip trailing newlines that terminals sometimes append.
+fn clean_pasted_path(text: &str) -> String {
+    let mut s = text.trim().to_string();
+    // Strip surrounding single or double quotes
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+        s = s[1..s.len() - 1].to_string();
+    }
+    // Tilde expansion
+    if s == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
+    } else if let Some(rest) = s.strip_prefix("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}/{}", home, rest);
+        }
+    }
+    s
+}
+
+/// Handle paste events (drag-and-drop sends paste in most terminals)
+fn handle_paste(app: &mut App, text: String) {
+    match &mut app.focus {
+        FocusState::Normal | FocusState::Detail { .. } | FocusState::Help { .. } => {
+            // Treat paste as a file path drop
+            let path = clean_pasted_path(&text);
+            if !path.is_empty() && std::path::Path::new(&path).is_file() {
+                app.file_path = path;
+            } else {
+                app.status_message = Some(format!("Not a file: {}", text.trim()));
+            }
+        }
+        FocusState::FileOpen {
+            path,
+            cursor_pos,
+            error,
+            ..
+        } => {
+            let cleaned = text.trim().to_string();
+            let byte_idx = file_open::char_to_byte_index(path, *cursor_pos);
+            path.insert_str(byte_idx, &cleaned);
+            *cursor_pos += cleaned.chars().count();
+            *error = None;
+        }
+        FocusState::Search { query, .. } => {
+            query.push_str(text.trim());
+            app.search_dirty = Some(Instant::now());
+        }
+        FocusState::CommandPalette { input, selected } => {
+            input.push_str(text.trim());
+            *selected = 0;
+        }
+        FocusState::DateFilter { .. } => {
+            // Not useful for date filter
+        }
     }
 }

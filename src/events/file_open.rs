@@ -2,7 +2,7 @@ use crate::app::{App, FocusState};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Convert a char index to a byte index within a string
-fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
+pub fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
     s.char_indices()
         .nth(char_idx)
         .map(|(i, _)| i)
