@@ -1,0 +1,356 @@
+use crate::log_entry::LogEntry;
+use chrono::NaiveDateTime;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use regex::Regex;
+use std::collections::HashSet;
+
+pub mod commands;
+pub mod filtering;
+pub mod navigation;
+
+const MAX_ENTRIES: usize = 500_000;
+
+#[derive(Debug, Clone)]
+pub enum FocusState {
+    Normal,
+    CommandPalette {
+        input: String,
+        selected: usize,
+    },
+    Search {
+        query: String,
+        match_indices: Vec<usize>,
+        current_match: usize,
+    },
+    DateFilter {
+        from: String,
+        to: String,
+        focus: DateFilterFocus,
+        selected_quick: usize,
+        error: Option<String>,
+    },
+    FileOpen {
+        path: String,
+        selected_recent: usize,
+        cursor_pos: usize,
+        error: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateFilterFocus {
+    QuickFilter,
+    From,
+    To,
+}
+
+pub const QUICK_FILTERS: &[&str] = &[
+    "Last hour",
+    "Last 24 hours",
+    "Today",
+    "Yesterday",
+    "Last 7 days",
+    "Clear filter",
+];
+
+pub struct App {
+    // Log data
+    pub entries: Vec<LogEntry>,
+    pub filtered_indices: Vec<usize>,
+
+    // Filter state
+    pub level_filters: [bool; 6], // ERR, WRN, INF, DBG, TRC, PRF
+    pub search_regex: Option<Regex>,
+    pub search_query: String,
+    pub date_from: Option<NaiveDateTime>,
+    pub date_to: Option<NaiveDateTime>,
+
+    // UI state
+    pub scroll_offset: usize,
+    pub selected_index: usize,
+    pub focus: FocusState,
+    pub tail_enabled: bool,
+    pub wrap_enabled: bool,
+    pub horizontal_scroll: usize,
+    pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
+
+    // File state
+    pub file_path: String,
+    pub recent_files: Vec<String>,
+
+    // Status
+    pub status_message: Option<String>,
+    pub should_quit: bool,
+
+    // Fuzzy matcher for command palette
+    fuzzy_matcher: SkimMatcherV2,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl App {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            filtered_indices: Vec::new(),
+            level_filters: [true, true, true, true, false, false], // ERR, WRN, INF, DBG on by default
+            search_regex: None,
+            search_query: String::new(),
+            date_from: None,
+            date_to: None,
+            scroll_offset: 0,
+            selected_index: 0,
+            focus: FocusState::Normal,
+            tail_enabled: true,
+            wrap_enabled: false,
+            horizontal_scroll: 0,
+            expanded_entries: HashSet::new(),
+            file_path: String::new(),
+            recent_files: Vec::new(),
+            status_message: None,
+            should_quit: false,
+            fuzzy_matcher: SkimMatcherV2::default(),
+        }
+    }
+
+    /// Add entries from initial load
+    pub fn set_entries(&mut self, entries: Vec<LogEntry>) {
+        self.entries = entries;
+        self.apply_entry_cap();
+        self.apply_filters();
+        if self.tail_enabled {
+            self.scroll_to_bottom();
+        }
+    }
+
+    /// Add new entries from tailing - uses incremental filtering
+    pub fn append_entries(&mut self, mut new_entries: Vec<LogEntry>) {
+        if new_entries.is_empty() {
+            return;
+        }
+
+        // Re-index new entries
+        let start_idx = self.entries.len();
+        for (i, entry) in new_entries.iter_mut().enumerate() {
+            entry.index = start_idx + i;
+        }
+
+        self.entries.append(&mut new_entries);
+
+        // Check if we need to cap entries
+        let needs_cap = self.entries.len() > MAX_ENTRIES;
+        if needs_cap {
+            self.apply_entry_cap();
+            // After capping, indices are invalidated - must refilter
+            self.apply_filters();
+        } else {
+            // Incremental filter - only process new entries
+            self.apply_filters_incremental(start_idx);
+        }
+
+        if self.tail_enabled {
+            self.scroll_to_bottom();
+        }
+    }
+
+    /// Apply entry cap, removing oldest entries if needed
+    fn apply_entry_cap(&mut self) {
+        if self.entries.len() > MAX_ENTRIES {
+            let skip = self.entries.len() - MAX_ENTRIES;
+            // Drop oldest entries (more efficient than creating new Vec)
+            self.entries.drain(..skip);
+            // Re-index
+            for (i, entry) in self.entries.iter_mut().enumerate() {
+                entry.index = i;
+            }
+        }
+    }
+
+    /// Get filtered commands based on fuzzy search
+    pub fn get_filtered_commands(&self, query: &str) -> Vec<(usize, &commands::Command, i64)> {
+        if query.is_empty() {
+            return commands::Command::ALL
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (i, c, 0))
+                .collect();
+        }
+
+        let mut results: Vec<_> = commands::Command::ALL
+            .iter()
+            .enumerate()
+            .filter_map(|(i, cmd)| {
+                self.fuzzy_matcher
+                    .fuzzy_match(cmd.name, query)
+                    .map(|score| (i, cmd, score))
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.2.cmp(&a.2));
+        results
+    }
+
+    /// Open command palette
+    pub fn open_command_palette(&mut self) {
+        self.focus = FocusState::CommandPalette {
+            input: String::new(),
+            selected: 0,
+        };
+    }
+
+    /// Open search overlay
+    pub fn open_search(&mut self) {
+        // Compute match_indices based on current search regex applied to ALL entries
+        let match_indices = if let Some(ref regex) = self.search_regex {
+            self.entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| regex.is_match(entry.searchable_text()))
+                .map(|(idx, _)| idx)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        self.focus = FocusState::Search {
+            query: self.search_query.clone(),
+            match_indices,
+            current_match: 0,
+        };
+    }
+
+    /// Open date filter dialog
+    pub fn open_date_filter(&mut self) {
+        self.focus = FocusState::DateFilter {
+            from: self
+                .date_from
+                .map(|d| d.format("%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
+            to: self
+                .date_to
+                .map(|d| d.format("%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
+            focus: DateFilterFocus::QuickFilter,
+            selected_quick: 0,
+            error: None,
+        };
+    }
+
+    /// Open file open dialog
+    pub fn open_file_dialog(&mut self) {
+        self.focus = FocusState::FileOpen {
+            path: String::new(),
+            selected_recent: 0,
+            cursor_pos: 0,
+            error: None,
+        };
+    }
+
+    /// Close any overlay and return to normal
+    pub fn close_overlay(&mut self) {
+        self.focus = FocusState::Normal;
+    }
+
+    /// Toggle tail mode
+    pub fn toggle_tail(&mut self) {
+        self.tail_enabled = !self.tail_enabled;
+        if self.tail_enabled {
+            self.scroll_to_bottom();
+        }
+    }
+
+    /// Toggle word wrap
+    pub fn toggle_wrap(&mut self) {
+        self.wrap_enabled = !self.wrap_enabled;
+    }
+
+    /// Toggle expand/collapse of selected entry's continuation lines
+    pub fn toggle_expand(&mut self) {
+        if let Some(&entry_idx) = self.filtered_indices.get(self.selected_index) {
+            // Only toggle if entry has continuation lines
+            if !self.entries[entry_idx].continuation_lines.is_empty() {
+                if self.expanded_entries.contains(&entry_idx) {
+                    self.expanded_entries.remove(&entry_idx);
+                } else {
+                    self.expanded_entries.insert(entry_idx);
+                }
+            }
+        }
+    }
+
+    /// Expand all entries that have continuation lines; collapse all if already fully expanded
+    pub fn toggle_expand_all(&mut self) {
+        let expandable: Vec<usize> = self
+            .filtered_indices
+            .iter()
+            .copied()
+            .filter(|&idx| !self.entries[idx].continuation_lines.is_empty())
+            .collect();
+
+        let all_expanded = expandable
+            .iter()
+            .all(|idx| self.expanded_entries.contains(idx));
+        if all_expanded {
+            self.expanded_entries.clear();
+        } else {
+            self.expanded_entries.extend(expandable);
+        }
+    }
+
+    /// Check if an entry is expanded
+    pub fn is_expanded(&self, entry_idx: usize) -> bool {
+        self.expanded_entries.contains(&entry_idx)
+    }
+
+    /// Execute a command action
+    pub fn execute_command(&mut self, action: commands::CommandAction) {
+        use commands::CommandAction;
+        match action {
+            CommandAction::OpenFile => self.open_file_dialog(),
+            CommandAction::Search => self.open_search(),
+            CommandAction::DateFilter => self.open_date_filter(),
+            CommandAction::ToggleError => self.toggle_level(0),
+            CommandAction::ToggleWarn => self.toggle_level(1),
+            CommandAction::ToggleInfo => self.toggle_level(2),
+            CommandAction::ToggleDebug => self.toggle_level(3),
+            CommandAction::ToggleTrace => self.toggle_level(4),
+            CommandAction::ToggleProfile => self.toggle_level(5),
+            CommandAction::ToggleTail => self.toggle_tail(),
+            CommandAction::ToggleWrap => self.toggle_wrap(),
+            CommandAction::GoToTop => self.scroll_to_top(),
+            CommandAction::GoToBottom => self.scroll_to_bottom(),
+            CommandAction::Quit => self.should_quit = true,
+        }
+    }
+
+    /// Get active date filter display for status bar
+    pub fn date_filter_display(&self) -> Option<String> {
+        match (self.date_from, self.date_to) {
+            (Some(from), Some(to)) => Some(format!(
+                "{} -> {}",
+                from.format("%m-%d %H:%M"),
+                to.format("%m-%d %H:%M")
+            )),
+            (Some(from), None) => Some(format!("From {}", from.format("%m-%d %H:%M"))),
+            (None, Some(to)) => Some(format!("To {}", to.format("%m-%d %H:%M"))),
+            (None, None) => None,
+        }
+    }
+
+    /// Get active level filter names for status bar
+    pub fn active_levels_display(&self) -> String {
+        let levels = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"];
+        levels
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| self.level_filters[*i])
+            .map(|(_, l)| *l)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}

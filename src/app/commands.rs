@@ -1,0 +1,99 @@
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub name: &'static str,
+    pub shortcut: &'static str,
+    pub action: CommandAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandAction {
+    OpenFile,
+    Search,
+    DateFilter,
+    ToggleError,
+    ToggleWarn,
+    ToggleInfo,
+    ToggleDebug,
+    ToggleTrace,
+    ToggleProfile,
+    ToggleTail,
+    ToggleWrap,
+    GoToTop,
+    GoToBottom,
+    Quit,
+}
+
+impl Command {
+    pub const ALL: &'static [Command] = &[
+        Command {
+            name: "Open file...",
+            shortcut: "Ctrl+O",
+            action: CommandAction::OpenFile,
+        },
+        Command {
+            name: "Search logs...",
+            shortcut: "/",
+            action: CommandAction::Search,
+        },
+        Command {
+            name: "Filter by date range...",
+            shortcut: "Ctrl+D",
+            action: CommandAction::DateFilter,
+        },
+        Command {
+            name: "Toggle Error",
+            shortcut: "1",
+            action: CommandAction::ToggleError,
+        },
+        Command {
+            name: "Toggle Warning",
+            shortcut: "2",
+            action: CommandAction::ToggleWarn,
+        },
+        Command {
+            name: "Toggle Info",
+            shortcut: "3",
+            action: CommandAction::ToggleInfo,
+        },
+        Command {
+            name: "Toggle Debug",
+            shortcut: "4",
+            action: CommandAction::ToggleDebug,
+        },
+        Command {
+            name: "Toggle Trace",
+            shortcut: "5",
+            action: CommandAction::ToggleTrace,
+        },
+        Command {
+            name: "Toggle Profile",
+            shortcut: "6",
+            action: CommandAction::ToggleProfile,
+        },
+        Command {
+            name: "Toggle tail mode",
+            shortcut: "t",
+            action: CommandAction::ToggleTail,
+        },
+        Command {
+            name: "Toggle word wrap",
+            shortcut: "w",
+            action: CommandAction::ToggleWrap,
+        },
+        Command {
+            name: "Go to top",
+            shortcut: "g",
+            action: CommandAction::GoToTop,
+        },
+        Command {
+            name: "Go to bottom",
+            shortcut: "G",
+            action: CommandAction::GoToBottom,
+        },
+        Command {
+            name: "Quit",
+            shortcut: "q/Esc",
+            action: CommandAction::Quit,
+        },
+    ];
+}

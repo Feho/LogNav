@@ -37,13 +37,28 @@ No custom rustfmt.toml or clippy.toml - use defaults.
 
 ```
 src/
-  main.rs        # Entry point, async event loop
-  app.rs         # App state, filtering logic, commands
-  config.rs      # Config persistence (~/.config/logviewer/)
-  events.rs      # Keyboard/mouse event handlers
-  log_entry.rs   # Log parsing, format detection, tests
-  log_tailer.rs  # File watching for live tail
-  ui.rs          # Ratatui widget rendering
+  main.rs              # Entry point, async event loop
+  config.rs            # Config persistence (~/.config/logviewer/)
+  log_entry.rs         # Log parsing, format detection, tests
+  log_tailer.rs        # File watching for live tail
+  app/
+    mod.rs             # App struct definition, core state, Default impl
+    commands.rs        # Command struct, CommandAction enum
+    filtering.rs       # Filtering logic (apply_filters, set_search, etc.)
+    navigation.rs      # Scrolling and navigation methods
+  events/
+    mod.rs             # handle_event(), dispatch to submodules
+    normal.rs          # Normal mode key handling
+    command.rs         # Command palette key handling
+    search.rs          # Search mode key handling
+    date_filter.rs     # Date filter dialog keys, parse_date_input()
+    file_open.rs       # File open dialog keys
+    mouse.rs           # Mouse event handling
+  ui/
+    mod.rs             # draw(), level_color(), level_style(), helpers
+    log_view.rs        # Log view rendering (wrap/nowrap modes)
+    status_bar.rs      # Status bar rendering
+    overlays.rs        # Command palette, search bar, dialogs
 ```
 
 ## Code Style
