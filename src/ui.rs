@@ -1,11 +1,11 @@
-use crate::app::{App, DateFilterField, FocusState};
+use crate::app::{App, DateFilterFocus, FocusState, QUICK_FILTERS};
 use crate::log_entry::LogLevel;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
 /// Main UI drawing function
@@ -357,9 +357,14 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| app.file_path.clone())
     };
 
+    let date_filter = app
+        .date_filter_display()
+        .map(|d| format!(" | {}", d))
+        .unwrap_or_default();
+
     let left = format!(
-        " {} | {}/{} | {} | {} ",
-        file_display, shown, total, levels, tail
+        " {} | {}/{} | {} | {}{} ",
+        file_display, shown, total, levels, tail, date_filter
     );
     let right = "Ctrl+P ";
 
@@ -484,50 +489,207 @@ fn draw_search_bar(frame: &mut Frame, app: &App) {
 
 /// Draw date filter dialog
 fn draw_date_filter(frame: &mut Frame, app: &App) {
-    let area = centered_rect(40, 30, frame.area());
+    let area = centered_rect(50, 55, frame.area());
     frame.render_widget(Clear, area);
 
-    let (from, to, focused) = match &app.focus {
+    let (from, to, focus, selected_quick, error) = match &app.focus {
         FocusState::DateFilter {
             from,
             to,
-            focused_field,
-        } => (from.as_str(), to.as_str(), *focused_field),
+            focus,
+            selected_quick,
+            error,
+        } => (
+            from.as_str(),
+            to.as_str(),
+            *focus,
+            *selected_quick,
+            error.as_deref(),
+        ),
         _ => return,
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(" Filter by Date ");
+        .title(" Date Range Filter ");
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let from_style = if focused == DateFilterField::From {
+    let mut y = inner.y;
+
+    // Quick filters header
+    let header_style = if focus == DateFilterFocus::QuickFilter {
         Style::default().fg(Color::Cyan)
     } else {
-        Style::default()
+        Style::default().fg(Color::DarkGray)
     };
-    let to_style = if focused == DateFilterField::To {
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled("Quick Filters:", header_style))),
+        Rect {
+            x: inner.x,
+            y,
+            width: inner.width,
+            height: 1,
+        },
+    );
+    y += 1;
+
+    // Quick filter options
+    for (i, name) in QUICK_FILTERS.iter().enumerate() {
+        if y >= inner.y + inner.height {
+            break;
+        }
+
+        let is_selected = focus == DateFilterFocus::QuickFilter && i == selected_quick;
+        let style = if is_selected {
+            Style::default().bg(Color::Cyan).fg(Color::Black)
+        } else if focus == DateFilterFocus::QuickFilter {
+            Style::default()
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("  {}. {}", i + 1, name),
+                style,
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    y += 1; // Spacer
+
+    // Custom range header
+    let custom_style = if matches!(focus, DateFilterFocus::From | DateFilterFocus::To) {
         Style::default().fg(Color::Cyan)
     } else {
-        Style::default()
+        Style::default().fg(Color::DarkGray)
     };
+    if y < inner.y + inner.height {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled("Custom range:", custom_style))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
 
-    let lines = vec![
-        Line::from(vec![Span::styled("From: ", from_style), Span::raw(from)]),
-        Line::from(""),
-        Line::from(vec![Span::styled("  To: ", to_style), Span::raw(to)]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Format: MM-dd HH:mm | Tab: switch | Enter: apply",
-            Style::default().fg(Color::DarkGray),
-        )),
-    ];
+    // From field
+    if y < inner.y + inner.height {
+        let from_style = if focus == DateFilterFocus::From {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let mut spans = vec![Span::styled("  From: ", from_style), Span::raw(from)];
+        if focus == DateFilterFocus::From {
+            spans.push(Span::styled(
+                "_",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ));
+        }
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
 
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, inner);
+    // To field
+    if y < inner.y + inner.height {
+        let to_style = if focus == DateFilterFocus::To {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        let mut spans = vec![Span::styled("    To: ", to_style), Span::raw(to)];
+        if focus == DateFilterFocus::To {
+            spans.push(Span::styled(
+                "_",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ));
+        }
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    // Error message
+    if let Some(err) = error
+        && y < inner.y + inner.height
+    {
+        y += 1;
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("  {}", err),
+                Style::default().fg(Color::Red),
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
+
+    // Help text at bottom
+    let help_y = inner.y + inner.height.saturating_sub(2);
+    if help_y > y {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  Formats: MM-dd HH:mm, -2h, today, now",
+                Style::default().fg(Color::DarkGray),
+            ))),
+            Rect {
+                x: inner.x,
+                y: help_y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  Tab: switch | Enter: apply | Esc: close",
+                Style::default().fg(Color::DarkGray),
+            ))),
+            Rect {
+                x: inner.x,
+                y: help_y + 1,
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
 }
 
 /// Draw file open dialog
@@ -541,7 +703,12 @@ fn draw_file_open(frame: &mut Frame, app: &App) {
             selected_recent,
             cursor_pos,
             error,
-        } => (path.as_str(), *selected_recent, *cursor_pos, error.as_deref()),
+        } => (
+            path.as_str(),
+            *selected_recent,
+            *cursor_pos,
+            error.as_deref(),
+        ),
         _ => return,
     };
 

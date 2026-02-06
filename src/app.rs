@@ -22,7 +22,9 @@ pub enum FocusState {
     DateFilter {
         from: String,
         to: String,
-        focused_field: DateFilterField,
+        focus: DateFilterFocus,
+        selected_quick: usize,
+        error: Option<String>,
     },
     FileOpen {
         path: String,
@@ -33,10 +35,20 @@ pub enum FocusState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DateFilterField {
+pub enum DateFilterFocus {
+    QuickFilter,
     From,
     To,
 }
+
+pub const QUICK_FILTERS: &[&str] = &[
+    "Last hour",
+    "Last 24 hours",
+    "Today",
+    "Yesterday",
+    "Last 7 days",
+    "Clear filter",
+];
 
 #[derive(Debug, Clone)]
 pub struct Command {
@@ -576,9 +588,17 @@ impl App {
     /// Open date filter dialog
     pub fn open_date_filter(&mut self) {
         self.focus = FocusState::DateFilter {
-            from: String::new(),
-            to: String::new(),
-            focused_field: DateFilterField::From,
+            from: self
+                .date_from
+                .map(|d| d.format("%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
+            to: self
+                .date_to
+                .map(|d| d.format("%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
+            focus: DateFilterFocus::QuickFilter,
+            selected_quick: 0,
+            error: None,
         };
     }
 
@@ -633,7 +653,9 @@ impl App {
             .filter(|&idx| !self.entries[idx].continuation_lines.is_empty())
             .collect();
 
-        let all_expanded = expandable.iter().all(|idx| self.expanded_entries.contains(idx));
+        let all_expanded = expandable
+            .iter()
+            .all(|idx| self.expanded_entries.contains(idx));
         if all_expanded {
             self.expanded_entries.clear();
         } else {
@@ -663,6 +685,20 @@ impl App {
             CommandAction::GoToTop => self.scroll_to_top(),
             CommandAction::GoToBottom => self.scroll_to_bottom(),
             CommandAction::Quit => self.should_quit = true,
+        }
+    }
+
+    /// Get active date filter display for status bar
+    pub fn date_filter_display(&self) -> Option<String> {
+        match (self.date_from, self.date_to) {
+            (Some(from), Some(to)) => Some(format!(
+                "{} -> {}",
+                from.format("%m-%d %H:%M"),
+                to.format("%m-%d %H:%M")
+            )),
+            (Some(from), None) => Some(format!("From {}", from.format("%m-%d %H:%M"))),
+            (None, Some(to)) => Some(format!("To {}", to.format("%m-%d %H:%M"))),
+            (None, None) => None,
         }
     }
 
