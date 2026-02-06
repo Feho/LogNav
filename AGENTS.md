@@ -1,4 +1,4 @@
-# AGENTS.md - LogViewerRust
+# AGENTS.md - LogNav
 
 TUI log viewer for proprietary log formats (wd.log, wpc.log). Rust + ratatui + tokio.
 
@@ -38,7 +38,7 @@ No custom rustfmt.toml or clippy.toml - use defaults.
 ```
 src/
   main.rs              # Entry point, async event loop
-  config.rs            # Config persistence (~/.config/logviewer/)
+  config.rs            # Config persistence (~/.config/lognav/)
   log_entry.rs         # Log parsing, format detection, tests
   log_tailer.rs        # File watching for live tail
   app/

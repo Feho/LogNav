@@ -1,4 +1,4 @@
-# LogViewer
+# LogNav
 
 A fast, modern TUI log file viewer built in Rust.
 
@@ -6,7 +6,7 @@ A fast, modern TUI log file viewer built in Rust.
 
 Debugging applications often means sifting through massive log files. Traditional tools like `less`, `grep`, and `tail -f` work, but switching between them breaks flow. GUI log viewers are powerful but heavy—they don't belong in a terminal-first workflow.
 
-LogViewer solves this by combining:
+LogNav solves this by combining:
 - **Live tailing** with instant filtering
 - **Severity-based coloring** so errors jump out
 - **Regex search** without leaving the viewer
@@ -44,10 +44,10 @@ Format is auto-detected from file content.
 
 ```bash
 # Open a log file
-logviewer /path/to/app.log
+lognav /path/to/app.log
 
 # Or launch empty and use Ctrl+O to open
-logviewer
+lognav
 ```
 
 ## Key Bindings
@@ -89,7 +89,7 @@ By default, only ERR/WRN/INF are shown. Toggle others with number keys.
 cargo build --release
 ```
 
-Binary will be at `target/release/logviewer` (~4MB).
+Binary will be at `target/release/lognav` (~4MB).
 
 ## Requirements
 

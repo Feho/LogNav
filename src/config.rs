@@ -14,7 +14,7 @@ pub struct Config {
 impl Config {
     /// Get the config file path
     fn config_path() -> Option<PathBuf> {
-        ProjectDirs::from("", "", "logviewer").map(|dirs| dirs.config_dir().join("config.json"))
+        ProjectDirs::from("", "", "lognav").map(|dirs| dirs.config_dir().join("config.json"))
     }
 
     /// Load config from disk
