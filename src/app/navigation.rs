@@ -121,6 +121,15 @@ impl App {
         }
     }
 
+    /// Center the selected line in the viewport
+    pub fn center_selected(&mut self) {
+        if self.viewport_height == 0 {
+            self.ensure_selected_visible();
+            return;
+        }
+        self.scroll_offset = self.selected_index.saturating_sub(self.viewport_height / 2);
+    }
+
     pub fn ensure_selected_visible_with_height(
         &mut self,
         viewport_height: usize,
@@ -202,7 +211,7 @@ impl App {
                 *current_match = (*current_match + 1) % match_indices.len();
                 let target = match_indices[*current_match];
                 self.selected_index = target;
-                self.ensure_selected_visible();
+                self.center_selected();
             }
         }
     }
@@ -223,7 +232,7 @@ impl App {
                 };
                 let target = match_indices[*current_match];
                 self.selected_index = target;
-                self.ensure_selected_visible();
+                self.center_selected();
             }
         }
     }

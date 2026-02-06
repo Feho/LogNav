@@ -114,14 +114,23 @@ impl App {
         }
     }
 
-    /// Set search query and compile regex
+    /// Set search query and compile regex (literal mode)
     pub fn set_search(&mut self, query: &str) {
+        self.set_search_with_mode(query, false);
+    }
+
+    /// Set search query and compile regex with optional regex mode
+    pub fn set_search_with_mode(&mut self, query: &str, regex_mode: bool) {
         self.search_query = query.to_string();
         if query.is_empty() {
             self.search_regex = None;
         } else {
-            // Case-insensitive search
-            self.search_regex = regex::Regex::new(&format!("(?i){}", regex::escape(query))).ok();
+            let pattern = if regex_mode {
+                format!("(?i){}", query)
+            } else {
+                format!("(?i){}", regex::escape(query))
+            };
+            self.search_regex = regex::Regex::new(&pattern).ok();
         }
         self.apply_filters();
     }

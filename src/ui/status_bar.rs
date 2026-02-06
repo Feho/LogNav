@@ -67,7 +67,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Right side: context-aware hints
     let right = match app.focus {
         FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open | ?:help | q:quit",
-        FocusState::Search { .. } => "C-n/C-p:nav | Enter:filter | Esc:cancel ",
+        FocusState::Search { .. } => "C-r:regex | C-n/C-p:nav | Enter:filter | Esc:cancel ",
         FocusState::CommandPalette { .. } => "Esc:close | Enter:run ",
         FocusState::DateFilter { .. } => "Tab:switch | Enter:apply | Esc:close ",
         FocusState::FileOpen { .. } => "Tab:fill | Enter:open | Esc:cancel ",

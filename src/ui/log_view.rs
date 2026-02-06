@@ -14,9 +14,19 @@ const HIGHLIGHT_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
 
 /// Compile regex from the live search overlay query
 fn compile_overlay_regex(app: &App) -> Option<Regex> {
-    if let FocusState::Search { ref query, .. } = app.focus {
+    if let FocusState::Search {
+        ref query,
+        regex_mode,
+        ..
+    } = app.focus
+    {
         if !query.is_empty() {
-            return Regex::new(&format!("(?i){}", regex::escape(query))).ok();
+            let pattern = if regex_mode {
+                format!("(?i){}", query)
+            } else {
+                format!("(?i){}", regex::escape(query))
+            };
+            return Regex::new(&pattern).ok();
         }
     }
     None

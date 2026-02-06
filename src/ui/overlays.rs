@@ -77,16 +77,28 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         height: 1,
     };
 
-    let (query, match_count, current) = match &app.focus {
+    let (query, match_count, current, regex_mode, regex_error) = match &app.focus {
         FocusState::Search {
             query,
             match_indices,
             current_match,
-        } => (query.as_str(), match_indices.len(), *current_match),
+            regex_mode,
+            regex_error,
+        } => (
+            query.as_str(),
+            match_indices.len(),
+            *current_match,
+            *regex_mode,
+            regex_error.as_deref(),
+        ),
         _ => return,
     };
 
-    let match_info = if match_count > 0 {
+    let match_info = if let Some(err) = regex_error {
+        // Truncate long regex errors
+        let short = if err.len() > 30 { &err[..30] } else { err };
+        format!("[err: {}]", short)
+    } else if match_count > 0 {
         format!("{}/{}", current + 1, match_count)
     } else if !query.is_empty() {
         "No matches".to_string()
@@ -94,13 +106,26 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         String::new()
     };
 
+    let match_info_style = if regex_error.is_some() {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let regex_indicator = if regex_mode {
+        Span::styled("[.*] ", Style::default().fg(Color::Magenta))
+    } else {
+        Span::raw("")
+    };
+
     let line = Line::from(vec![
         Span::styled(" / ", Style::default().fg(Color::Yellow)),
+        regex_indicator,
         Span::raw(query),
         Span::raw(" "),
-        Span::styled(match_info, Style::default().fg(Color::DarkGray)),
+        Span::styled(match_info, match_info_style),
         Span::styled(
-            " | C-n/C-p:prev/next | Enter:apply filter | Esc:cancel",
+            " | C-r:regex | C-n/C-p:prev/next | Enter:apply | Esc:cancel",
             Style::default().fg(Color::DarkGray),
         ),
     ]);
@@ -477,6 +502,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("  / or C-f  Open search (live highlight)"),
+        Line::from("  C-r       Toggle regex mode in search"),
         Line::from("  C-n/C-p   Next/previous match in search"),
         Line::from("  Enter     Apply search as filter"),
         Line::from("  C-d       Date range filter"),

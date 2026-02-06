@@ -23,6 +23,8 @@ pub enum FocusState {
         query: String,
         match_indices: Vec<usize>,
         current_match: usize,
+        regex_mode: bool,
+        regex_error: Option<String>,
     },
     DateFilter {
         from: String,
@@ -238,6 +240,8 @@ impl App {
             query: self.search_query.clone(),
             match_indices,
             current_match: 0,
+            regex_mode: false,
+            regex_error: None,
         };
     }
 
