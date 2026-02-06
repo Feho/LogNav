@@ -83,6 +83,9 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         // Expand/collapse entry
         (_, KeyCode::Enter) => app.toggle_expand(),
+        (_, KeyCode::Char('a')) | (_, KeyCode::Char('A')) => {
+            app.toggle_expand_all();
+        }
 
         _ => {}
     }

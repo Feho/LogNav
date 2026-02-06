@@ -624,6 +624,23 @@ impl App {
         }
     }
 
+    /// Expand all entries that have continuation lines; collapse all if already fully expanded
+    pub fn toggle_expand_all(&mut self) {
+        let expandable: Vec<usize> = self
+            .filtered_indices
+            .iter()
+            .copied()
+            .filter(|&idx| !self.entries[idx].continuation_lines.is_empty())
+            .collect();
+
+        let all_expanded = expandable.iter().all(|idx| self.expanded_entries.contains(idx));
+        if all_expanded {
+            self.expanded_entries.clear();
+        } else {
+            self.expanded_entries.extend(expandable);
+        }
+    }
+
     /// Check if an entry is expanded
     pub fn is_expanded(&self, entry_idx: usize) -> bool {
         self.expanded_entries.contains(&entry_idx)
