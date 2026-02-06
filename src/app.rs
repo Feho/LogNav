@@ -27,6 +27,8 @@ pub enum FocusState {
     FileOpen {
         path: String,
         selected_recent: usize,
+        cursor_pos: usize,
+        error: Option<String>,
     },
 }
 
@@ -180,7 +182,7 @@ impl App {
         Self {
             entries: Vec::new(),
             filtered_indices: Vec::new(),
-            level_filters: [true, true, true, false, false, false], // ERR, WRN, INF on by default
+            level_filters: [true, true, true, true, false, false], // ERR, WRN, INF, DBG on by default
             search_regex: None,
             search_query: String::new(),
             date_from: None,
@@ -487,7 +489,7 @@ impl App {
         self.horizontal_scroll += amount;
     }
 
-    fn ensure_selected_visible(&mut self) {
+    pub fn ensure_selected_visible(&mut self) {
         // This will be called with viewport height from UI
         // For now, just ensure scroll_offset is reasonable
         if self.selected_index < self.scroll_offset {
@@ -500,11 +502,33 @@ impl App {
             return;
         }
 
+        // Selected is above viewport - scroll up
         if self.selected_index < self.scroll_offset {
             self.scroll_offset = self.selected_index;
-        } else if self.selected_index >= self.scroll_offset + viewport_height {
-            self.scroll_offset = self.selected_index - viewport_height + 1;
+            return;
         }
+
+        // Count visual lines from scroll_offset through selected_index (inclusive)
+        let mut visual_lines = 0;
+        for idx in self.scroll_offset..=self.selected_index {
+            visual_lines += self.visual_lines_for_entry(idx);
+        }
+
+        // If selected entry extends beyond viewport, increase scroll_offset
+        while visual_lines > viewport_height && self.scroll_offset < self.selected_index {
+            visual_lines -= self.visual_lines_for_entry(self.scroll_offset);
+            self.scroll_offset += 1;
+        }
+    }
+
+    /// Calculate how many visual lines an entry occupies (1 if collapsed, 1+continuations if expanded)
+    pub fn visual_lines_for_entry(&self, filtered_idx: usize) -> usize {
+        if let Some(&entry_idx) = self.filtered_indices.get(filtered_idx) {
+            if self.expanded_entries.contains(&entry_idx) {
+                return 1 + self.entries[entry_idx].continuation_lines.len();
+            }
+        }
+        1
     }
 
     fn clamp_scroll(&mut self) {
@@ -530,9 +554,21 @@ impl App {
 
     /// Open search overlay
     pub fn open_search(&mut self) {
+        // Compute match_indices based on current search regex applied to ALL entries
+        let match_indices = if let Some(ref regex) = self.search_regex {
+            self.entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| regex.is_match(entry.searchable_text()))
+                .map(|(idx, _)| idx)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         self.focus = FocusState::Search {
             query: self.search_query.clone(),
-            match_indices: Vec::new(),
+            match_indices,
             current_match: 0,
         };
     }
@@ -549,8 +585,10 @@ impl App {
     /// Open file open dialog
     pub fn open_file_dialog(&mut self) {
         self.focus = FocusState::FileOpen {
-            path: self.file_path.clone(),
+            path: String::new(),
             selected_recent: 0,
+            cursor_pos: 0,
+            error: None,
         };
     }
 

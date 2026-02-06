@@ -85,7 +85,9 @@ fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_h
             };
             spans.push(Span::styled(
                 indicator,
-                Style::default().fg(Color::DarkGray),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 
@@ -175,17 +177,19 @@ fn draw_log_view_wrapped(
 
         let message = extract_message(&entry.raw_line);
 
-        // Add expand indicator if has continuation lines
-        let full_message = if entry.continuation_lines.is_empty() {
-            message.to_string()
-        } else if is_expanded {
-            format!("{} [-{}]", message, entry.continuation_lines.len())
+        // Build expand indicator separately so it can be styled
+        let indicator = if !entry.continuation_lines.is_empty() {
+            Some(if is_expanded {
+                format!(" [-{}]", entry.continuation_lines.len())
+            } else {
+                format!(" [+{}]", entry.continuation_lines.len())
+            })
         } else {
-            format!("{} [+{}]", message, entry.continuation_lines.len())
+            None
         };
 
         // Wrap the main message
-        let wrapped_parts = wrap_text(&full_message, msg_width);
+        let wrapped_parts = wrap_text(message, msg_width);
 
         for (i, part) in wrapped_parts.iter().enumerate() {
             if visual_lines.len() >= viewport_height {
@@ -194,7 +198,7 @@ fn draw_log_view_wrapped(
 
             let line = if i == 0 {
                 // First line: show timestamp and level
-                Line::from(vec![
+                let mut spans = vec![
                     Span::styled(timestamp.clone(), Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         format!(" {} ", entry.level.short_name()),
@@ -202,7 +206,16 @@ fn draw_log_view_wrapped(
                     ),
                     Span::raw(" "),
                     Span::raw(part.clone()),
-                ])
+                ];
+                if let Some(ref ind) = indicator {
+                    spans.push(Span::styled(
+                        ind.clone(),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                Line::from(spans)
             } else {
                 // Wrapped continuation: indent to align with message
                 Line::from(vec![
@@ -458,7 +471,7 @@ fn draw_search_bar(frame: &mut Frame, app: &App) {
         Span::raw(" "),
         Span::styled(match_info, Style::default().fg(Color::DarkGray)),
         Span::styled(
-            " | n/N: next/prev | Enter: close ",
+            " | C-n/C-p: navigate | Enter: filter | Esc: cancel ",
             Style::default().fg(Color::DarkGray),
         ),
     ]);
@@ -522,11 +535,13 @@ fn draw_file_open(frame: &mut Frame, app: &App) {
     let area = centered_rect(60, 50, frame.area());
     frame.render_widget(Clear, area);
 
-    let (path, selected) = match &app.focus {
+    let (path, selected, cursor_pos, error) = match &app.focus {
         FocusState::FileOpen {
             path,
             selected_recent,
-        } => (path.as_str(), *selected_recent),
+            cursor_pos,
+            error,
+        } => (path.as_str(), *selected_recent, *cursor_pos, error.as_deref()),
         _ => return,
     };
 
@@ -538,19 +553,47 @@ fn draw_file_open(frame: &mut Frame, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Path input
-    let input_line = Line::from(vec![
-        Span::styled("Path: ", Style::default().fg(Color::Cyan)),
-        Span::raw(path),
-    ]);
+    // Path input with cursor
+    let cursor_style = Style::default().bg(Color::White).fg(Color::Black);
+    let chars: Vec<char> = path.chars().collect();
+    let input_line = if cursor_pos >= chars.len() {
+        // Cursor at end: show text + cursor block (space with inverted style)
+        Line::from(vec![
+            Span::styled("Path: ", Style::default().fg(Color::Cyan)),
+            Span::raw(path),
+            Span::styled(" ", cursor_style),
+        ])
+    } else {
+        // Cursor in middle: split into before | cursor_char | after
+        let before: String = chars[..cursor_pos].iter().collect();
+        let cursor_char: String = chars[cursor_pos].to_string();
+        let after: String = chars[cursor_pos + 1..].iter().collect();
+        Line::from(vec![
+            Span::styled("Path: ", Style::default().fg(Color::Cyan)),
+            Span::raw(before),
+            Span::styled(cursor_char, cursor_style),
+            Span::raw(after),
+        ])
+    };
     let input_area = Rect { height: 1, ..inner };
     frame.render_widget(Paragraph::new(input_line), input_area);
+
+    // Error message
+    if let Some(err) = error {
+        let error_area = Rect {
+            y: inner.y + 1,
+            height: 1,
+            ..inner
+        };
+        let error_line = Line::from(Span::styled(err, Style::default().fg(Color::Red)));
+        frame.render_widget(Paragraph::new(error_line), error_area);
+    }
 
     // Recent files
     if !app.recent_files.is_empty() {
         let recent_area = Rect {
             y: inner.y + 2,
-            height: inner.height.saturating_sub(2),
+            height: inner.height.saturating_sub(3), // -3: input + gap + help line
             ..inner
         };
 
@@ -572,12 +615,15 @@ fn draw_file_open(frame: &mut Frame, app: &App) {
             ..recent_area
         };
 
+        let typing = !path.is_empty();
         let items: Vec<ListItem> = app
             .recent_files
             .iter()
             .enumerate()
             .map(|(i, file)| {
-                let style = if i == selected {
+                let style = if typing {
+                    Style::default().fg(Color::DarkGray)
+                } else if i == selected {
                     Style::default().bg(Color::Cyan).fg(Color::Black)
                 } else {
                     Style::default()
@@ -588,6 +634,19 @@ fn draw_file_open(frame: &mut Frame, app: &App) {
 
         frame.render_widget(List::new(items), list_area);
     }
+
+    // Help text at bottom
+    let help_area = Rect {
+        x: inner.x,
+        y: inner.y + inner.height.saturating_sub(1),
+        width: inner.width,
+        height: 1,
+    };
+    let help_line = Line::from(Span::styled(
+        "Esc: cancel | Enter: open | Tab: fill | ^U: clear",
+        Style::default().fg(Color::DarkGray),
+    ));
+    frame.render_widget(Paragraph::new(help_line), help_area);
 }
 
 /// Get color for log level

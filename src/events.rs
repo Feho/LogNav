@@ -26,7 +26,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
 fn handle_normal_key(app: &mut App, key: KeyEvent) {
     match (key.modifiers, key.code) {
         // Quit
-        (_, KeyCode::Esc) | (_, KeyCode::Char('q')) => {
+        (_, KeyCode::Char('q')) => {
             app.should_quit = true;
         }
 
@@ -83,21 +83,6 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         // Expand/collapse entry
         (_, KeyCode::Enter) => app.toggle_expand(),
-
-        // Search navigation (when search was applied)
-        (_, KeyCode::Char('n')) => {
-            // Jump to next match if search is active
-            if app.search_regex.is_some() {
-                app.open_search();
-                app.next_search_match();
-            }
-        }
-        (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
-            if app.search_regex.is_some() {
-                app.open_search();
-                app.prev_search_match();
-            }
-        }
 
         _ => {}
     }
@@ -163,6 +148,35 @@ fn handle_command_palette_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Compute search matches based on query without applying filter
+fn update_search_matches(
+    entries: &[crate::log_entry::LogEntry],
+    query: &str,
+    match_indices: &mut Vec<usize>,
+    current_match: &mut usize,
+) {
+    match_indices.clear();
+
+    if query.is_empty() {
+        *current_match = 0;
+        return;
+    }
+
+    // Try to compile regex from query
+    if let Ok(regex) = regex::Regex::new(&format!("(?i){}", regex::escape(query))) {
+        *match_indices = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| regex.is_match(entry.searchable_text()))
+            .map(|(idx, _)| idx)
+            .collect();
+    }
+
+    if !match_indices.is_empty() && *current_match >= match_indices.len() {
+        *current_match = 0;
+    }
+}
+
 /// Handle keys in search mode
 fn handle_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -173,7 +187,7 @@ fn handle_search_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Enter => {
-            // Apply search from focus state and close
+            // Apply search filter from focus state and close
             let query = match &app.focus {
                 FocusState::Search { query, .. } => query.clone(),
                 _ => return,
@@ -184,40 +198,83 @@ fn handle_search_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            // Apply search first if not yet applied, then navigate
-            let query = match &app.focus {
-                FocusState::Search { query, .. } => query.clone(),
-                _ => return,
-            };
-            if app.search_query != query {
-                app.set_search(&query);
-                app.update_search_matches();
+            // Navigate to next match in search results without filtering
+            match &mut app.focus {
+                FocusState::Search {
+                    match_indices,
+                    current_match,
+                    ..
+                } => {
+                    if !match_indices.is_empty() {
+                        *current_match = (*current_match + 1) % match_indices.len();
+                        let target = match_indices[*current_match];
+                        app.selected_index = target;
+                        app.ensure_selected_visible();
+                    }
+                }
+                _ => {}
             }
-            app.next_search_match();
         }
 
         KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let query = match &app.focus {
-                FocusState::Search { query, .. } => query.clone(),
-                _ => return,
-            };
-            if app.search_query != query {
-                app.set_search(&query);
-                app.update_search_matches();
+            // Navigate to previous match in search results without filtering
+            match &mut app.focus {
+                FocusState::Search {
+                    match_indices,
+                    current_match,
+                    ..
+                } => {
+                    if !match_indices.is_empty() {
+                        *current_match = if *current_match == 0 {
+                            match_indices.len() - 1
+                        } else {
+                            *current_match - 1
+                        };
+                        let target = match_indices[*current_match];
+                        app.selected_index = target;
+                        app.ensure_selected_visible();
+                    }
+                }
+                _ => {}
             }
-            app.prev_search_match();
         }
 
         KeyCode::Char(c) => {
-            // Just update the focus state query, don't apply filter yet
-            if let FocusState::Search { query, .. } = &mut app.focus {
-                query.push(c);
+            // Update query and recompute match_indices without filtering
+            let query = match &mut app.focus {
+                FocusState::Search { query, .. } => {
+                    query.push(c);
+                    query.clone()
+                }
+                _ => return,
+            };
+            // Recompute matches as user types
+            if let FocusState::Search {
+                match_indices,
+                current_match,
+                ..
+            } = &mut app.focus
+            {
+                update_search_matches(&app.entries, &query, match_indices, current_match);
             }
         }
 
         KeyCode::Backspace => {
-            if let FocusState::Search { query, .. } = &mut app.focus {
-                query.pop();
+            let query = match &mut app.focus {
+                FocusState::Search { query, .. } => {
+                    query.pop();
+                    query.clone()
+                }
+                _ => return,
+            };
+            // Recompute matches as user deletes
+            if let FocusState::Search {
+                match_indices,
+                current_match,
+                ..
+            } = &mut app.focus
+            {
+                update_search_matches(&app.entries, &query, match_indices, current_match);
             }
         }
 
@@ -289,6 +346,14 @@ fn handle_date_filter_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Convert a char index to a byte index within a string
+fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
+    s.char_indices()
+        .nth(char_idx)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len())
+}
+
 /// Handle keys in file open dialog
 fn handle_file_open_key(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -301,17 +366,35 @@ fn handle_file_open_key(app: &mut App, key: KeyEvent) {
                 FocusState::FileOpen {
                     path,
                     selected_recent,
+                    ..
                 } => {
                     if path.is_empty() && !app.recent_files.is_empty() {
                         app.recent_files.get(*selected_recent).cloned()
                     } else {
-                        Some(path.clone())
+                        // Tilde expansion
+                        let expanded = if path == "~" {
+                            std::env::var("HOME").unwrap_or_else(|_| path.clone())
+                        } else if let Some(rest) = path.strip_prefix("~/") {
+                            match std::env::var("HOME") {
+                                Ok(home) => format!("{}/{}", home, rest),
+                                Err(_) => path.clone(),
+                            }
+                        } else {
+                            path.clone()
+                        };
+                        Some(expanded)
                     }
                 }
                 _ => return,
             };
 
             if let Some(path) = file_path {
+                if !std::path::Path::new(&path).is_file() {
+                    if let FocusState::FileOpen { error, .. } = &mut app.focus {
+                        *error = Some(format!("File not found: {}", path));
+                    }
+                    return;
+                }
                 app.file_path = path;
             }
             app.close_overlay();
@@ -321,10 +404,9 @@ fn handle_file_open_key(app: &mut App, key: KeyEvent) {
             if let FocusState::FileOpen {
                 selected_recent, ..
             } = &mut app.focus
+                && *selected_recent > 0
             {
-                if *selected_recent > 0 {
-                    *selected_recent -= 1;
-                }
+                *selected_recent -= 1;
             }
         }
 
@@ -332,10 +414,42 @@ fn handle_file_open_key(app: &mut App, key: KeyEvent) {
             if let FocusState::FileOpen {
                 selected_recent, ..
             } = &mut app.focus
+                && *selected_recent + 1 < app.recent_files.len()
             {
-                if *selected_recent + 1 < app.recent_files.len() {
-                    *selected_recent += 1;
+                *selected_recent += 1;
+            }
+        }
+
+        KeyCode::Left => {
+            if let FocusState::FileOpen { cursor_pos, .. } = &mut app.focus {
+                *cursor_pos = cursor_pos.saturating_sub(1);
+            }
+        }
+
+        KeyCode::Right => {
+            if let FocusState::FileOpen {
+                path, cursor_pos, ..
+            } = &mut app.focus
+            {
+                let char_count = path.chars().count();
+                if *cursor_pos < char_count {
+                    *cursor_pos += 1;
                 }
+            }
+        }
+
+        KeyCode::Home => {
+            if let FocusState::FileOpen { cursor_pos, .. } = &mut app.focus {
+                *cursor_pos = 0;
+            }
+        }
+
+        KeyCode::End => {
+            if let FocusState::FileOpen {
+                path, cursor_pos, ..
+            } = &mut app.focus
+            {
+                *cursor_pos = path.chars().count();
             }
         }
 
@@ -347,22 +461,100 @@ fn handle_file_open_key(app: &mut App, key: KeyEvent) {
                 } => app.recent_files.get(*selected_recent).cloned(),
                 _ => return,
             };
-            if let Some(recent) = recent_path {
-                if let FocusState::FileOpen { path, .. } = &mut app.focus {
-                    *path = recent;
+            if let Some(recent) = recent_path
+                && let FocusState::FileOpen {
+                    path,
+                    cursor_pos,
+                    error,
+                    ..
+                } = &mut app.focus
+            {
+                *path = recent;
+                *cursor_pos = path.chars().count();
+                *error = None;
+            }
+        }
+
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let FocusState::FileOpen {
+                path,
+                cursor_pos,
+                error,
+                ..
+            } = &mut app.focus
+            {
+                path.clear();
+                *cursor_pos = 0;
+                *error = None;
+            }
+        }
+
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let FocusState::FileOpen {
+                path,
+                cursor_pos,
+                error,
+                ..
+            } = &mut app.focus
+                && *cursor_pos > 0
+            {
+                *error = None;
+                let byte_end = char_to_byte_index(path, *cursor_pos);
+                let mut new_pos = *cursor_pos;
+
+                // Skip trailing '/' separators
+                while new_pos > 0 {
+                    let bi = char_to_byte_index(path, new_pos - 1);
+                    if path[bi..].starts_with('/') {
+                        new_pos -= 1;
+                    } else {
+                        break;
+                    }
                 }
+
+                // Delete back to previous '/' or start
+                while new_pos > 0 {
+                    let bi = char_to_byte_index(path, new_pos - 1);
+                    if path[bi..].starts_with('/') {
+                        break;
+                    }
+                    new_pos -= 1;
+                }
+
+                let byte_start = char_to_byte_index(path, new_pos);
+                path.drain(byte_start..byte_end);
+                *cursor_pos = new_pos;
             }
         }
 
         KeyCode::Char(c) => {
-            if let FocusState::FileOpen { path, .. } = &mut app.focus {
-                path.push(c);
+            if let FocusState::FileOpen {
+                path,
+                cursor_pos,
+                error,
+                ..
+            } = &mut app.focus
+            {
+                let byte_idx = char_to_byte_index(path, *cursor_pos);
+                path.insert(byte_idx, c);
+                *cursor_pos += 1;
+                *error = None;
             }
         }
 
         KeyCode::Backspace => {
-            if let FocusState::FileOpen { path, .. } = &mut app.focus {
-                path.pop();
+            if let FocusState::FileOpen {
+                path,
+                cursor_pos,
+                error,
+                ..
+            } = &mut app.focus
+                && *cursor_pos > 0
+            {
+                let byte_idx = char_to_byte_index(path, *cursor_pos - 1);
+                path.remove(byte_idx);
+                *cursor_pos -= 1;
+                *error = None;
             }
         }
 
@@ -384,11 +576,18 @@ fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         MouseEventKind::Down(_) => {
             // Click to select - only in normal mode
             if matches!(app.focus, FocusState::Normal) {
-                // Calculate which entry was clicked
                 let clicked_row = mouse.row as usize;
-                let target_index = app.scroll_offset + clicked_row;
-                if target_index < app.filtered_indices.len() {
-                    app.selected_index = target_index;
+                // Walk through visible entries accounting for expanded entries
+                let mut visual_row = 0;
+                let mut entry_idx = app.scroll_offset;
+                while entry_idx < app.filtered_indices.len() {
+                    let lines = app.visual_lines_for_entry(entry_idx);
+                    if visual_row + lines > clicked_row {
+                        app.selected_index = entry_idx;
+                        break;
+                    }
+                    visual_row += lines;
+                    entry_idx += 1;
                 }
             }
         }
