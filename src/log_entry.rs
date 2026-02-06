@@ -107,7 +107,7 @@ static WD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static WPC_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(DBG|INF|WRN|ERR)\s+(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})").unwrap()
+    Regex::new(r"^(VRB|DBG|INF|WRN|ERR)\s+(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})").unwrap()
 });
 
 static TIMESTAMP_FORMAT: &str = "%m-%d %H:%M:%S%.3f";
@@ -148,6 +148,7 @@ fn parse_wd_level(token: &str) -> LogLevel {
 /// Parse log level from wpc.log token
 fn parse_wpc_level(token: &str) -> LogLevel {
     match token {
+        "VRB" => LogLevel::Trace,
         "DBG" => LogLevel::Debug,
         "INF" => LogLevel::Info,
         "WRN" => LogLevel::Warn,
@@ -429,5 +430,22 @@ mod tests {
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Error);
+    }
+
+    #[test]
+    fn test_parse_wpc_log_verbose() {
+        let content = "VRB 03-21 14:23:01.234 Verbose message";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Trace);
+    }
+
+    #[test]
+    fn test_parse_wpc_log_vrb_not_continuation() {
+        let content = "INF 03-21 14:23:01.234 Info message\nVRB 03-21 14:23:01.235 Verbose message";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].level, LogLevel::Info);
+        assert_eq!(entries[1].level, LogLevel::Trace);
     }
 }
