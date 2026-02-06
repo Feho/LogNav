@@ -5,11 +5,11 @@ use crossterm::event::{MouseEvent, MouseEventKind};
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            app.scroll_up(3);
+            app.scroll_viewport_up(3, app.viewport_height);
         }
 
         MouseEventKind::ScrollDown => {
-            app.scroll_down(3);
+            app.scroll_viewport_down(3, app.viewport_height);
         }
 
         MouseEventKind::Down(_) => {

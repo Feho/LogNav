@@ -2,17 +2,20 @@ use crate::app::App;
 use crate::log_entry::LogLevel;
 use crate::ui::{extract_message, level_color, level_style};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 /// Draw the main log view
 pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height as usize;
     let viewport_width = area.width as usize;
+
+    // Store viewport height for mouse scrolling
+    app.viewport_height = viewport_height;
 
     if app.wrap_enabled {
         draw_log_view_wrapped(frame, app, area, viewport_height, viewport_width);

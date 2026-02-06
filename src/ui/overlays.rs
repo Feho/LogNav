@@ -530,7 +530,12 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
 
     // Scroll indicator at bottom
     if max_scroll > 0 {
-        let scroll_text = format!("{}-{}/{} lines", scroll + 1, (scroll + visible_height).min(total_lines), total_lines);
+        let scroll_text = format!(
+            "{}-{}/{} lines",
+            scroll + 1,
+            (scroll + visible_height).min(total_lines),
+            total_lines
+        );
         let scroll_area = Rect {
             x: inner.x,
             y: inner.y + inner.height.saturating_sub(1),

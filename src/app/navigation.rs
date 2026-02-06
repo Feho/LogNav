@@ -57,6 +57,42 @@ impl App {
         self.ensure_selected_visible();
     }
 
+    /// Scroll viewport up without moving cursor (mouse wheel style)
+    /// When cursor would go off-screen, it jumps to bottom of viewport
+    pub fn scroll_viewport_up(&mut self, amount: usize, viewport_height: usize) {
+        if self.filtered_indices.is_empty() || viewport_height == 0 {
+            return;
+        }
+
+        let new_offset = self.scroll_offset.saturating_sub(amount);
+
+        // If cursor would go below viewport, move it to bottom of new viewport
+        if self.selected_index >= new_offset + viewport_height {
+            self.selected_index =
+                (new_offset + viewport_height - 1).min(self.filtered_indices.len() - 1);
+        }
+
+        self.scroll_offset = new_offset;
+    }
+
+    /// Scroll viewport down without moving cursor (mouse wheel style)
+    /// When cursor would go off-screen, it jumps to top of viewport
+    pub fn scroll_viewport_down(&mut self, amount: usize, viewport_height: usize) {
+        if self.filtered_indices.is_empty() || viewport_height == 0 {
+            return;
+        }
+
+        let max_offset = self.filtered_indices.len().saturating_sub(1);
+        let new_offset = (self.scroll_offset + amount).min(max_offset);
+
+        // If cursor would go above viewport, move it to top of new viewport
+        if self.selected_index < new_offset {
+            self.selected_index = new_offset;
+        }
+
+        self.scroll_offset = new_offset;
+    }
+
     pub fn scroll_to_top(&mut self) {
         self.selected_index = 0;
         self.scroll_offset = 0;

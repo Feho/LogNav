@@ -77,6 +77,7 @@ pub struct App {
     pub wrap_enabled: bool,
     pub horizontal_scroll: usize,
     pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
+    pub viewport_height: usize,           // Last known viewport height for mouse scroll
 
     // File state
     pub file_path: String,
@@ -88,6 +89,9 @@ pub struct App {
 
     // Fuzzy matcher for command palette
     fuzzy_matcher: SkimMatcherV2,
+
+    // Clipboard for copying (kept alive to prevent drop issues)
+    clipboard: Option<arboard::Clipboard>,
 }
 
 impl Default for App {
@@ -113,11 +117,13 @@ impl App {
             wrap_enabled: false,
             horizontal_scroll: 0,
             expanded_entries: HashSet::new(),
+            viewport_height: 25, // Default viewport height
             file_path: String::new(),
             recent_files: Vec::new(),
             status_message: None,
             should_quit: false,
             fuzzy_matcher: SkimMatcherV2::default(),
+            clipboard: arboard::Clipboard::new().ok(),
         }
     }
 
@@ -360,5 +366,50 @@ impl App {
             .map(|(_, l)| *l)
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    /// Copy the current entry to clipboard (includes continuation lines)
+    pub fn copy_current_line(&mut self) {
+        // Build full text with continuation lines
+        let text_to_copy = self.selected_entry().map(|e| {
+            if e.continuation_lines.is_empty() {
+                e.raw_line.clone()
+            } else {
+                let mut text = e.raw_line.clone();
+                for line in &e.continuation_lines {
+                    text.push('\n');
+                    text.push_str(line);
+                }
+                text
+            }
+        });
+
+        if let Some(text) = text_to_copy {
+            // Try to use existing clipboard or create new one if needed
+            let result = if let Some(ref mut clipboard) = self.clipboard {
+                clipboard.set_text(&text)
+            } else {
+                // Try to create clipboard if it doesn't exist
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => {
+                        let result = clipboard.set_text(&text);
+                        self.clipboard = Some(clipboard);
+                        result
+                    }
+                    Err(_) => {
+                        self.status_message = Some("Clipboard unavailable".to_string());
+                        return;
+                    }
+                }
+            };
+
+            if result.is_ok() {
+                self.status_message = Some("Copied!".to_string());
+            } else {
+                self.status_message = Some("Failed to copy".to_string());
+            }
+        } else {
+            self.status_message = Some("No line selected".to_string());
+        }
     }
 }

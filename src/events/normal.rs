@@ -71,6 +71,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.open_detail_popup();
         }
 
+        // Copy current line
+        (_, KeyCode::Char('c')) => {
+            app.copy_current_line();
+        }
+
         _ => {}
     }
 }
