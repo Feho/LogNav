@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, FocusState};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -12,11 +12,6 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let total = app.entries.len();
     let shown = app.filtered_indices.len();
     let levels = app.active_levels_display();
-    let tail = if app.tail_enabled {
-        "Tail ON"
-    } else {
-        "Tail OFF"
-    };
 
     let file_display = if app.file_path.is_empty() {
         "No file".to_string()
@@ -28,16 +23,57 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| app.file_path.clone())
     };
 
-    let date_filter = app
-        .date_filter_display()
-        .map(|d| format!(" | {}", d))
-        .unwrap_or_default();
+    // Mode indicator
+    let mode = match app.focus {
+        FocusState::Normal => "[NORMAL]",
+        FocusState::CommandPalette { .. } => "[COMMAND]",
+        FocusState::Search { .. } => "[SEARCH]",
+        FocusState::DateFilter { .. } => "[DATE FILTER]",
+        FocusState::FileOpen { .. } => "[OPEN FILE]",
+        FocusState::Detail { .. } => "[DETAIL]",
+        FocusState::Help { .. } => "[HELP]",
+    };
 
-    let left = format!(
-        " {} | {}/{} | {} | {}{} ",
-        file_display, shown, total, levels, tail, date_filter
-    );
-    let right = "d:detail | Ctrl+P ";
+    // Build status components
+    let mut parts = vec![
+        mode.to_string(),
+        file_display,
+        format!("{}/{}", shown, total),
+        levels,
+    ];
+
+    // Add wrap status
+    if app.wrap_enabled {
+        parts.push("Wrap:ON".to_string());
+    }
+
+    // Add tail status
+    if app.tail_enabled {
+        parts.push("Tail".to_string());
+    }
+
+    // Add horizontal scroll indicator if scrolled
+    if app.horizontal_scroll > 0 {
+        parts.push(format!("Col:{}", app.horizontal_scroll));
+    }
+
+    // Add date filter if active
+    if let Some(date_filter) = app.date_filter_display() {
+        parts.push(date_filter);
+    }
+
+    let left = format!(" {} ", parts.join(" | "));
+
+    // Right side: context-aware hints
+    let right = match app.focus {
+        FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open | ?:help | q:quit",
+        FocusState::Search { .. } => "C-n/C-p:nav | Enter:filter | Esc:cancel ",
+        FocusState::CommandPalette { .. } => "Esc:close | Enter:run ",
+        FocusState::DateFilter { .. } => "Tab:switch | Enter:apply | Esc:close ",
+        FocusState::FileOpen { .. } => "Tab:fill | Enter:open | Esc:cancel ",
+        FocusState::Detail { .. } => "j/k:scroll | Esc:close ",
+        FocusState::Help { .. } => "j/k:scroll | Esc/q:close ",
+    };
 
     let left_len = left.len();
     let right_len = right.len();
@@ -46,11 +82,10 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let line = Line::from(vec![
         Span::styled(left, Style::default().fg(Color::White)),
         Span::raw(" ".repeat(padding)),
-        Span::styled(right, Style::default().fg(Color::DarkGray)),
+        Span::styled(right, Style::default().fg(Color::Cyan)),
     ]);
 
-    let paragraph =
-        Paragraph::new(line).style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Black).fg(Color::White));
 
     frame.render_widget(paragraph, area);
 }

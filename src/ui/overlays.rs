@@ -100,7 +100,7 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         Span::raw(" "),
         Span::styled(match_info, Style::default().fg(Color::DarkGray)),
         Span::styled(
-            " | C-n/C-p: navigate | Enter: filter | Esc: cancel ",
+            " | C-n/C-p:prev/next | Enter:apply filter | Esc:cancel",
             Style::default().fg(Color::DarkGray),
         ),
     ]);
@@ -434,10 +434,134 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
         height: 1,
     };
     let help_line = Line::from(Span::styled(
-        "Esc: cancel | Enter: open | Tab: fill | ^U: clear",
+        "Esc:cancel | Enter:open | Tab:fill recent | ^W:delete word | ^U:clear",
         Style::default().fg(Color::DarkGray),
     ));
     frame.render_widget(Paragraph::new(help_line), help_area);
+}
+
+/// Draw help dialog with virtual scroll
+pub fn draw_help(frame: &mut Frame, app: &App) {
+    let area = centered_rect(70, 80, frame.area());
+    frame.render_widget(Clear, area);
+
+    let scroll_offset = match &app.focus {
+        FocusState::Help { scroll_offset } => *scroll_offset,
+        _ => return,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" LogNav Help ");
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let help_text = vec![
+        Line::from(vec![Span::styled(
+            "NAVIGATION",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  j/\u{2193}       Next entry"),
+        Line::from("  k/\u{2191}       Previous entry"),
+        Line::from("  g/Home    Go to top"),
+        Line::from("  G/End     Go to bottom"),
+        Line::from("  h/l/\u{2190}/\u{2192}   Scroll horizontally"),
+        Line::from("  Enter     Expand/collapse entry"),
+        Line::from("  a         Expand/collapse all"),
+        Line::from("  Mouse     Scroll wheel to navigate"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "SEARCH & FILTER",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  / or C-f  Open search (live highlight)"),
+        Line::from("  C-n/C-p   Next/previous match in search"),
+        Line::from("  Enter     Apply search as filter"),
+        Line::from("  C-d       Date range filter"),
+        Line::from("  1-6       Toggle levels: 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "VIEW",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  w         Toggle word wrap"),
+        Line::from("  t         Toggle tail mode (auto-scroll)"),
+        Line::from("  d         Show entry detail popup"),
+        Line::from("  c         Copy current entry to clipboard"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "FILE",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  o or C-o  Open file dialog"),
+        Line::from("  Tab       Fill path from recent files"),
+        Line::from("  ^W        Delete word in path input"),
+        Line::from("  ~         Tilde expansion for home directory"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "OTHER",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  C-p       Command palette (all commands)"),
+        Line::from("  q         Quit (normal mode)"),
+        Line::from("  ? or F1   Show this help"),
+        Line::from("  Esc       Close dialog (doesn't quit)"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "LEVEL FILTERS",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  Press 1-6 to toggle visibility of each level"),
+        Line::from("  Default: ERR, WRN, INF, DBG are ON"),
+        Line::from("  TRC (trace) and PRF (profile) are OFF"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "SEARCH MODES",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  Live search: / to search, matches highlighted"),
+        Line::from("  Filter: Enter to apply search as filter"),
+        Line::from("  Clear: / then Esc to clear filter"),
+    ];
+
+    let visible_height = inner.height as usize;
+    let total_lines = help_text.len();
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let scroll = scroll_offset.min(max_scroll);
+
+    // Slice to visible lines
+    let visible_lines: Vec<Line> = help_text
+        .into_iter()
+        .skip(scroll)
+        .take(visible_height)
+        .collect();
+
+    frame.render_widget(Paragraph::new(visible_lines), inner);
+
+    // Scroll indicator
+    if max_scroll > 0 {
+        let scroll_text = format!(
+            "{}-{}/{} lines",
+            scroll + 1,
+            (scroll + visible_height).min(total_lines),
+            total_lines
+        );
+        let scroll_area = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(1),
+            width: inner.width,
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                scroll_text,
+                Style::default().fg(Color::DarkGray),
+            ))),
+            scroll_area,
+        );
+    }
 }
 
 /// Draw detail popup showing full entry text with wrapping

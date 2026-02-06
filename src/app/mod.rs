@@ -1,7 +1,7 @@
 use crate::log_entry::LogEntry;
 use chrono::NaiveDateTime;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use regex::Regex;
 use std::collections::HashSet;
 
@@ -37,6 +37,9 @@ pub enum FocusState {
         error: Option<String>,
     },
     Detail {
+        scroll_offset: usize,
+    },
+    Help {
         scroll_offset: usize,
     },
 }
@@ -263,6 +266,11 @@ impl App {
     /// Open detail popup for selected entry
     pub fn open_detail_popup(&mut self) {
         self.focus = FocusState::Detail { scroll_offset: 0 };
+    }
+
+    /// Open help dialog
+    pub fn open_help(&mut self) {
+        self.focus = FocusState::Help { scroll_offset: 0 };
     }
 
     /// Close any overlay and return to normal

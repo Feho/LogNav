@@ -5,6 +5,7 @@ mod command;
 mod date_filter;
 mod detail;
 mod file_open;
+mod help;
 mod mouse;
 mod normal;
 mod search;
@@ -28,5 +29,6 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::DateFilter { .. } => date_filter::handle_date_filter_key(app, key),
         FocusState::FileOpen { .. } => file_open::handle_file_open_key(app, key),
         FocusState::Detail { .. } => detail::handle_detail_key(app, key),
+        FocusState::Help { .. } => help::handle_help_key(app, key),
     }
 }

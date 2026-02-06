@@ -9,13 +9,18 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.should_quit = true;
         }
 
+        // Help
+        (_, KeyCode::Char('?')) | (_, KeyCode::F(1)) => {
+            app.open_help();
+        }
+
         // Command palette
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
             app.open_command_palette();
         }
 
         // Open file
-        (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
+        (KeyModifiers::CONTROL, KeyCode::Char('o')) | (_, KeyCode::Char('o')) => {
             app.open_file_dialog();
         }
 
@@ -32,20 +37,58 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         // Toggle tail
         (KeyModifiers::CONTROL, KeyCode::Char('t')) | (_, KeyCode::Char('t')) => {
             app.toggle_tail();
+            app.status_message = Some(format!(
+                "Tail mode {}",
+                if app.tail_enabled { "ON" } else { "OFF" }
+            ));
         }
 
         // Toggle wrap
         (KeyModifiers::CONTROL, KeyCode::Char('w')) | (_, KeyCode::Char('w')) => {
             app.toggle_wrap();
+            app.status_message = Some(format!(
+                "Word wrap {}",
+                if app.wrap_enabled { "ON" } else { "OFF" }
+            ));
         }
 
-        // Level toggles (1-6)
-        (_, KeyCode::Char('1')) => app.toggle_level(0),
-        (_, KeyCode::Char('2')) => app.toggle_level(1),
-        (_, KeyCode::Char('3')) => app.toggle_level(2),
-        (_, KeyCode::Char('4')) => app.toggle_level(3),
-        (_, KeyCode::Char('5')) => app.toggle_level(4),
-        (_, KeyCode::Char('6')) => app.toggle_level(5),
+        // Level toggles (1-6) with status messages
+        (_, KeyCode::Char('1')) => {
+            app.toggle_level(0);
+            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][0];
+            let state = if app.level_filters[0] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", level_name, state));
+        }
+        (_, KeyCode::Char('2')) => {
+            app.toggle_level(1);
+            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][1];
+            let state = if app.level_filters[1] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", level_name, state));
+        }
+        (_, KeyCode::Char('3')) => {
+            app.toggle_level(2);
+            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][2];
+            let state = if app.level_filters[2] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", level_name, state));
+        }
+        (_, KeyCode::Char('4')) => {
+            app.toggle_level(3);
+            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][3];
+            let state = if app.level_filters[3] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", level_name, state));
+        }
+        (_, KeyCode::Char('5')) => {
+            app.toggle_level(4);
+            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][4];
+            let state = if app.level_filters[4] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", level_name, state));
+        }
+        (_, KeyCode::Char('6')) => {
+            app.toggle_level(5);
+            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][5];
+            let state = if app.level_filters[5] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", level_name, state));
+        }
 
         // Navigation
         (_, KeyCode::Up) | (_, KeyCode::Char('k')) => app.scroll_up(1),
