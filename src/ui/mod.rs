@@ -17,7 +17,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Main layout: log view + status bar
     let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(area);
 
-    log_view::draw_log_view(frame, app, chunks[0]);
+    // When search bar is active, shrink log view by 1 row so it doesn't overlap
+    let log_area = match &app.focus {
+        FocusState::Search { .. } => Rect {
+            y: chunks[0].y + 1,
+            height: chunks[0].height.saturating_sub(1),
+            ..chunks[0]
+        },
+        _ => chunks[0],
+    };
+
+    log_view::draw_log_view(frame, app, log_area);
     status_bar::draw_status_bar(frame, app, chunks[1]);
 
     // Draw overlays on top

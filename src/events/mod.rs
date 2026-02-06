@@ -10,6 +10,8 @@ mod mouse;
 mod normal;
 mod search;
 
+pub use search::flush_search;
+
 /// Handle crossterm events
 pub fn handle_event(app: &mut App, event: Event) {
     match event {

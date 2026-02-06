@@ -97,7 +97,16 @@ async fn run_app(
     tailer_tx: mpsc::Sender<TailerEvent>,
     config: &mut Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    const SEARCH_DEBOUNCE: Duration = Duration::from_millis(150);
+
     loop {
+        // Flush debounced search if deadline passed
+        if let Some(dirty_at) = app.search_dirty {
+            if dirty_at.elapsed() >= SEARCH_DEBOUNCE {
+                events::flush_search(app);
+            }
+        }
+
         // Draw UI
         terminal.draw(|frame| ui::draw(frame, app))?;
 

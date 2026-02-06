@@ -4,6 +4,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use regex::Regex;
 use std::collections::HashSet;
+use std::time::Instant;
 
 pub mod commands;
 pub mod filtering;
@@ -95,6 +96,9 @@ pub struct App {
 
     // Clipboard for copying (kept alive to prevent drop issues)
     clipboard: Option<arboard::Clipboard>,
+
+    // Debounce: when set, search needs recomputing after this instant
+    pub search_dirty: Option<Instant>,
 }
 
 impl Default for App {
@@ -127,6 +131,7 @@ impl App {
             should_quit: false,
             fuzzy_matcher: SkimMatcherV2::default(),
             clipboard: arboard::Clipboard::new().ok(),
+            search_dirty: None,
         }
     }
 
@@ -165,7 +170,7 @@ impl App {
             self.apply_filters_incremental(start_idx);
         }
 
-        if self.tail_enabled {
+        if self.tail_enabled && matches!(self.focus, FocusState::Normal) {
             self.scroll_to_bottom();
         }
     }
@@ -217,13 +222,13 @@ impl App {
 
     /// Open search overlay
     pub fn open_search(&mut self) {
-        // Compute match_indices based on current search regex applied to ALL entries
+        // Compute match_indices as positions within filtered_indices
         let match_indices = if let Some(ref regex) = self.search_regex {
-            self.entries
+            self.filtered_indices
                 .iter()
                 .enumerate()
-                .filter(|(_, entry)| regex.is_match(entry.searchable_text()))
-                .map(|(idx, _)| idx)
+                .filter(|&(_, &entry_idx)| regex.is_match(self.entries[entry_idx].searchable_text()))
+                .map(|(pos, _)| pos)
                 .collect()
         } else {
             Vec::new()

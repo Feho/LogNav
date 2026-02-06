@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, FocusState};
 use crate::log_entry::LogLevel;
 use crate::ui::{extract_message, level_color, level_style};
 use ratatui::{
@@ -8,6 +8,48 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use regex::Regex;
+
+const HIGHLIGHT_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
+
+/// Compile regex from the live search overlay query
+fn compile_overlay_regex(app: &App) -> Option<Regex> {
+    if let FocusState::Search { ref query, .. } = app.focus {
+        if !query.is_empty() {
+            return Regex::new(&format!("(?i){}", regex::escape(query))).ok();
+        }
+    }
+    None
+}
+
+/// Split text into owned spans, highlighting search matches
+fn highlight_spans(text: &str, regex: Option<&Regex>, base_style: Style) -> Vec<Span<'static>> {
+    let regex = match regex {
+        Some(r) => r,
+        None => return vec![Span::styled(text.to_string(), base_style)],
+    };
+
+    let mut spans = Vec::new();
+    let mut last_end = 0;
+
+    for m in regex.find_iter(text) {
+        if m.start() > last_end {
+            spans.push(Span::styled(text[last_end..m.start()].to_string(), base_style));
+        }
+        spans.push(Span::styled(text[m.start()..m.end()].to_string(), HIGHLIGHT_STYLE));
+        last_end = m.end();
+    }
+
+    if last_end < text.len() {
+        spans.push(Span::styled(text[last_end..].to_string(), base_style));
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_string(), base_style));
+    }
+
+    spans
+}
 
 /// Draw the main log view
 pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
@@ -17,15 +59,21 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     // Store viewport height for mouse scrolling
     app.viewport_height = viewport_height;
 
+    // Compute highlight regex once: use committed regex, or compile from overlay query
+    let overlay_regex = compile_overlay_regex(app);
+    let hl_regex = app.search_regex.as_ref().or(overlay_regex.as_ref())
+        .cloned();
+    let hl_regex_ref = hl_regex.as_ref();
+
     if app.wrap_enabled {
-        draw_log_view_wrapped(frame, app, area, viewport_height, viewport_width);
+        draw_log_view_wrapped(frame, app, area, viewport_height, viewport_width, hl_regex_ref);
     } else {
-        draw_log_view_nowrap(frame, app, area, viewport_height);
+        draw_log_view_nowrap(frame, app, area, viewport_height, hl_regex_ref);
     }
 }
 
 /// Draw log view without wrapping (manual rendering for expand support)
-fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_height: usize) {
+fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_height: usize, hl_regex: Option<&Regex>) {
     app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
 
     // Build visual lines, accounting for expanded entries
@@ -57,8 +105,8 @@ fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_h
             Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
             level_span,
             Span::raw(" "),
-            Span::raw(display_msg),
         ];
+        spans.extend(highlight_spans(&display_msg, hl_regex, Style::default()));
 
         // Show expand indicator
         if !entry.continuation_lines.is_empty() {
@@ -85,12 +133,14 @@ fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_h
                 }
                 let skip = app.horizontal_scroll.min(cont_line.len());
                 let display: String = cont_line.chars().skip(skip).collect();
-                let line = Line::from(vec![
+                let cont_style = Style::default().fg(Color::DarkGray);
+                let mut cont_spans = vec![
                     Span::raw("              "),             // timestamp placeholder
                     Span::styled("     ", Style::default()), // level placeholder
                     Span::raw(" "),
-                    Span::styled(display, Style::default().fg(Color::DarkGray)),
-                ]);
+                ];
+                cont_spans.extend(highlight_spans(&display, hl_regex, cont_style));
+                let line = Line::from(cont_spans);
                 visual_lines.push((line, is_selected, entry.level));
             }
         }
@@ -133,6 +183,7 @@ fn draw_log_view_wrapped(
     area: Rect,
     viewport_height: usize,
     viewport_width: usize,
+    hl_regex: Option<&Regex>,
 ) {
     // For wrapped mode, we need to calculate how many visual lines each entry takes
     // and handle scrolling based on visual lines, not entries
@@ -193,8 +244,8 @@ fn draw_log_view_wrapped(
                         level_style(entry.level),
                     ),
                     Span::raw(" "),
-                    Span::raw(part.clone()),
                 ];
+                spans.extend(highlight_spans(part, hl_regex, Style::default()));
                 if let Some(ref ind) = indicator {
                     spans.push(Span::styled(
                         ind.clone(),
@@ -206,10 +257,9 @@ fn draw_log_view_wrapped(
                 Line::from(spans)
             } else {
                 // Wrapped continuation: indent to align with message
-                Line::from(vec![
-                    Span::raw(" ".repeat(prefix_width)),
-                    Span::raw(part.clone()),
-                ])
+                let mut spans = vec![Span::raw(" ".repeat(prefix_width))];
+                spans.extend(highlight_spans(part, hl_regex, Style::default()));
+                Line::from(spans)
             };
 
             visual_lines.push((line, is_selected, entry.level));
@@ -226,10 +276,10 @@ fn draw_log_view_wrapped(
                     if visual_lines.len() >= viewport_height {
                         break;
                     }
-                    let line = Line::from(vec![
-                        Span::raw(" ".repeat(prefix_width)),
-                        Span::styled(part, Style::default().fg(Color::DarkGray)),
-                    ]);
+                    let cont_style = Style::default().fg(Color::DarkGray);
+                    let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
+                    cont_spans.extend(highlight_spans(&part, hl_regex, cont_style));
+                    let line = Line::from(cont_spans);
                     visual_lines.push((line, is_selected, entry.level));
                 }
             }
