@@ -37,7 +37,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         " {} | {}/{} | {} | {}{} ",
         file_display, shown, total, levels, tail, date_filter
     );
-    let right = "Ctrl+P ";
+    let right = "d:detail | Ctrl+P ";
 
     let left_len = left.len();
     let right_len = right.len();

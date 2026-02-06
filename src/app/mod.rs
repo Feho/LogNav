@@ -36,6 +36,9 @@ pub enum FocusState {
         cursor_pos: usize,
         error: Option<String>,
     },
+    Detail {
+        scroll_offset: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +252,11 @@ impl App {
             cursor_pos: 0,
             error: None,
         };
+    }
+
+    /// Open detail popup for selected entry
+    pub fn open_detail_popup(&mut self) {
+        self.focus = FocusState::Detail { scroll_offset: 0 };
     }
 
     /// Close any overlay and return to normal

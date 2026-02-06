@@ -20,7 +20,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 let mut visual_row = 0;
                 let mut entry_idx = app.scroll_offset;
                 while entry_idx < app.filtered_indices.len() {
-                    let lines = app.visual_lines_for_entry(entry_idx);
+                    let lines = app.visual_lines_for_entry(entry_idx, 0); // Mouse uses nowrap logic for clicks
                     if visual_row + lines > clicked_row {
                         app.selected_index = entry_idx;
                         break;

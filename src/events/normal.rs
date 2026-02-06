@@ -66,6 +66,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.toggle_expand_all();
         }
 
+        // Detail popup
+        (_, KeyCode::Char('d')) => {
+            app.open_detail_popup();
+        }
+
         _ => {}
     }
 }

@@ -23,7 +23,7 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
 
 /// Draw log view without wrapping (manual rendering for expand support)
 fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_height: usize) {
-    app.ensure_selected_visible_with_height(viewport_height);
+    app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
 
     // Build visual lines, accounting for expanded entries
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
@@ -141,6 +141,10 @@ fn draw_log_view_wrapped(
         return;
     }
 
+    // Ensure selected entry is visible BEFORE building visual lines
+    // This accounts for word wrapping when calculating visibility
+    app.ensure_selected_visible_with_height(viewport_height, viewport_width);
+
     // Build visual lines for display, starting from scroll_offset
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
@@ -230,9 +234,6 @@ fn draw_log_view_wrapped(
 
         current_entry_idx += 1;
     }
-
-    // Update app state for proper selection visibility
-    app.ensure_selected_visible_with_height(viewport_height);
 
     // Render each visual line
     for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {

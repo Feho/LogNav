@@ -1,5 +1,5 @@
 use crate::app::{App, DateFilterFocus, FocusState, QUICK_FILTERS};
-use crate::ui::centered_rect;
+use crate::ui::{centered_rect, extract_message, level_color};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -438,4 +438,165 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
         Style::default().fg(Color::DarkGray),
     ));
     frame.render_widget(Paragraph::new(help_line), help_area);
+}
+
+/// Draw detail popup showing full entry text with wrapping
+pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
+    let area = centered_rect(80, 70, frame.area());
+    frame.render_widget(Clear, area);
+
+    let scroll_offset = match &app.focus {
+        FocusState::Detail { scroll_offset } => *scroll_offset,
+        _ => return,
+    };
+
+    // Get the selected entry
+    let entry = match app.selected_entry() {
+        Some(e) => e,
+        None => {
+            // No entry selected, show empty popup
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan))
+                .title(" Entry Detail ");
+            frame.render_widget(block, area);
+            return;
+        }
+    };
+
+    // Build title with timestamp and level
+    let title = format!(
+        " {} [{}] ",
+        entry
+            .timestamp
+            .map(|ts| ts.format("%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        entry.level.short_name()
+    );
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(level_color(entry.level)))
+        .title(title);
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Build lines from entry
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Main message
+    let message = extract_message(&entry.raw_line);
+    for wrapped_line in wrap_text_to_width(message, inner.width as usize) {
+        lines.push(Line::from(Span::raw(wrapped_line)));
+    }
+
+    // Continuation lines (if any)
+    if !entry.continuation_lines.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Continuation lines:",
+            Style::default().fg(Color::DarkGray),
+        )));
+        for cont_line in &entry.continuation_lines {
+            for wrapped_line in wrap_text_to_width(cont_line, inner.width as usize) {
+                lines.push(Line::from(Span::styled(
+                    wrapped_line,
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
+    }
+
+    // Calculate visible range based on scroll
+    let visible_height = inner.height as usize;
+    let total_lines = lines.len();
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let scroll = scroll_offset.min(max_scroll);
+
+    // Slice lines for display
+    let visible_lines: Vec<Line> = lines
+        .into_iter()
+        .skip(scroll)
+        .take(visible_height)
+        .collect();
+
+    // Render the text
+    let text_area = inner;
+    frame.render_widget(
+        Paragraph::new(visible_lines).wrap(ratatui::widgets::Wrap { trim: false }),
+        text_area,
+    );
+
+    // Scroll indicator at bottom
+    if max_scroll > 0 {
+        let scroll_text = format!("{}-{}/{} lines", scroll + 1, (scroll + visible_height).min(total_lines), total_lines);
+        let scroll_area = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(1),
+            width: inner.width,
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                scroll_text,
+                Style::default().fg(Color::DarkGray),
+            ))),
+            scroll_area,
+        );
+    }
+}
+
+/// Wrap text to fit within given width
+fn wrap_text_to_width(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+
+    let mut result = Vec::new();
+    let mut current_line = String::new();
+    let mut current_width = 0;
+
+    for word in text.split_inclusive(|c: char| c.is_whitespace()) {
+        let word_width = word.chars().count();
+
+        if current_width + word_width <= width {
+            current_line.push_str(word);
+            current_width += word_width;
+        } else if word_width > width {
+            // Word is longer than width, split it
+            if !current_line.is_empty() {
+                result.push(current_line);
+                current_line = String::new();
+                current_width = 0;
+            }
+            let mut chars = word.chars().peekable();
+            while chars.peek().is_some() {
+                let chunk: String = chars.by_ref().take(width).collect();
+                if chars.peek().is_some() {
+                    result.push(chunk);
+                } else {
+                    current_line = chunk;
+                    current_width = current_line.chars().count();
+                }
+            }
+        } else {
+            // Start new line
+            if !current_line.is_empty() {
+                result.push(current_line);
+            }
+            current_line = word.to_string();
+            current_width = word_width;
+        }
+    }
+
+    if !current_line.is_empty() {
+        result.push(current_line);
+    }
+
+    if result.is_empty() {
+        result.push(String::new());
+    }
+
+    result
 }

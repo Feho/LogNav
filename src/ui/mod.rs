@@ -27,6 +27,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         FocusState::Search { .. } => overlays::draw_search_bar(frame, app),
         FocusState::DateFilter { .. } => overlays::draw_date_filter(frame, app),
         FocusState::FileOpen { .. } => overlays::draw_file_open(frame, app),
+        FocusState::Detail { .. } => overlays::draw_detail_popup(frame, app),
     }
 }
 

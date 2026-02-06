@@ -3,6 +3,7 @@ use crossterm::event::{Event, KeyEvent};
 
 mod command;
 mod date_filter;
+mod detail;
 mod file_open;
 mod mouse;
 mod normal;
@@ -26,5 +27,6 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::Search { .. } => search::handle_search_key(app, key),
         FocusState::DateFilter { .. } => date_filter::handle_date_filter_key(app, key),
         FocusState::FileOpen { .. } => file_open::handle_file_open_key(app, key),
+        FocusState::Detail { .. } => detail::handle_detail_key(app, key),
     }
 }
