@@ -100,6 +100,12 @@ impl App {
         }
     }
 
+    /// Reset level filters to defaults (ERR/WRN/INF/DBG on, TRC/PRF off)
+    pub fn reset_level_filters(&mut self) {
+        self.level_filters = [true, true, true, true, false, false];
+        self.apply_filters();
+    }
+
     /// Toggle a level filter by index (0-5)
     pub fn toggle_level(&mut self, level_idx: usize) {
         if level_idx < 6 {

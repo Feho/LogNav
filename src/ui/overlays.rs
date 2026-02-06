@@ -480,7 +480,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         Line::from("  C-n/C-p   Next/previous match in search"),
         Line::from("  Enter     Apply search as filter"),
         Line::from("  C-d       Date range filter"),
-        Line::from("  1-6       Toggle levels: 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
+        Line::from("  0-6       Toggle levels: 0:Reset 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "VIEW",
@@ -513,7 +513,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
             "LEVEL FILTERS",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        Line::from("  Press 1-6 to toggle visibility of each level"),
+        Line::from("  Press 1-6 to toggle, 0 to reset to defaults"),
         Line::from("  Default: ERR, WRN, INF, DBG are ON"),
         Line::from("  TRC (trace) and PRF (profile) are OFF"),
         Line::from(""),

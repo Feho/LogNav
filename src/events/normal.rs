@@ -89,6 +89,10 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             let state = if app.level_filters[5] { "ON" } else { "OFF" };
             app.status_message = Some(format!("Level {} {}", level_name, state));
         }
+        (_, KeyCode::Char('0')) => {
+            app.reset_level_filters();
+            app.status_message = Some("Levels reset to default".to_string());
+        }
 
         // Navigation
         (_, KeyCode::Up) | (_, KeyCode::Char('k')) => app.scroll_up(1),
