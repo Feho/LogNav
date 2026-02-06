@@ -50,8 +50,14 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         // Navigation
         (_, KeyCode::Up) | (_, KeyCode::Char('k')) => app.scroll_up(1),
         (_, KeyCode::Down) | (_, KeyCode::Char('j')) => app.scroll_down(1),
-        (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) => app.scroll_up(20),
-        (_, KeyCode::PageDown) => app.scroll_down(20),
+        (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            let amount = app.viewport_height.saturating_sub(1).max(1);
+            app.scroll_viewport_up(amount, app.viewport_height);
+        }
+        (_, KeyCode::PageDown) => {
+            let amount = app.viewport_height.saturating_sub(1).max(1);
+            app.scroll_viewport_down(amount, app.viewport_height);
+        }
         (_, KeyCode::Home) | (_, KeyCode::Char('g')) => app.scroll_to_top(),
         (_, KeyCode::End) | (KeyModifiers::SHIFT, KeyCode::Char('G')) => app.scroll_to_bottom(),
         (_, KeyCode::Char('G')) => app.scroll_to_bottom(),
