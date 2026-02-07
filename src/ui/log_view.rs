@@ -44,9 +44,15 @@ fn highlight_spans(text: &str, regex: Option<&Regex>, base_style: Style) -> Vec<
 
     for m in regex.find_iter(text) {
         if m.start() > last_end {
-            spans.push(Span::styled(text[last_end..m.start()].to_string(), base_style));
+            spans.push(Span::styled(
+                text[last_end..m.start()].to_string(),
+                base_style,
+            ));
         }
-        spans.push(Span::styled(text[m.start()..m.end()].to_string(), HIGHLIGHT_STYLE));
+        spans.push(Span::styled(
+            text[m.start()..m.end()].to_string(),
+            HIGHLIGHT_STYLE,
+        ));
         last_end = m.end();
     }
 
@@ -71,19 +77,35 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Compute highlight regex once: use committed regex, or compile from overlay query
     let overlay_regex = compile_overlay_regex(app);
-    let hl_regex = app.search_regex.as_ref().or(overlay_regex.as_ref())
+    let hl_regex = app
+        .search_regex
+        .as_ref()
+        .or(overlay_regex.as_ref())
         .cloned();
     let hl_regex_ref = hl_regex.as_ref();
 
     if app.wrap_enabled {
-        draw_log_view_wrapped(frame, app, area, viewport_height, viewport_width, hl_regex_ref);
+        draw_log_view_wrapped(
+            frame,
+            app,
+            area,
+            viewport_height,
+            viewport_width,
+            hl_regex_ref,
+        );
     } else {
         draw_log_view_nowrap(frame, app, area, viewport_height, hl_regex_ref);
     }
 }
 
 /// Draw log view without wrapping (manual rendering for expand support)
-fn draw_log_view_nowrap(frame: &mut Frame, app: &mut App, area: Rect, viewport_height: usize, hl_regex: Option<&Regex>) {
+fn draw_log_view_nowrap(
+    frame: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    viewport_height: usize,
+    hl_regex: Option<&Regex>,
+) {
     app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
 
     // Build visual lines, accounting for expanded entries

@@ -1,10 +1,10 @@
-use crate::log_entry::{
-    LogEntry, LogFormat, detect_format, parse_incremental, parse_log_with_format,
-};
+use crate::log_entry::LogEntry;
+use crate::parsers::{self, LogParser};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -24,7 +24,7 @@ pub enum TailerEvent {
 
 pub struct LogTailer {
     path: PathBuf,
-    format: LogFormat,
+    parser: Arc<dyn LogParser>,
     last_position: u64,
     last_size: u64,
     entry_count: usize,
@@ -38,7 +38,7 @@ impl LogTailer {
     pub fn new(path: impl AsRef<Path>, event_tx: mpsc::Sender<TailerEvent>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
-            format: LogFormat::Unknown,
+            parser: parsers::fallback_parser(),
             last_position: 0,
             last_size: 0,
             entry_count: 0,
@@ -67,15 +67,15 @@ impl LogTailer {
                 .read_to_string(&mut content)
                 .map_err(|e| format!("Failed to read file: {}", e))?;
 
-            let format = detect_format(&content);
-            let entries = parse_log_with_format(&content, format);
+            let parser = parsers::detect_parser(&content).unwrap_or_else(parsers::fallback_parser);
+            let entries = parsers::parse_with_parser(&content, &*parser);
 
-            Ok::<_, String>((entries, format, size))
+            Ok::<_, String>((entries, parser, size))
         })
         .await
         .map_err(|e| format!("Task failed: {}", e))?;
 
-        let (mut entries, format, size) = result?;
+        let (mut entries, parser, size) = result?;
 
         // Apply entry cap
         if entries.len() > MAX_ENTRIES {
@@ -87,7 +87,7 @@ impl LogTailer {
             }
         }
 
-        self.format = format;
+        self.parser = parser;
         self.last_position = size;
         self.last_size = size;
         self.entry_count = entries.len();
@@ -142,7 +142,7 @@ impl LogTailer {
 
         // Spawn task to handle file events
         let path_clone = self.path.clone();
-        let format = self.format;
+        let parser = Arc::clone(&self.parser);
         let mut last_position = self.last_position;
         let mut last_size = self.last_size;
         let mut entry_count = self.entry_count;
@@ -160,7 +160,7 @@ impl LogTailer {
                         // File change detected
                         if let Err(e) = Self::check_for_changes(
                             &path_clone,
-                            format,
+                            &*parser,
                             &mut last_position,
                             &mut last_size,
                             &mut entry_count,
@@ -173,7 +173,7 @@ impl LogTailer {
                         // Fallback polling
                         if let Err(e) = Self::check_for_changes(
                             &path_clone,
-                            format,
+                            &*parser,
                             &mut last_position,
                             &mut last_size,
                             &mut entry_count,
@@ -192,7 +192,7 @@ impl LogTailer {
     /// Check for new content in the file
     async fn check_for_changes(
         path: &Path,
-        format: LogFormat,
+        parser: &dyn LogParser,
         last_position: &mut u64,
         last_size: &mut u64,
         entry_count: &mut usize,
@@ -255,7 +255,8 @@ impl LogTailer {
 
         if let Some(content) = content {
             if !content.is_empty() {
-                let entries = parse_incremental(&content, format, *entry_count, None);
+                let entries =
+                    parsers::parse_incremental_with_parser(&content, parser, *entry_count, None);
 
                 if !entries.is_empty() {
                     *entry_count += entries.len();

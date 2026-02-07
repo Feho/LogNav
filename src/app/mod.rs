@@ -229,7 +229,9 @@ impl App {
             self.filtered_indices
                 .iter()
                 .enumerate()
-                .filter(|&(_, &entry_idx)| regex.is_match(self.entries[entry_idx].searchable_text()))
+                .filter(|&(_, &entry_idx)| {
+                    regex.is_match(self.entries[entry_idx].searchable_text())
+                })
                 .map(|(pos, _)| pos)
                 .collect()
         } else {
