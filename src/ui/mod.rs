@@ -65,6 +65,13 @@ pub fn level_style(level: LogLevel) -> Style {
 
 /// Extract message portion from raw log line
 pub fn extract_message(raw_line: &str) -> &str {
+    // Handle qconsole bracket format: [timestamp] message
+    if raw_line.starts_with('[')
+        && let Some(end) = raw_line.find("] ")
+    {
+        return &raw_line[end + 2..];
+    }
+
     // Find the message after timestamp
     // Pattern: either after "HH:mm:ss.fff " or just return the whole line
     if let Some(pos) = raw_line.find(|c: char| c.is_ascii_digit()) {

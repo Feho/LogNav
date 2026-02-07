@@ -88,6 +88,7 @@ mod tests {
     enum LogFormat {
         WdLog,
         WpcLog,
+        QConsole,
         Unknown,
     }
 
@@ -95,6 +96,7 @@ mod tests {
         match detect_parser(content).as_deref().map(|p| p.name()) {
             Some("wd.log") => LogFormat::WdLog,
             Some("wpc.log") => LogFormat::WpcLog,
+            Some("qconsole.log") => LogFormat::QConsole,
             _ => LogFormat::Unknown,
         }
     }
@@ -220,5 +222,84 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].level, LogLevel::Info);
         assert_eq!(entries[1].level, LogLevel::Trace);
+    }
+
+    // --- QConsole format tests ---
+
+    #[test]
+    fn test_detect_qconsole_format() {
+        let content =
+            "[2026-01-09 18:48:38 UTC+1.000] logfile opened on Fri Jan  9 18:48:38 2026";
+        assert_eq!(detect_format(content), LogFormat::QConsole);
+    }
+
+    #[test]
+    fn test_parse_qconsole_timestamp() {
+        let content = "[2026-01-09 18:48:38 UTC+1.000] some message";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        let ts = entries[0].timestamp.unwrap();
+        assert_eq!(ts.to_string(), "2026-01-09 18:48:38");
+    }
+
+    #[test]
+    fn test_parse_qconsole_info() {
+        let content = "[2026-01-09 18:48:38 UTC+1.000] Cvar_Set2: sv_hostname Test";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Info);
+    }
+
+    #[test]
+    fn test_parse_qconsole_error() {
+        let content =
+            "[2026-01-09 19:05:01 UTC+1.000] ^~^~^ Script Error : Can't find 'file.scr'";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Error);
+    }
+
+    #[test]
+    fn test_parse_qconsole_warn_tiki() {
+        let content =
+            "[2026-01-09 18:48:39 UTC+1.000] ^~^~^ TIKI_InitTiki: Couldn't load model.tik";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Warn);
+    }
+
+    #[test]
+    fn test_parse_qconsole_warn_warning() {
+        let content =
+            "[2026-01-09 18:48:39 UTC+1.000] WARNING: Couldn't find voting options file";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Warn);
+    }
+
+    #[test]
+    fn test_parse_qconsole_color_codes_stripped() {
+        let content = "[2026-01-09 18:48:52 UTC+1.000] ^3Player Dimitri_47 is under fire!";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert!(!entries[0].raw_line.contains("^3"));
+        assert!(entries[0].raw_line.contains("Player Dimitri_47 is under fire!"));
+    }
+
+    #[test]
+    fn test_parse_qconsole_continuation_lines() {
+        let content = "[2026-01-09 19:05:01 UTC+1.000] ^~^~^ Script Error : Can't find 'file.scr'\n\t\texec global/ac/console_feedback.scr\n\t\t^\n[2026-01-09 19:05:01 UTC+1.000] next entry";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].continuation_lines.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_qconsole_negative_utc_offset() {
+        let content = "[2026-01-09 18:48:38 UTC-5.000] some message";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        let ts = entries[0].timestamp.unwrap();
+        assert_eq!(ts.to_string(), "2026-01-09 18:48:38");
     }
 }

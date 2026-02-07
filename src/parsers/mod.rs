@@ -2,9 +2,11 @@ use crate::log_entry::{LogEntry, LogLevel};
 use chrono::NaiveDateTime;
 use std::sync::Arc;
 
+mod qconsole;
 mod wd;
 mod wpc;
 
+pub use qconsole::QConsoleParser;
 pub use wd::WdParser;
 pub use wpc::WpcParser;
 
@@ -21,6 +23,11 @@ pub trait LogParser: Send + Sync {
     /// Parse a single line into (level, timestamp)
     /// Returns None if line is a continuation (doesn't start a new entry)
     fn parse_line(&self, line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)>;
+
+    /// Clean a line by stripping format-specific artifacts (e.g. color codes)
+    fn clean_line(&self, line: &str) -> String {
+        line.to_string()
+    }
 }
 
 /// Parse timestamp string into NaiveDateTime (assumes current year)
@@ -33,7 +40,7 @@ pub fn parse_timestamp(ts: &str) -> Option<NaiveDateTime> {
 
 /// Get all registered parsers
 pub fn all_parsers() -> Vec<Arc<dyn LogParser>> {
-    vec![Arc::new(WdParser), Arc::new(WpcParser)]
+    vec![Arc::new(WdParser), Arc::new(WpcParser), Arc::new(QConsoleParser)]
 }
 
 /// Detect the best parser for the given content
@@ -86,6 +93,7 @@ impl LogParser for FallbackParser {
         WdParser
             .parse_line(line)
             .or_else(|| WpcParser.parse_line(line))
+            .or_else(|| QConsoleParser.parse_line(line))
     }
 }
 
@@ -113,7 +121,7 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
                 index,
                 level,
                 timestamp,
-                raw_line: line.to_string(),
+                raw_line: parser.clean_line(line),
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
             });
@@ -121,7 +129,7 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
         } else if !entries.is_empty() {
             // This is a continuation line
             if let Some(last) = entries.last_mut() {
-                last.add_continuation(line.to_string());
+                last.add_continuation(parser.clean_line(line));
             }
         }
     }
@@ -151,7 +159,7 @@ pub fn parse_incremental_with_parser(
                 index,
                 level,
                 timestamp,
-                raw_line: line.to_string(),
+                raw_line: parser.clean_line(line),
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
             });
@@ -159,9 +167,9 @@ pub fn parse_incremental_with_parser(
         } else {
             // This is a continuation line
             if let Some(last) = entries.last_mut() {
-                last.add_continuation(line.to_string());
+                last.add_continuation(parser.clean_line(line));
             } else if let Some(pending) = pending_continuation.as_deref_mut() {
-                pending.add_continuation(line.to_string());
+                pending.add_continuation(parser.clean_line(line));
             }
         }
     }
