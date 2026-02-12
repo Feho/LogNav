@@ -1,12 +1,12 @@
 use crate::app::{App, FocusState};
 use crate::log_entry::LogLevel;
-use crate::ui::{extract_message, level_color, level_style};
+use crate::ui::{extract_message, level_color, level_style, syntax};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 use regex::Regex;
 
@@ -32,39 +32,83 @@ fn compile_overlay_regex(app: &App) -> Option<Regex> {
     None
 }
 
-/// Split text into owned spans, highlighting search matches
-fn highlight_spans(text: &str, regex: Option<&Regex>, base_style: Style) -> Vec<Span<'static>> {
+/// Split text into owned spans with syntax highlighting, then apply search match highlighting
+fn highlight_spans_with_syntax(
+    text: &str,
+    regex: Option<&Regex>,
+    base_style: Style,
+) -> Vec<Span<'static>> {
+    // First apply syntax highlighting
+    let syntax_spans = syntax::highlight_syntax(text, base_style);
+
+    // If no search regex, return syntax spans directly
     let regex = match regex {
         Some(r) => r,
-        None => return vec![Span::styled(text.to_string(), base_style)],
+        None => return syntax_spans,
     };
 
-    let mut spans = Vec::new();
-    let mut last_end = 0;
+    // Find all match positions in the original text
+    let matches: Vec<_> = regex.find_iter(text).collect();
+    if matches.is_empty() {
+        return syntax_spans;
+    }
 
-    for m in regex.find_iter(text) {
-        if m.start() > last_end {
-            spans.push(Span::styled(
-                text[last_end..m.start()].to_string(),
-                base_style,
-            ));
+    // Build a map of character positions to highlight
+    let mut highlight_positions = vec![false; text.len()];
+    for m in &matches {
+        for i in m.start()..m.end() {
+            if i < highlight_positions.len() {
+                highlight_positions[i] = true;
+            }
         }
-        spans.push(Span::styled(
-            text[m.start()..m.end()].to_string(),
-            HIGHLIGHT_STYLE,
-        ));
-        last_end = m.end();
     }
 
-    if last_end < text.len() {
-        spans.push(Span::styled(text[last_end..].to_string(), base_style));
+    // Split syntax spans based on highlight positions
+    let mut result = Vec::new();
+    let mut char_offset = 0;
+
+    for span in syntax_spans {
+        let span_text = &span.content;
+        let span_len = span_text.len();
+        let mut span_start = 0;
+
+        for i in 0..span_len {
+            let pos = char_offset + i;
+            let should_highlight = pos < highlight_positions.len() && highlight_positions[pos];
+            let prev_should_highlight = i > 0
+                && (char_offset + i - 1) < highlight_positions.len()
+                && highlight_positions[char_offset + i - 1];
+
+            // Transition between highlighted and non-highlighted
+            if should_highlight != prev_should_highlight && i > span_start {
+                let chunk = &span_text[span_start..i];
+                let style = if prev_should_highlight {
+                    HIGHLIGHT_STYLE
+                } else {
+                    span.style
+                };
+                result.push(Span::styled(chunk.to_string(), style));
+                span_start = i;
+            }
+        }
+
+        // Add remaining part of span
+        if span_start < span_len {
+            let chunk = &span_text[span_start..];
+            let is_highlighted = char_offset + span_start < highlight_positions.len()
+                && highlight_positions[char_offset + span_start];
+            let style = if is_highlighted {
+                HIGHLIGHT_STYLE
+            } else {
+                span.style
+            };
+            result.push(Span::styled(chunk.to_string(), style));
+        }
+
+        char_offset += span_len;
     }
 
-    if spans.is_empty() {
-        spans.push(Span::styled(text.to_string(), base_style));
-    }
-
-    spans
+    result
 }
 
 /// Draw the main log view
@@ -138,7 +182,11 @@ fn draw_log_view_nowrap(
             level_span,
             Span::raw(" "),
         ];
-        spans.extend(highlight_spans(&display_msg, hl_regex, Style::default()));
+        spans.extend(highlight_spans_with_syntax(
+            &display_msg,
+            hl_regex,
+            Style::default(),
+        ));
 
         // Show expand indicator
         if !entry.continuation_lines.is_empty() {
@@ -171,7 +219,7 @@ fn draw_log_view_nowrap(
                     Span::styled("     ", Style::default()), // level placeholder
                     Span::raw(" "),
                 ];
-                cont_spans.extend(highlight_spans(&display, hl_regex, cont_style));
+                cont_spans.extend(highlight_spans_with_syntax(&display, hl_regex, cont_style));
                 let line = Line::from(cont_spans);
                 visual_lines.push((line, is_selected, entry.level));
             }
@@ -277,7 +325,11 @@ fn draw_log_view_wrapped(
                     ),
                     Span::raw(" "),
                 ];
-                spans.extend(highlight_spans(part, hl_regex, Style::default()));
+                spans.extend(highlight_spans_with_syntax(
+                    part,
+                    hl_regex,
+                    Style::default(),
+                ));
                 if let Some(ref ind) = indicator {
                     spans.push(Span::styled(
                         ind.clone(),
@@ -290,7 +342,11 @@ fn draw_log_view_wrapped(
             } else {
                 // Wrapped continuation: indent to align with message
                 let mut spans = vec![Span::raw(" ".repeat(prefix_width))];
-                spans.extend(highlight_spans(part, hl_regex, Style::default()));
+                spans.extend(highlight_spans_with_syntax(
+                    part,
+                    hl_regex,
+                    Style::default(),
+                ));
                 Line::from(spans)
             };
 
@@ -310,7 +366,7 @@ fn draw_log_view_wrapped(
                     }
                     let cont_style = Style::default().fg(Color::DarkGray);
                     let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
-                    cont_spans.extend(highlight_spans(&part, hl_regex, cont_style));
+                    cont_spans.extend(highlight_spans_with_syntax(&part, hl_regex, cont_style));
                     let line = Line::from(cont_spans);
                     visual_lines.push((line, is_selected, entry.level));
                 }

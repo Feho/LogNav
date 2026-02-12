@@ -40,7 +40,11 @@ pub fn parse_timestamp(ts: &str) -> Option<NaiveDateTime> {
 
 /// Get all registered parsers
 pub fn all_parsers() -> Vec<Arc<dyn LogParser>> {
-    vec![Arc::new(WdParser), Arc::new(WpcParser), Arc::new(QConsoleParser)]
+    vec![
+        Arc::new(WdParser),
+        Arc::new(WpcParser),
+        Arc::new(QConsoleParser),
+    ]
 }
 
 /// Detect the best parser for the given content

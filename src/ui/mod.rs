@@ -9,6 +9,7 @@ use ratatui::{
 mod log_view;
 mod overlays;
 mod status_bar;
+pub mod syntax;
 
 /// Main UI drawing function
 pub fn draw(frame: &mut Frame, app: &mut App) {

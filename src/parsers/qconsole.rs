@@ -24,9 +24,7 @@ static QCONSOLE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+UTC[+-][\d.]+\]\s*(.*)").unwrap()
 });
 
-static COLOR_CODE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\^[0-9]").unwrap()
-});
+static COLOR_CODE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\^[0-9]").unwrap());
 
 impl LogParser for QConsoleParser {
     fn name(&self) -> &str {
