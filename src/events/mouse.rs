@@ -5,10 +5,26 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
+            if app.search_panel_open && app.search_panel_height > 0 {
+                let terminal_height = app.viewport_height + app.search_panel_height + 1;
+                let panel_start = terminal_height.saturating_sub(app.search_panel_height + 1);
+                if (mouse.row as usize) >= panel_start {
+                    app.panel_scroll_up(3);
+                    return;
+                }
+            }
             app.scroll_viewport_up(3, app.viewport_height);
         }
 
         MouseEventKind::ScrollDown => {
+            if app.search_panel_open && app.search_panel_height > 0 {
+                let terminal_height = app.viewport_height + app.search_panel_height + 1;
+                let panel_start = terminal_height.saturating_sub(app.search_panel_height + 1);
+                if (mouse.row as usize) >= panel_start {
+                    app.panel_scroll_down(3);
+                    return;
+                }
+            }
             app.scroll_viewport_down(3, app.viewport_height);
         }
 

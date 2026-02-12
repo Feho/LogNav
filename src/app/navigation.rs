@@ -199,25 +199,33 @@ impl App {
         }
     }
 
-    /// Jump to next search match (vim-style, works with panel or without)
+    /// Jump to next search match relative to current cursor position (vim-style)
     pub fn next_match(&mut self) {
         if self.search_panel_matches.is_empty() {
             return;
         }
-        self.search_panel_selected =
-            (self.search_panel_selected + 1) % self.search_panel_matches.len();
+        // Find first match whose filtered_pos is strictly after selected_index
+        let found = self
+            .search_panel_matches
+            .iter()
+            .position(|&pos| pos > self.selected_index);
+        self.search_panel_selected = found.unwrap_or(0); // wrap to first match
         self.sync_main_to_panel_selection();
     }
 
-    /// Jump to previous search match (vim-style)
+    /// Jump to previous search match relative to current cursor position (vim-style)
     pub fn prev_match(&mut self) {
         if self.search_panel_matches.is_empty() {
             return;
         }
-        self.search_panel_selected = if self.search_panel_selected == 0 {
-            self.search_panel_matches.len() - 1
-        } else {
-            self.search_panel_selected - 1
+        // Find last match whose filtered_pos is strictly before selected_index
+        let found = self
+            .search_panel_matches
+            .iter()
+            .rposition(|&pos| pos < self.selected_index);
+        self.search_panel_selected = match found {
+            Some(idx) => idx,
+            None => self.search_panel_matches.len() - 1, // wrap to last match
         };
         self.sync_main_to_panel_selection();
     }
