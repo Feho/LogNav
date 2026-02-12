@@ -1,5 +1,5 @@
 use crate::app::{App, FocusState};
-use crossterm::event::{Event, KeyEvent};
+use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use std::time::Instant;
 
 mod command;
@@ -16,7 +16,7 @@ pub use search::flush_search;
 /// Handle crossterm events
 pub fn handle_event(app: &mut App, event: Event) {
     match event {
-        Event::Key(key) => handle_key(app, key),
+        Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(app, key),
         Event::Mouse(mouse) => mouse::handle_mouse(app, mouse),
         Event::Paste(text) => handle_paste(app, text),
         Event::Resize(_, _) => {} // Ratatui handles this
