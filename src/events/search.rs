@@ -112,10 +112,19 @@ pub fn flush_search(app: &mut App) {
 pub fn handle_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
-            // Clear search and close
-            app.set_search("");
-            app.close_search_panel();
-            app.close_overlay();
+            let query_empty = matches!(&app.focus, FocusState::Search { query, .. } if query.is_empty());
+            if query_empty {
+                // Already empty: close the search bar
+                app.set_search("");
+                app.close_search_panel();
+                app.close_overlay();
+            } else {
+                // Non-empty: clear the text first
+                if let FocusState::Search { ref mut query, .. } = app.focus {
+                    query.clear();
+                }
+                app.search_dirty = Some(Instant::now());
+            }
         }
 
         KeyCode::Enter => {
