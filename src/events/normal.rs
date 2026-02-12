@@ -48,15 +48,25 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // n: next search match (vim-style)
+        // n: next search match (vim-style, redo last search if panel closed)
         (_, KeyCode::Char('n')) => {
+            if app.search_panel_matches.is_empty() && !app.highlight_query.is_empty() {
+                let q = app.highlight_query.clone();
+                let m = app.highlight_regex_mode;
+                app.commit_search_to_panel(&q, m);
+            }
             if !app.search_panel_matches.is_empty() {
                 app.next_match();
             }
         }
 
-        // N: previous search match (vim-style)
+        // N: previous search match (vim-style, redo last search if panel closed)
         (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
+            if app.search_panel_matches.is_empty() && !app.highlight_query.is_empty() {
+                let q = app.highlight_query.clone();
+                let m = app.highlight_regex_mode;
+                app.commit_search_to_panel(&q, m);
+            }
             if !app.search_panel_matches.is_empty() {
                 app.prev_match();
             }

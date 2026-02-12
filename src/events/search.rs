@@ -134,6 +134,12 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
                 }
                 _ => return,
             };
+            // Push to search history (deduplicate)
+            if !query.is_empty() {
+                app.search_history.retain(|h| h != &query);
+                app.search_history.push(query.clone());
+            }
+            app.search_history_index = None;
             app.commit_search_to_panel(&query, regex_mode);
             app.close_overlay();
         }
@@ -149,10 +155,48 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
             app.search_dirty = Some(Instant::now());
         }
 
+        // History: Up = older, Down = newer
+        KeyCode::Up => {
+            if app.search_history.is_empty() {
+                return;
+            }
+            let new_idx = match app.search_history_index {
+                None => app.search_history.len() - 1,
+                Some(i) => i.saturating_sub(1),
+            };
+            app.search_history_index = Some(new_idx);
+            let hist = app.search_history[new_idx].clone();
+            if let FocusState::Search { ref mut query, .. } = app.focus {
+                *query = hist;
+            }
+            app.search_dirty = Some(Instant::now());
+        }
+
+        KeyCode::Down => {
+            if let Some(i) = app.search_history_index {
+                if i + 1 < app.search_history.len() {
+                    let new_idx = i + 1;
+                    app.search_history_index = Some(new_idx);
+                    let hist = app.search_history[new_idx].clone();
+                    if let FocusState::Search { ref mut query, .. } = app.focus {
+                        *query = hist;
+                    }
+                } else {
+                    // Past end of history, clear to empty
+                    app.search_history_index = None;
+                    if let FocusState::Search { ref mut query, .. } = app.focus {
+                        query.clear();
+                    }
+                }
+                app.search_dirty = Some(Instant::now());
+            }
+        }
+
         KeyCode::Char(c) => {
             if let FocusState::Search { ref mut query, .. } = app.focus {
                 query.push(c);
             }
+            app.search_history_index = None;
             app.search_dirty = Some(Instant::now());
         }
 
@@ -160,6 +204,7 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
             if let FocusState::Search { ref mut query, .. } = app.focus {
                 query.pop();
             }
+            app.search_history_index = None;
             app.search_dirty = Some(Instant::now());
         }
 

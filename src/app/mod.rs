@@ -113,6 +113,10 @@ pub struct App {
     pub highlight_regex: Option<Regex>,
     pub highlight_query: String,
     pub highlight_regex_mode: bool,
+
+    // Search history (most recent last)
+    pub search_history: Vec<String>,
+    pub search_history_index: Option<usize>, // None = typing new query, Some(i) = browsing history
 }
 
 impl Default for App {
@@ -156,6 +160,8 @@ impl App {
             highlight_regex: None,
             highlight_query: String::new(),
             highlight_regex_mode: false,
+            search_history: Vec::new(),
+            search_history_index: None,
         }
     }
 
@@ -269,6 +275,7 @@ impl App {
             Vec::new()
         };
 
+        self.search_history_index = None;
         self.focus = FocusState::Search {
             query,
             match_indices,
@@ -320,7 +327,8 @@ impl App {
         self.focus = FocusState::Normal;
     }
 
-    /// Close the search results panel and clear highlight
+    /// Close the search results panel and clear highlight.
+    /// Keeps highlight_query/regex_mode so n/N can redo last search.
     pub fn close_search_panel(&mut self) {
         self.search_panel_open = false;
         self.search_panel_focused = false;
@@ -328,8 +336,7 @@ impl App {
         self.search_panel_selected = 0;
         self.search_panel_scroll = 0;
         self.highlight_regex = None;
-        self.highlight_query.clear();
-        self.highlight_regex_mode = false;
+        // Keep highlight_query and highlight_regex_mode for n/N redo
     }
 
     /// Toggle tail mode
