@@ -413,6 +413,10 @@ impl App {
             CommandAction::ToggleSyntax => self.toggle_syntax_highlight(),
             CommandAction::GoToTop => self.scroll_to_top(),
             CommandAction::GoToBottom => self.scroll_to_bottom(),
+            CommandAction::NextError => self.next_error(),
+            CommandAction::PrevError => self.prev_error(),
+            CommandAction::NextWarning => self.next_warning(),
+            CommandAction::PrevWarning => self.prev_warning(),
             CommandAction::Quit => self.should_quit = true,
         }
     }

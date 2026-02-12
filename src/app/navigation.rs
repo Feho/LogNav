@@ -292,4 +292,92 @@ impl App {
             .get(self.selected_index)
             .and_then(|&idx| self.entries.get(idx))
     }
+
+    /// Jump to next error (Error level) relative to current cursor position
+    pub fn next_error(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        // Search from current position + 1, wrapping to start if needed
+        let start_idx = self.selected_index + 1;
+        for offset in 0..self.filtered_indices.len() {
+            let idx = (start_idx + offset) % self.filtered_indices.len();
+            let entry_idx = self.filtered_indices[idx];
+            if let Some(entry) = self.entries.get(entry_idx)
+                && matches!(entry.level, crate::log_entry::LogLevel::Error)
+            {
+                self.selected_index = idx;
+                self.center_selected();
+                return;
+            }
+        }
+    }
+
+    /// Jump to previous error (Error level) relative to current cursor position
+    pub fn prev_error(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        // Search from current position - 1, wrapping to end if needed
+        let start_idx = self.selected_index.saturating_sub(1);
+        for offset in 0..self.filtered_indices.len() {
+            let idx = if start_idx >= offset {
+                start_idx - offset
+            } else {
+                self.filtered_indices.len() - 1 - (offset - start_idx - 1)
+            };
+            let entry_idx = self.filtered_indices[idx];
+            if let Some(entry) = self.entries.get(entry_idx)
+                && matches!(entry.level, crate::log_entry::LogLevel::Error)
+            {
+                self.selected_index = idx;
+                self.center_selected();
+                return;
+            }
+        }
+    }
+
+    /// Jump to next warning (Warn level) relative to current cursor position
+    pub fn next_warning(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        // Search from current position + 1, wrapping to start if needed
+        let start_idx = self.selected_index + 1;
+        for offset in 0..self.filtered_indices.len() {
+            let idx = (start_idx + offset) % self.filtered_indices.len();
+            let entry_idx = self.filtered_indices[idx];
+            if let Some(entry) = self.entries.get(entry_idx)
+                && matches!(entry.level, crate::log_entry::LogLevel::Warn)
+            {
+                self.selected_index = idx;
+                self.center_selected();
+                return;
+            }
+        }
+    }
+
+    /// Jump to previous warning (Warn level) relative to current cursor position
+    pub fn prev_warning(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        // Search from current position - 1, wrapping to end if needed
+        let start_idx = self.selected_index.saturating_sub(1);
+        for offset in 0..self.filtered_indices.len() {
+            let idx = if start_idx >= offset {
+                start_idx - offset
+            } else {
+                self.filtered_indices.len() - 1 - (offset - start_idx - 1)
+            };
+            let entry_idx = self.filtered_indices[idx];
+            if let Some(entry) = self.entries.get(entry_idx)
+                && matches!(entry.level, crate::log_entry::LogLevel::Warn)
+            {
+                self.selected_index = idx;
+                self.center_selected();
+                return;
+            }
+        }
+    }
 }

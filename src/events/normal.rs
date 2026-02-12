@@ -72,6 +72,16 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             }
         }
 
+        // e: next error
+        (_, KeyCode::Char('e')) => {
+            app.next_error();
+        }
+
+        // E: previous error
+        (KeyModifiers::SHIFT, KeyCode::Char('E')) => {
+            app.prev_error();
+        }
+
         // Toggle tail
         (KeyModifiers::CONTROL, KeyCode::Char('t')) | (_, KeyCode::Char('t')) => {
             app.toggle_tail();
@@ -81,13 +91,23 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             ));
         }
 
-        // Toggle wrap
-        (KeyModifiers::CONTROL, KeyCode::Char('w')) | (_, KeyCode::Char('w')) => {
+        // Ctrl+w: toggle wrap
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
             app.toggle_wrap();
             app.status_message = Some(format!(
                 "Word wrap {}",
                 if app.wrap_enabled { "ON" } else { "OFF" }
             ));
+        }
+
+        // w: next warning
+        (_, KeyCode::Char('w')) => {
+            app.next_warning();
+        }
+
+        // W: previous warning
+        (KeyModifiers::SHIFT, KeyCode::Char('W')) => {
+            app.prev_warning();
         }
 
         // Toggle syntax highlighting

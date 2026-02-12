@@ -21,6 +21,10 @@ pub enum CommandAction {
     ToggleSyntax,
     GoToTop,
     GoToBottom,
+    NextError,
+    PrevError,
+    NextWarning,
+    PrevWarning,
     Quit,
 }
 
@@ -95,6 +99,26 @@ impl Command {
             name: "Go to bottom",
             shortcut: "G",
             action: CommandAction::GoToBottom,
+        },
+        Command {
+            name: "Next error",
+            shortcut: "e",
+            action: CommandAction::NextError,
+        },
+        Command {
+            name: "Previous error",
+            shortcut: "E",
+            action: CommandAction::PrevError,
+        },
+        Command {
+            name: "Next warning",
+            shortcut: "w",
+            action: CommandAction::NextWarning,
+        },
+        Command {
+            name: "Previous warning",
+            shortcut: "W",
+            action: CommandAction::PrevWarning,
         },
         Command {
             name: "Quit",
