@@ -171,6 +171,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_wd_log_audit() {
+        let content =
+            "? AUDIT 02-12 11:37:17.453 [#111] AUTH|MetaAuthority \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Trace);
+    }
+
+    #[test]
+    fn test_parse_wd_log_fatal() {
+        let content =
+            "**FATAL 02-12 11:37:20.688 [#47] SQL|SqlProxy \"msg\"";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Error);
+    }
+
+    #[test]
     fn test_parse_wd_log_with_continuation() {
         let content = "  ~~~~~ 02-03 18:11:11.526 [#32] MSGQ|HttpMessageSender \"Sending JSON batch => [\n\t{\n\t\t\"Id\": \"52dc5014\"\n\t}\n]\"";
         let entries = parse_log(content);

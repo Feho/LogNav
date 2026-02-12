@@ -7,8 +7,8 @@ use std::sync::LazyLock;
 /// Parser for wd.log format
 ///
 /// Format:
-///   Prefix: 2 spaces OR marker char (*, !, #) + space
-///   Level: ~~~~~, =====, TRACE, INFO, WARN, ERROR (with optional trailing spaces)
+///   Prefix: 1-2 chars from [*!?# ] (e.g. "  ", "* ", "? ", "**")
+///   Level: ~~~~~, =====, TRACE, AUDIT, INFO, WARN, ERROR, FATAL
 ///   Timestamp: MM-dd HH:mm:ss.fff
 ///   Rest: [thread] component|subcomponent "message"
 ///
@@ -19,11 +19,13 @@ use std::sync::LazyLock;
 ///   INFO  02-03 18:11:02.577 [Alarm] SPL|WatchdocContext "msg"
 /// * ERROR 02-05 11:23:38.795 [#34] API|PrintApiController10 "msg"
 /// ! WARN  02-05 11:23:38.801 [#10] HTTP|DspWebServer "msg"
+/// ? AUDIT 02-12 11:37:17.453 [#111] AUTH|MetaAuthority "msg"
+/// **FATAL 02-12 11:37:20.688 [#47] SQL|SqlProxy "msg"
 #[derive(Debug, Clone, Copy)]
 pub struct WdParser;
 
 static WD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^([*!]?\s+|[*!#]\s)(~~~~~|=====|TRACE|INFO|WARN|ERROR)\s+(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})").unwrap()
+    Regex::new(r"^[*!?# ]{1,2}(~~~~~|=====|TRACE|AUDIT|INFO|WARN|ERROR|FATAL)\s+(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})").unwrap()
 });
 
 impl LogParser for WdParser {
@@ -41,8 +43,8 @@ impl LogParser for WdParser {
 
     fn parse_line(&self, line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)> {
         WD_PATTERN.captures(line).map(|caps| {
-            let level = parse_wd_level(&caps[2]);
-            let timestamp = parse_timestamp(&caps[3]);
+            let level = parse_wd_level(&caps[1]);
+            let timestamp = parse_timestamp(&caps[2]);
             (level, timestamp)
         })
     }
@@ -51,10 +53,10 @@ impl LogParser for WdParser {
 /// Parse log level from wd.log token
 fn parse_wd_level(token: &str) -> LogLevel {
     match token.trim() {
-        "TRACE" => LogLevel::Trace,
+        "TRACE" | "AUDIT" => LogLevel::Trace,
         "INFO" => LogLevel::Info,
         "WARN" => LogLevel::Warn,
-        "ERROR" => LogLevel::Error,
+        "ERROR" | "FATAL" => LogLevel::Error,
         "=====" => LogLevel::Debug,
         "~~~~~" => LogLevel::Profile,
         _ => LogLevel::Unknown,
