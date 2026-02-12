@@ -175,7 +175,7 @@ impl App {
             let prefix_width = 20; // timestamp + level badge + space
             let available_width = viewport_width.saturating_sub(prefix_width);
             let message = crate::ui::extract_message(&entry.raw_line);
-            wrap_text_lines(message, available_width)
+            wrap_text_lines(&message, available_width)
         } else {
             1
         };

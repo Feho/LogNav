@@ -5,10 +5,12 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
 };
+use std::borrow::Cow;
 
 mod log_view;
 mod overlays;
 mod status_bar;
+mod syntax;
 
 /// Main UI drawing function
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -63,13 +65,13 @@ pub fn level_style(level: LogLevel) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// Extract message portion from raw log line
-pub fn extract_message(raw_line: &str) -> &str {
+/// Extract message portion from raw log line, stripping outer quotes from wd.log
+pub fn extract_message(raw_line: &str) -> Cow<'_, str> {
     // Handle qconsole bracket format: [timestamp] message
     if raw_line.starts_with('[')
         && let Some(end) = raw_line.find("] ")
     {
-        return &raw_line[end + 2..];
+        return Cow::Borrowed(&raw_line[end + 2..]);
     }
 
     // Find the message after timestamp
@@ -77,11 +79,22 @@ pub fn extract_message(raw_line: &str) -> &str {
     if let Some(pos) = raw_line.find(|c: char| c.is_ascii_digit()) {
         // Skip past timestamp pattern "MM-dd HH:mm:ss.fff"
         if raw_line.len() > pos + 18 {
-            let after_ts = &raw_line[pos + 18..];
-            return after_ts.trim_start();
+            let msg = raw_line[pos + 18..].trim_start();
+            // Strip outer quotes (wd.log wraps messages in "...")
+            // The message part after component prefix looks like: `SPL|Context "actual message"`
+            if msg.ends_with('"') {
+                if let Some(open) = msg.find('"') {
+                    if open < msg.len() - 1 {
+                        let prefix = &msg[..open];
+                        let inner = &msg[open + 1..msg.len() - 1];
+                        return Cow::Owned(format!("{}{}", prefix, inner));
+                    }
+                }
+            }
+            return Cow::Borrowed(msg);
         }
     }
-    raw_line
+    Cow::Borrowed(raw_line)
 }
 
 /// Create a centered rect

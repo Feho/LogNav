@@ -513,6 +513,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("  w         Toggle word wrap"),
+        Line::from("  s         Toggle syntax highlighting"),
         Line::from("  t         Toggle tail mode (auto-scroll)"),
         Line::from("  d         Show entry detail popup"),
         Line::from("  c         Copy current entry to clipboard"),
@@ -637,7 +638,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
 
     // Main message
     let message = extract_message(&entry.raw_line);
-    for wrapped_line in wrap_text_to_width(message, inner.width as usize) {
+    for wrapped_line in wrap_text_to_width(&message, inner.width as usize) {
         lines.push(Line::from(Span::raw(wrapped_line)));
     }
 

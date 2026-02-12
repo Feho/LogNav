@@ -52,6 +52,15 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             ));
         }
 
+        // Toggle syntax highlighting
+        (_, KeyCode::Char('s')) => {
+            app.toggle_syntax_highlight();
+            app.status_message = Some(format!(
+                "Syntax highlight {}",
+                if app.syntax_highlight { "ON" } else { "OFF" }
+            ));
+        }
+
         // Level toggles (1-6) with status messages
         (_, KeyCode::Char('1')) => {
             app.toggle_level(0);

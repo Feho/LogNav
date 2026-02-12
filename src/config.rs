@@ -9,6 +9,8 @@ const MAX_RECENT_FILES: usize = 10;
 pub struct Config {
     #[serde(default)]
     pub recent_files: Vec<String>,
+    #[serde(default)]
+    pub syntax_highlight: Option<bool>,
 }
 
 impl Config {

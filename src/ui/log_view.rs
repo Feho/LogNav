@@ -1,6 +1,8 @@
 use crate::app::{App, FocusState};
 use crate::log_entry::LogLevel;
-use crate::ui::{extract_message, level_color, level_style};
+use crate::ui::extract_message;
+use crate::ui::syntax::styled_spans;
+use crate::ui::{level_color, level_style};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -9,8 +11,6 @@ use ratatui::{
     widgets::Paragraph,
 };
 use regex::Regex;
-
-const HIGHLIGHT_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
 
 /// Compile regex from the live search overlay query
 fn compile_overlay_regex(app: &App) -> Option<Regex> {
@@ -30,41 +30,6 @@ fn compile_overlay_regex(app: &App) -> Option<Regex> {
         }
     }
     None
-}
-
-/// Split text into owned spans, highlighting search matches
-fn highlight_spans(text: &str, regex: Option<&Regex>, base_style: Style) -> Vec<Span<'static>> {
-    let regex = match regex {
-        Some(r) => r,
-        None => return vec![Span::styled(text.to_string(), base_style)],
-    };
-
-    let mut spans = Vec::new();
-    let mut last_end = 0;
-
-    for m in regex.find_iter(text) {
-        if m.start() > last_end {
-            spans.push(Span::styled(
-                text[last_end..m.start()].to_string(),
-                base_style,
-            ));
-        }
-        spans.push(Span::styled(
-            text[m.start()..m.end()].to_string(),
-            HIGHLIGHT_STYLE,
-        ));
-        last_end = m.end();
-    }
-
-    if last_end < text.len() {
-        spans.push(Span::styled(text[last_end..].to_string(), base_style));
-    }
-
-    if spans.is_empty() {
-        spans.push(Span::styled(text.to_string(), base_style));
-    }
-
-    spans
 }
 
 /// Draw the main log view
@@ -107,6 +72,7 @@ fn draw_log_view_nowrap(
     hl_regex: Option<&Regex>,
 ) {
     app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
+    let syntax_on = app.syntax_highlight;
 
     // Build visual lines, accounting for expanded entries
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
@@ -138,7 +104,7 @@ fn draw_log_view_nowrap(
             level_span,
             Span::raw(" "),
         ];
-        spans.extend(highlight_spans(&display_msg, hl_regex, Style::default()));
+        spans.extend(styled_spans(&display_msg, hl_regex, Style::default(), syntax_on && !is_selected));
 
         // Show expand indicator
         if !entry.continuation_lines.is_empty() {
@@ -171,7 +137,7 @@ fn draw_log_view_nowrap(
                     Span::styled("     ", Style::default()), // level placeholder
                     Span::raw(" "),
                 ];
-                cont_spans.extend(highlight_spans(&display, hl_regex, cont_style));
+                cont_spans.extend(styled_spans(&display, hl_regex, cont_style, syntax_on && !is_selected));
                 let line = Line::from(cont_spans);
                 visual_lines.push((line, is_selected, entry.level));
             }
@@ -230,6 +196,7 @@ fn draw_log_view_wrapped(
     // Ensure selected entry is visible BEFORE building visual lines
     // This accounts for word wrapping when calculating visibility
     app.ensure_selected_visible_with_height(viewport_height, viewport_width);
+    let syntax_on = app.syntax_highlight;
 
     // Build visual lines for display, starting from scroll_offset
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
@@ -260,7 +227,7 @@ fn draw_log_view_wrapped(
         };
 
         // Wrap the main message
-        let wrapped_parts = wrap_text(message, msg_width);
+        let wrapped_parts = wrap_text(&message, msg_width);
 
         for (i, part) in wrapped_parts.iter().enumerate() {
             if visual_lines.len() >= viewport_height {
@@ -277,7 +244,7 @@ fn draw_log_view_wrapped(
                     ),
                     Span::raw(" "),
                 ];
-                spans.extend(highlight_spans(part, hl_regex, Style::default()));
+                spans.extend(styled_spans(part, hl_regex, Style::default(), syntax_on && !is_selected));
                 if let Some(ref ind) = indicator {
                     spans.push(Span::styled(
                         ind.clone(),
@@ -290,7 +257,7 @@ fn draw_log_view_wrapped(
             } else {
                 // Wrapped continuation: indent to align with message
                 let mut spans = vec![Span::raw(" ".repeat(prefix_width))];
-                spans.extend(highlight_spans(part, hl_regex, Style::default()));
+                spans.extend(styled_spans(part, hl_regex, Style::default(), syntax_on && !is_selected));
                 Line::from(spans)
             };
 
@@ -310,7 +277,7 @@ fn draw_log_view_wrapped(
                     }
                     let cont_style = Style::default().fg(Color::DarkGray);
                     let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
-                    cont_spans.extend(highlight_spans(&part, hl_regex, cont_style));
+                    cont_spans.extend(styled_spans(&part, hl_regex, cont_style, syntax_on && !is_selected));
                     let line = Line::from(cont_spans);
                     visual_lines.push((line, is_selected, entry.level));
                 }

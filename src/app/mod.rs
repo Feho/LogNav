@@ -81,6 +81,7 @@ pub struct App {
     pub focus: FocusState,
     pub tail_enabled: bool,
     pub wrap_enabled: bool,
+    pub syntax_highlight: bool,
     pub horizontal_scroll: usize,
     pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
     pub viewport_height: usize,           // Last known viewport height for mouse scroll
@@ -124,6 +125,7 @@ impl App {
             focus: FocusState::Normal,
             tail_enabled: true,
             wrap_enabled: false,
+            syntax_highlight: true,
             horizontal_scroll: 0,
             expanded_entries: HashSet::new(),
             viewport_height: 25, // Default viewport height
@@ -302,6 +304,11 @@ impl App {
         self.wrap_enabled = !self.wrap_enabled;
     }
 
+    /// Toggle syntax highlighting
+    pub fn toggle_syntax_highlight(&mut self) {
+        self.syntax_highlight = !self.syntax_highlight;
+    }
+
     /// Toggle expand/collapse of selected entry's continuation lines
     pub fn toggle_expand(&mut self) {
         if let Some(&entry_idx) = self.filtered_indices.get(self.selected_index) {
@@ -355,6 +362,7 @@ impl App {
             CommandAction::ToggleProfile => self.toggle_level(5),
             CommandAction::ToggleTail => self.toggle_tail(),
             CommandAction::ToggleWrap => self.toggle_wrap(),
+            CommandAction::ToggleSyntax => self.toggle_syntax_highlight(),
             CommandAction::GoToTop => self.scroll_to_top(),
             CommandAction::GoToBottom => self.scroll_to_bottom(),
             CommandAction::Quit => self.should_quit = true,

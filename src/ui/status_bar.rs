@@ -47,6 +47,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push("Wrap:ON".to_string());
     }
 
+    // Add syntax highlight status (show only when off since it's on by default)
+    if !app.syntax_highlight {
+        parts.push("Syn:OFF".to_string());
+    }
+
     // Add tail status
     if app.tail_enabled {
         parts.push("Tail".to_string());

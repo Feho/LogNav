@@ -45,6 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app
     let mut app = App::new();
     app.recent_files = config.recent_files.clone();
+    app.syntax_highlight = config.syntax_highlight.unwrap_or(true);
 
     // Create tailer channel
     let (tailer_tx, mut tailer_rx) = mpsc::channel::<TailerEvent>(100);
@@ -89,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     terminal.show_cursor()?;
 
     // Save config
+    config.syntax_highlight = Some(app.syntax_highlight);
     let _ = config.save();
 
     if let Err(e) = result {
@@ -124,83 +126,84 @@ async fn run_app(
             break;
         }
 
-        // Poll for events
-        tokio::select! {
-            // Handle tailer events
-            Some(event) = tailer_rx.recv() => {
-                match event {
-                    TailerEvent::InitialLoad(entries) => {
-                        app.set_entries(entries);
-                    }
-                    TailerEvent::NewEntries(entries) => {
-                        app.append_entries(entries);
-                    }
-                    TailerEvent::Error(e) => {
-                        app.status_message = Some(format!("Tail error: {}", e));
-                    }
-                    TailerEvent::FileReset => {
-                        // File was truncated, reload
-                        app.set_entries(Vec::new());
-                        app.status_message = Some("File was reset".to_string());
-                    }
-                }
-            }
+        // Snapshot state before handling events
+        let previous_path = app.file_path.clone();
+        let previous_tail_enabled = app.tail_enabled;
 
-            // Handle terminal events
+        // Wait for at least one event
+        tokio::select! {
+            Some(event) = tailer_rx.recv() => {
+                handle_tailer_event(app, event);
+            }
             _ = async {
                 if event::poll(Duration::from_millis(50)).unwrap_or(false) {
                     if let Ok(evt) = event::read() {
-                        // Check for file open request
-                        let previous_path = app.file_path.clone();
-                        let previous_tail_enabled = app.tail_enabled;
-
                         events::handle_event(app, evt);
-
-                        // If file path changed, load new file
-                        if app.file_path != previous_path && !app.file_path.is_empty() {
-                            let path = app.file_path.clone();
-
-                            // Stop existing tailer
-                            if let Some(t) = tailer {
-                                t.stop_watching();
-                            }
-
-                            // Create new tailer
-                            let mut new_tailer = LogTailer::new(&path, tailer_tx.clone());
-                            match new_tailer.load_initial().await {
-                                Ok(()) => {
-                                    config.add_recent_file(&path);
-                                    app.recent_files = config.recent_files.clone();
-
-                                    // Start watching if tail is enabled
-                                    if app.tail_enabled {
-                                        let _ = new_tailer.start_watching();
-                                    }
-
-                                    *tailer = Some(new_tailer);
-                                }
-                                Err(e) => {
-                                    app.status_message = Some(format!("Error: {}", e));
-                                    app.file_path = previous_path;
-                                }
-                            }
-                        }
-
-                        // Handle tail toggle (only on state change)
-                        if app.tail_enabled != previous_tail_enabled {
-                            if let Some(t) = tailer {
-                                if app.tail_enabled {
-                                    let _ = t.start_watching();
-                                } else {
-                                    t.stop_watching();
-                                }
-                            }
-                        }
                     }
                 }
             } => {}
         }
+
+        // Drain all remaining terminal events before next draw
+        while event::poll(Duration::ZERO).unwrap_or(false) {
+            if let Ok(evt) = event::read() {
+                events::handle_event(app, evt);
+            }
+        }
+
+        // Drain pending tailer events too
+        while let Ok(event) = tailer_rx.try_recv() {
+            handle_tailer_event(app, event);
+        }
+
+        // Handle file path change (once after all events)
+        if app.file_path != previous_path && !app.file_path.is_empty() {
+            let path = app.file_path.clone();
+
+            if let Some(t) = tailer.as_mut() {
+                t.stop_watching();
+            }
+
+            let mut new_tailer = LogTailer::new(&path, tailer_tx.clone());
+            match new_tailer.load_initial().await {
+                Ok(()) => {
+                    config.add_recent_file(&path);
+                    app.recent_files = config.recent_files.clone();
+                    if app.tail_enabled {
+                        let _ = new_tailer.start_watching();
+                    }
+                    *tailer = Some(new_tailer);
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Error: {}", e));
+                    app.file_path = previous_path;
+                }
+            }
+        }
+
+        // Handle tail toggle (once after all events)
+        if app.tail_enabled != previous_tail_enabled {
+            if let Some(t) = tailer.as_mut() {
+                if app.tail_enabled {
+                    let _ = t.start_watching();
+                } else {
+                    t.stop_watching();
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+fn handle_tailer_event(app: &mut App, event: TailerEvent) {
+    match event {
+        TailerEvent::InitialLoad(entries) => app.set_entries(entries),
+        TailerEvent::NewEntries(entries) => app.append_entries(entries),
+        TailerEvent::Error(e) => app.status_message = Some(format!("Tail error: {}", e)),
+        TailerEvent::FileReset => {
+            app.set_entries(Vec::new());
+            app.status_message = Some("File was reset".to_string());
+        }
+    }
 }

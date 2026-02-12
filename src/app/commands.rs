@@ -18,6 +18,7 @@ pub enum CommandAction {
     ToggleProfile,
     ToggleTail,
     ToggleWrap,
+    ToggleSyntax,
     GoToTop,
     GoToBottom,
     Quit,
@@ -79,6 +80,11 @@ impl Command {
             name: "Toggle word wrap",
             shortcut: "w",
             action: CommandAction::ToggleWrap,
+        },
+        Command {
+            name: "Toggle syntax highlighting",
+            shortcut: "s",
+            action: CommandAction::ToggleSyntax,
         },
         Command {
             name: "Go to top",
