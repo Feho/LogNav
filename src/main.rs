@@ -112,10 +112,10 @@ async fn run_app(
 
     loop {
         // Flush debounced search if deadline passed
-        if let Some(dirty_at) = app.search_dirty {
-            if dirty_at.elapsed() >= SEARCH_DEBOUNCE {
-                events::flush_search(app);
-            }
+        if let Some(dirty_at) = app.search_dirty
+            && dirty_at.elapsed() >= SEARCH_DEBOUNCE
+        {
+            events::flush_search(app);
         }
 
         // Draw UI
@@ -136,10 +136,10 @@ async fn run_app(
                 handle_tailer_event(app, event);
             }
             _ = async {
-                if event::poll(Duration::from_millis(50)).unwrap_or(false) {
-                    if let Ok(evt) = event::read() {
-                        events::handle_event(app, evt);
-                    }
+                if event::poll(Duration::from_millis(50)).unwrap_or(false)
+                    && let Ok(evt) = event::read()
+                {
+                    events::handle_event(app, evt);
                 }
             } => {}
         }
@@ -182,13 +182,13 @@ async fn run_app(
         }
 
         // Handle tail toggle (once after all events)
-        if app.tail_enabled != previous_tail_enabled {
-            if let Some(t) = tailer.as_mut() {
-                if app.tail_enabled {
-                    let _ = t.start_watching();
-                } else {
-                    t.stop_watching();
-                }
+        if app.tail_enabled != previous_tail_enabled
+            && let Some(t) = tailer.as_mut()
+        {
+            if app.tail_enabled {
+                let _ = t.start_watching();
+            } else {
+                t.stop_watching();
             }
         }
     }

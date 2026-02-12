@@ -199,42 +199,83 @@ impl App {
         }
     }
 
-    /// Jump to next search match
-    pub fn next_search_match(&mut self) {
-        if let super::FocusState::Search {
-            ref match_indices,
-            ref mut current_match,
-            ..
-        } = self.focus
-        {
-            if !match_indices.is_empty() {
-                *current_match = (*current_match + 1) % match_indices.len();
-                let target = match_indices[*current_match];
-                self.selected_index = target;
-                self.center_selected();
-            }
+    /// Jump to next search match (vim-style, works with panel or without)
+    pub fn next_match(&mut self) {
+        if self.search_panel_matches.is_empty() {
+            return;
+        }
+        self.search_panel_selected =
+            (self.search_panel_selected + 1) % self.search_panel_matches.len();
+        self.sync_main_to_panel_selection();
+    }
+
+    /// Jump to previous search match (vim-style)
+    pub fn prev_match(&mut self) {
+        if self.search_panel_matches.is_empty() {
+            return;
+        }
+        self.search_panel_selected = if self.search_panel_selected == 0 {
+            self.search_panel_matches.len() - 1
+        } else {
+            self.search_panel_selected - 1
+        };
+        self.sync_main_to_panel_selection();
+    }
+
+    /// Sync the main view cursor to the currently selected panel match
+    pub fn sync_main_to_panel_selection(&mut self) {
+        if let Some(&filtered_pos) = self.search_panel_matches.get(self.search_panel_selected) {
+            self.selected_index = filtered_pos;
+            self.center_selected();
+        }
+        self.ensure_panel_selected_visible();
+    }
+
+    /// Ensure search_panel_selected is visible within the panel's scroll window
+    pub fn ensure_panel_selected_visible(&mut self) {
+        if self.search_panel_height == 0 {
+            return;
+        }
+        // Account for border (2 rows: top + bottom)
+        let inner_height = self.search_panel_height.saturating_sub(2);
+        if inner_height == 0 {
+            return;
+        }
+        if self.search_panel_selected < self.search_panel_scroll {
+            self.search_panel_scroll = self.search_panel_selected;
+        } else if self.search_panel_selected >= self.search_panel_scroll + inner_height {
+            self.search_panel_scroll = self.search_panel_selected - inner_height + 1;
         }
     }
 
-    /// Jump to previous search match
-    pub fn prev_search_match(&mut self) {
-        if let super::FocusState::Search {
-            ref match_indices,
-            ref mut current_match,
-            ..
-        } = self.focus
-        {
-            if !match_indices.is_empty() {
-                *current_match = if *current_match == 0 {
-                    match_indices.len() - 1
-                } else {
-                    *current_match - 1
-                };
-                let target = match_indices[*current_match];
-                self.selected_index = target;
-                self.center_selected();
-            }
+    /// Move panel selection down by n
+    pub fn panel_scroll_down(&mut self, n: usize) {
+        if self.search_panel_matches.is_empty() {
+            return;
         }
+        self.search_panel_selected =
+            (self.search_panel_selected + n).min(self.search_panel_matches.len() - 1);
+        self.sync_main_to_panel_selection();
+    }
+
+    /// Move panel selection up by n
+    pub fn panel_scroll_up(&mut self, n: usize) {
+        self.search_panel_selected = self.search_panel_selected.saturating_sub(n);
+        self.sync_main_to_panel_selection();
+    }
+
+    /// Jump to top of panel matches
+    pub fn panel_scroll_to_top(&mut self) {
+        self.search_panel_selected = 0;
+        self.sync_main_to_panel_selection();
+    }
+
+    /// Jump to bottom of panel matches
+    pub fn panel_scroll_to_bottom(&mut self) {
+        if !self.search_panel_matches.is_empty() {
+            self.search_panel_selected = self.search_panel_matches.len() - 1;
+        }
+        self.sync_main_to_panel_selection();
     }
 
     /// Get the currently selected entry

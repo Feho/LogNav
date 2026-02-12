@@ -9,6 +9,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.should_quit = true;
         }
 
+        // Esc: close search panel if open
+        (_, KeyCode::Esc) => {
+            if app.search_panel_open {
+                app.close_search_panel();
+            }
+        }
+
         // Help
         (_, KeyCode::Char('?')) | (_, KeyCode::F(1)) => {
             app.open_help();
@@ -32,6 +39,27 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         // Date filter
         (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
             app.open_date_filter();
+        }
+
+        // Tab: toggle search panel focus
+        (_, KeyCode::Tab) => {
+            if app.search_panel_open {
+                app.search_panel_focused = !app.search_panel_focused;
+            }
+        }
+
+        // n: next search match (vim-style)
+        (_, KeyCode::Char('n')) => {
+            if !app.search_panel_matches.is_empty() {
+                app.next_match();
+            }
+        }
+
+        // N: previous search match (vim-style)
+        (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
+            if !app.search_panel_matches.is_empty() {
+                app.prev_match();
+            }
         }
 
         // Toggle tail

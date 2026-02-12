@@ -125,7 +125,7 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         Span::raw(" "),
         Span::styled(match_info, match_info_style),
         Span::styled(
-            " | C-r:regex | C-n/C-p:prev/next | Enter:apply | Esc:cancel",
+            " | C-r:regex | Enter:search | Esc:cancel",
             Style::default().fg(Color::DarkGray),
         ),
     ]);
@@ -503,8 +503,10 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         )]),
         Line::from("  / or C-f  Open search (live highlight)"),
         Line::from("  C-r       Toggle regex mode in search"),
-        Line::from("  C-n/C-p   Next/previous match in search"),
-        Line::from("  Enter     Apply search as filter"),
+        Line::from("  Enter     Apply search, open matches panel"),
+        Line::from("  n/N       Next/previous match (vim-style)"),
+        Line::from("  Tab       Switch focus between main/matches panel"),
+        Line::from("  Esc       Close matches panel, clear search"),
         Line::from("  C-d       Date range filter"),
         Line::from("  0-6       Toggle levels: 0:Reset 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
         Line::from(""),
@@ -549,8 +551,10 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("  Live search: / to search, matches highlighted"),
-        Line::from("  Filter: Enter to apply search as filter"),
-        Line::from("  Clear: / then Esc to clear filter"),
+        Line::from("  Enter: opens split-screen matches panel"),
+        Line::from("  n/N: jump to next/prev match (works after panel closed)"),
+        Line::from("  Tab: switch focus between main view and matches"),
+        Line::from("  Esc: close matches panel and clear search"),
     ];
 
     let visible_height = inner.height as usize;

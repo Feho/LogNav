@@ -8,9 +8,10 @@ use ratatui::{
 use std::borrow::Cow;
 
 mod log_view;
+mod matches_panel;
 mod overlays;
 mod status_bar;
-mod syntax;
+pub(crate) mod syntax;
 
 /// Main UI drawing function
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -20,7 +21,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(area);
 
     // When search bar is active, shrink log view by 1 row so it doesn't overlap
-    let log_area = match &app.focus {
+    let content_area = match &app.focus {
         FocusState::Search { .. } => Rect {
             y: chunks[0].y + 1,
             height: chunks[0].height.saturating_sub(1),
@@ -29,7 +30,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         _ => chunks[0],
     };
 
-    log_view::draw_log_view(frame, app, log_area);
+    // Split content area when search panel is open
+    if app.search_panel_open {
+        let split = Layout::vertical([Constraint::Percentage(67), Constraint::Percentage(33)])
+            .split(content_area);
+
+        log_view::draw_log_view(frame, app, split[0]);
+        matches_panel::draw_matches_panel(frame, app, split[1]);
+    } else {
+        log_view::draw_log_view(frame, app, content_area);
+    }
+
     status_bar::draw_status_bar(frame, app, chunks[1]);
 
     // Draw overlays on top
@@ -82,14 +93,13 @@ pub fn extract_message(raw_line: &str) -> Cow<'_, str> {
             let msg = raw_line[pos + 18..].trim_start();
             // Strip outer quotes (wd.log wraps messages in "...")
             // The message part after component prefix looks like: `SPL|Context "actual message"`
-            if msg.ends_with('"') {
-                if let Some(open) = msg.find('"') {
-                    if open < msg.len() - 1 {
-                        let prefix = &msg[..open];
-                        let inner = &msg[open + 1..msg.len() - 1];
-                        return Cow::Owned(format!("{}{}", prefix, inner));
-                    }
-                }
+            if msg.ends_with('"')
+                && let Some(open) = msg.find('"')
+                && open < msg.len() - 1
+            {
+                let prefix = &msg[..open];
+                let inner = &msg[open + 1..msg.len() - 1];
+                return Cow::Owned(format!("{}{}", prefix, inner));
             }
             return Cow::Borrowed(msg);
         }

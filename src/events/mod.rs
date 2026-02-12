@@ -10,6 +10,7 @@ mod help;
 mod mouse;
 mod normal;
 mod search;
+mod search_panel;
 
 pub use search::flush_search;
 
@@ -26,6 +27,13 @@ pub fn handle_event(app: &mut App, event: Event) {
 
 /// Handle keyboard events
 fn handle_key(app: &mut App, key: KeyEvent) {
+    // When search panel is focused, dispatch to panel handler first
+    if app.search_panel_open && app.search_panel_focused && matches!(app.focus, FocusState::Normal)
+    {
+        search_panel::handle_search_panel_key(app, key);
+        return;
+    }
+
     match &app.focus {
         FocusState::Normal => normal::handle_normal_key(app, key),
         FocusState::CommandPalette { .. } => command::handle_command_palette_key(app, key),
@@ -50,10 +58,10 @@ fn clean_pasted_path(text: &str) -> String {
         if let Ok(home) = std::env::var("HOME") {
             return home;
         }
-    } else if let Some(rest) = s.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
-        }
+    } else if let Some(rest) = s.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}/{}", home, rest);
     }
     s
 }

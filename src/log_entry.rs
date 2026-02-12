@@ -38,6 +38,7 @@ pub struct LogEntry {
 
 impl LogEntry {
     /// Get full text, using cache if available
+    #[allow(dead_code)]
     pub fn full_text(&mut self) -> &str {
         if self.cached_full_text.is_none() {
             self.cached_full_text = Some(if self.continuation_lines.is_empty() {
@@ -172,8 +173,7 @@ mod tests {
 
     #[test]
     fn test_parse_wd_log_audit() {
-        let content =
-            "? AUDIT 02-12 11:37:17.453 [#111] AUTH|MetaAuthority \"msg\"";
+        let content = "? AUDIT 02-12 11:37:17.453 [#111] AUTH|MetaAuthority \"msg\"";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Trace);
@@ -181,8 +181,7 @@ mod tests {
 
     #[test]
     fn test_parse_wd_log_fatal() {
-        let content =
-            "**FATAL 02-12 11:37:20.688 [#47] SQL|SqlProxy \"msg\"";
+        let content = "**FATAL 02-12 11:37:20.688 [#47] SQL|SqlProxy \"msg\"";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Error);
@@ -246,8 +245,7 @@ mod tests {
 
     #[test]
     fn test_detect_qconsole_format() {
-        let content =
-            "[2026-01-09 18:48:38 UTC+1.000] logfile opened on Fri Jan  9 18:48:38 2026";
+        let content = "[2026-01-09 18:48:38 UTC+1.000] logfile opened on Fri Jan  9 18:48:38 2026";
         assert_eq!(detect_format(content), LogFormat::QConsole);
     }
 
@@ -270,8 +268,7 @@ mod tests {
 
     #[test]
     fn test_parse_qconsole_error() {
-        let content =
-            "[2026-01-09 19:05:01 UTC+1.000] ^~^~^ Script Error : Can't find 'file.scr'";
+        let content = "[2026-01-09 19:05:01 UTC+1.000] ^~^~^ Script Error : Can't find 'file.scr'";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Error);
@@ -288,8 +285,7 @@ mod tests {
 
     #[test]
     fn test_parse_qconsole_warn_warning() {
-        let content =
-            "[2026-01-09 18:48:39 UTC+1.000] WARNING: Couldn't find voting options file";
+        let content = "[2026-01-09 18:48:39 UTC+1.000] WARNING: Couldn't find voting options file";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Warn);
@@ -301,7 +297,11 @@ mod tests {
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert!(!entries[0].raw_line.contains("^3"));
-        assert!(entries[0].raw_line.contains("Player Dimitri_47 is under fire!"));
+        assert!(
+            entries[0]
+                .raw_line
+                .contains("Player Dimitri_47 is under fire!")
+        );
     }
 
     #[test]

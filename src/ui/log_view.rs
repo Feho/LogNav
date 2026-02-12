@@ -19,15 +19,14 @@ fn compile_overlay_regex(app: &App) -> Option<Regex> {
         regex_mode,
         ..
     } = app.focus
+        && !query.is_empty()
     {
-        if !query.is_empty() {
-            let pattern = if regex_mode {
-                format!("(?i){}", query)
-            } else {
-                format!("(?i){}", regex::escape(query))
-            };
-            return Regex::new(&pattern).ok();
-        }
+        let pattern = if regex_mode {
+            format!("(?i){}", query)
+        } else {
+            format!("(?i){}", regex::escape(query))
+        };
+        return Regex::new(&pattern).ok();
     }
     None
 }
@@ -40,11 +39,12 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     // Store viewport height for mouse scrolling
     app.viewport_height = viewport_height;
 
-    // Compute highlight regex once: use committed regex, or compile from overlay query
+    // Compute highlight regex once: use highlight_regex (panel), committed regex, or overlay query
     let overlay_regex = compile_overlay_regex(app);
     let hl_regex = app
-        .search_regex
+        .highlight_regex
         .as_ref()
+        .or(app.search_regex.as_ref())
         .or(overlay_regex.as_ref())
         .cloned();
     let hl_regex_ref = hl_regex.as_ref();
@@ -104,7 +104,12 @@ fn draw_log_view_nowrap(
             level_span,
             Span::raw(" "),
         ];
-        spans.extend(styled_spans(&display_msg, hl_regex, Style::default(), syntax_on && !is_selected));
+        spans.extend(styled_spans(
+            &display_msg,
+            hl_regex,
+            Style::default(),
+            syntax_on && !is_selected,
+        ));
 
         // Show expand indicator
         if !entry.continuation_lines.is_empty() {
@@ -137,7 +142,12 @@ fn draw_log_view_nowrap(
                     Span::styled("     ", Style::default()), // level placeholder
                     Span::raw(" "),
                 ];
-                cont_spans.extend(styled_spans(&display, hl_regex, cont_style, syntax_on && !is_selected));
+                cont_spans.extend(styled_spans(
+                    &display,
+                    hl_regex,
+                    cont_style,
+                    syntax_on && !is_selected,
+                ));
                 let line = Line::from(cont_spans);
                 visual_lines.push((line, is_selected, entry.level));
             }
@@ -244,7 +254,12 @@ fn draw_log_view_wrapped(
                     ),
                     Span::raw(" "),
                 ];
-                spans.extend(styled_spans(part, hl_regex, Style::default(), syntax_on && !is_selected));
+                spans.extend(styled_spans(
+                    part,
+                    hl_regex,
+                    Style::default(),
+                    syntax_on && !is_selected,
+                ));
                 if let Some(ref ind) = indicator {
                     spans.push(Span::styled(
                         ind.clone(),
@@ -257,7 +272,12 @@ fn draw_log_view_wrapped(
             } else {
                 // Wrapped continuation: indent to align with message
                 let mut spans = vec![Span::raw(" ".repeat(prefix_width))];
-                spans.extend(styled_spans(part, hl_regex, Style::default(), syntax_on && !is_selected));
+                spans.extend(styled_spans(
+                    part,
+                    hl_regex,
+                    Style::default(),
+                    syntax_on && !is_selected,
+                ));
                 Line::from(spans)
             };
 
@@ -277,7 +297,12 @@ fn draw_log_view_wrapped(
                     }
                     let cont_style = Style::default().fg(Color::DarkGray);
                     let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
-                    cont_spans.extend(styled_spans(&part, hl_regex, cont_style, syntax_on && !is_selected));
+                    cont_spans.extend(styled_spans(
+                        &part,
+                        hl_regex,
+                        cont_style,
+                        syntax_on && !is_selected,
+                    ));
                     let line = Line::from(cont_spans);
                     visual_lines.push((line, is_selected, entry.level));
                 }

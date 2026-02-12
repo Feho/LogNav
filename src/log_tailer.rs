@@ -253,17 +253,17 @@ impl LogTailer {
             return Ok(());
         }
 
-        if let Some(content) = content {
-            if !content.is_empty() {
-                let entries =
-                    parsers::parse_incremental_with_parser(&content, parser, *entry_count, None);
+        if let Some(content) = content
+            && !content.is_empty()
+        {
+            let entries =
+                parsers::parse_incremental_with_parser(&content, parser, *entry_count, None);
 
-                if !entries.is_empty() {
-                    *entry_count += entries.len();
-                    tx.send(TailerEvent::NewEntries(entries))
-                        .await
-                        .map_err(|e| format!("Failed to send: {}", e))?;
-                }
+            if !entries.is_empty() {
+                *entry_count += entries.len();
+                tx.send(TailerEvent::NewEntries(entries))
+                    .await
+                    .map_err(|e| format!("Failed to send: {}", e))?;
             }
         }
 

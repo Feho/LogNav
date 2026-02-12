@@ -23,10 +23,10 @@ pub fn handle_command_palette_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Up => {
-            if let FocusState::CommandPalette { selected, .. } = &mut app.focus {
-                if *selected > 0 {
-                    *selected -= 1;
-                }
+            if let FocusState::CommandPalette { selected, .. } = &mut app.focus
+                && *selected > 0
+            {
+                *selected -= 1;
             }
         }
 
@@ -36,10 +36,10 @@ pub fn handle_command_palette_key(app: &mut App, key: KeyEvent) {
                 _ => return,
             };
             let count = app.get_filtered_commands(&input_clone).len();
-            if let FocusState::CommandPalette { selected, .. } = &mut app.focus {
-                if current_selected + 1 < count {
-                    *selected = current_selected + 1;
-                }
+            if let FocusState::CommandPalette { selected, .. } = &mut app.focus
+                && current_selected + 1 < count
+            {
+                *selected = current_selected + 1;
             }
         }
 

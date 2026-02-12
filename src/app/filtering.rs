@@ -13,26 +13,24 @@ impl App {
             }
 
             // Search filter - use searchable_text for fast path
-            if let Some(ref regex) = self.search_regex {
-                if !regex.is_match(entry.searchable_text()) {
-                    continue;
-                }
+            if let Some(ref regex) = self.search_regex
+                && !regex.is_match(entry.searchable_text())
+            {
+                continue;
             }
 
             // Date range filter
-            if let Some(from) = self.date_from {
-                if let Some(ts) = entry.timestamp {
-                    if ts < from {
-                        continue;
-                    }
-                }
+            if let Some(from) = self.date_from
+                && let Some(ts) = entry.timestamp
+                && ts < from
+            {
+                continue;
             }
-            if let Some(to) = self.date_to {
-                if let Some(ts) = entry.timestamp {
-                    if ts > to {
-                        continue;
-                    }
-                }
+            if let Some(to) = self.date_to
+                && let Some(ts) = entry.timestamp
+                && ts > to
+            {
+                continue;
             }
 
             self.filtered_indices.push(idx);
@@ -62,26 +60,24 @@ impl App {
             }
 
             // Search filter - use searchable_text for fast path
-            if let Some(ref regex) = self.search_regex {
-                if !regex.is_match(entry.searchable_text()) {
-                    continue;
-                }
+            if let Some(ref regex) = self.search_regex
+                && !regex.is_match(entry.searchable_text())
+            {
+                continue;
             }
 
             // Date range filter
-            if let Some(from) = self.date_from {
-                if let Some(ts) = entry.timestamp {
-                    if ts < from {
-                        continue;
-                    }
-                }
+            if let Some(from) = self.date_from
+                && let Some(ts) = entry.timestamp
+                && ts < from
+            {
+                continue;
             }
-            if let Some(to) = self.date_to {
-                if let Some(ts) = entry.timestamp {
-                    if ts > to {
-                        continue;
-                    }
-                }
+            if let Some(to) = self.date_to
+                && let Some(ts) = entry.timestamp
+                && ts > to
+            {
+                continue;
             }
 
             self.filtered_indices.push(idx);
@@ -135,23 +131,52 @@ impl App {
         self.apply_filters();
     }
 
-    /// Update search match indices for navigation
-    /// When search is active, all filtered entries are matches
-    pub fn update_search_matches(&mut self) {
-        if let super::FocusState::Search {
-            ref mut match_indices,
-            ref mut current_match,
-            ..
-        } = self.focus
-        {
-            match_indices.clear();
-            // All filtered entries are matches when search is applied
-            if self.search_regex.is_some() {
-                match_indices.extend(0..self.filtered_indices.len());
-            }
-            if !match_indices.is_empty() && *current_match >= match_indices.len() {
-                *current_match = 0;
-            }
+    /// Commit search to the results panel (split-screen mode).
+    /// Stores highlight regex, computes match indices, opens panel.
+    /// Does NOT filter entries — all entries remain visible.
+    pub fn commit_search_to_panel(&mut self, query: &str, regex_mode: bool) {
+        if query.is_empty() {
+            self.close_search_panel();
+            return;
+        }
+
+        // Compile highlight regex
+        let pattern = if regex_mode {
+            format!("(?i){}", query)
+        } else {
+            format!("(?i){}", regex::escape(query))
+        };
+        let regex = match regex::Regex::new(&pattern) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        // Clear any existing search filter so all entries are visible
+        self.search_regex = None;
+        self.search_query.clear();
+        self.apply_filters();
+
+        // Scan filtered_indices for matches
+        self.search_panel_matches = self
+            .filtered_indices
+            .iter()
+            .enumerate()
+            .filter(|&(_, &entry_idx)| regex.is_match(self.entries[entry_idx].searchable_text()))
+            .map(|(pos, _)| pos)
+            .collect();
+
+        self.highlight_regex = Some(regex);
+        self.highlight_query = query.to_string();
+        self.highlight_regex_mode = regex_mode;
+        self.search_panel_open = true;
+        self.search_panel_focused = false;
+        self.search_panel_selected = 0;
+        self.search_panel_scroll = 0;
+
+        // Jump to first match
+        if let Some(&first) = self.search_panel_matches.first() {
+            self.selected_index = first;
+            self.center_selected();
         }
     }
 

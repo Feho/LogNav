@@ -57,6 +57,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push("Tail".to_string());
     }
 
+    // Add search/highlight info
+    if app.search_panel_open {
+        parts.push(format!("Search:\"{}\"", app.highlight_query));
+    }
+
     // Add horizontal scroll indicator if scrolled
     if app.horizontal_scroll > 0 {
         parts.push(format!("Col:{}", app.horizontal_scroll));
@@ -71,8 +76,17 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // Right side: context-aware hints
     let right = match app.focus {
+        FocusState::Normal if app.search_panel_open && app.search_panel_focused => {
+            "j/k:move | n/N:match | Tab:main | Esc:close | /:search"
+        }
+        FocusState::Normal if app.search_panel_open => {
+            "n/N:match | Tab:panel | Esc:close | /:search"
+        }
+        FocusState::Normal if app.highlight_regex.is_some() => {
+            "n/N:match | j/k:move | /:search | ?:help | q:quit"
+        }
         FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open | ?:help | q:quit",
-        FocusState::Search { .. } => "C-r:regex | C-n/C-p:nav | Enter:filter | Esc:cancel ",
+        FocusState::Search { .. } => "C-r:regex | Enter:search | Esc:cancel ",
         FocusState::CommandPalette { .. } => "Esc:close | Enter:run ",
         FocusState::DateFilter { .. } => "Tab:switch | Enter:apply | Esc:close ",
         FocusState::FileOpen { .. } => "Tab:fill | Enter:open | Esc:cancel ",

@@ -102,6 +102,17 @@ pub struct App {
 
     // Debounce: when set, search needs recomputing after this instant
     pub search_dirty: Option<Instant>,
+
+    // Search results panel (split-screen)
+    pub search_panel_open: bool,
+    pub search_panel_focused: bool,
+    pub search_panel_matches: Vec<usize>, // positions within filtered_indices that match
+    pub search_panel_selected: usize,
+    pub search_panel_scroll: usize,
+    pub search_panel_height: usize,
+    pub highlight_regex: Option<Regex>,
+    pub highlight_query: String,
+    pub highlight_regex_mode: bool,
 }
 
 impl Default for App {
@@ -136,6 +147,15 @@ impl App {
             fuzzy_matcher: SkimMatcherV2::default(),
             clipboard: arboard::Clipboard::new().ok(),
             search_dirty: None,
+            search_panel_open: false,
+            search_panel_focused: false,
+            search_panel_matches: Vec::new(),
+            search_panel_selected: 0,
+            search_panel_scroll: 0,
+            search_panel_height: 0,
+            highlight_regex: None,
+            highlight_query: String::new(),
+            highlight_regex_mode: false,
         }
     }
 
@@ -226,8 +246,17 @@ impl App {
 
     /// Open search overlay
     pub fn open_search(&mut self) {
-        // Compute match_indices as positions within filtered_indices
-        let match_indices = if let Some(ref regex) = self.search_regex {
+        // Pre-populate from highlight_query (panel search) or search_query (filter search)
+        let query = if !self.highlight_query.is_empty() {
+            self.highlight_query.clone()
+        } else {
+            self.search_query.clone()
+        };
+        let regex_mode = self.highlight_regex_mode;
+
+        // Compute match_indices from whichever regex is active
+        let active_regex = self.highlight_regex.as_ref().or(self.search_regex.as_ref());
+        let match_indices = if let Some(regex) = active_regex {
             self.filtered_indices
                 .iter()
                 .enumerate()
@@ -241,10 +270,10 @@ impl App {
         };
 
         self.focus = FocusState::Search {
-            query: self.search_query.clone(),
+            query,
             match_indices,
             current_match: 0,
-            regex_mode: false,
+            regex_mode,
             regex_error: None,
         };
     }
@@ -289,6 +318,18 @@ impl App {
     /// Close any overlay and return to normal
     pub fn close_overlay(&mut self) {
         self.focus = FocusState::Normal;
+    }
+
+    /// Close the search results panel and clear highlight
+    pub fn close_search_panel(&mut self) {
+        self.search_panel_open = false;
+        self.search_panel_focused = false;
+        self.search_panel_matches.clear();
+        self.search_panel_selected = 0;
+        self.search_panel_scroll = 0;
+        self.highlight_regex = None;
+        self.highlight_query.clear();
+        self.highlight_regex_mode = false;
     }
 
     /// Toggle tail mode

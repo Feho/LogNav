@@ -114,11 +114,12 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             // Clear search and close
             app.set_search("");
+            app.close_search_panel();
             app.close_overlay();
         }
 
         KeyCode::Enter => {
-            // Apply search filter from focus state and close
+            // Commit search to panel (split-screen mode)
             let (query, regex_mode) = match &app.focus {
                 FocusState::Search {
                     query,
@@ -133,8 +134,7 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
                 }
                 _ => return,
             };
-            app.set_search_with_mode(&query, regex_mode);
-            app.update_search_matches();
+            app.commit_search_to_panel(&query, regex_mode);
             app.close_overlay();
         }
 
@@ -147,46 +147,6 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
                 *regex_mode = !*regex_mode;
             }
             app.search_dirty = Some(Instant::now());
-        }
-
-        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            // Navigate to next match
-            match &mut app.focus {
-                FocusState::Search {
-                    match_indices,
-                    current_match,
-                    ..
-                } => {
-                    if !match_indices.is_empty() {
-                        *current_match = (*current_match + 1) % match_indices.len();
-                        app.selected_index = match_indices[*current_match];
-                        app.center_selected();
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            // Navigate to previous match
-            match &mut app.focus {
-                FocusState::Search {
-                    match_indices,
-                    current_match,
-                    ..
-                } => {
-                    if !match_indices.is_empty() {
-                        *current_match = if *current_match == 0 {
-                            match_indices.len() - 1
-                        } else {
-                            *current_match - 1
-                        };
-                        app.selected_index = match_indices[*current_match];
-                        app.center_selected();
-                    }
-                }
-                _ => {}
-            }
         }
 
         KeyCode::Char(c) => {
