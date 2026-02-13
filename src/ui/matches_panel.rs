@@ -92,6 +92,7 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
             hl_regex,
             Style::default(),
             syntax_on && !is_selected,
+            None,
         ));
 
         let line_area = Rect {

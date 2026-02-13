@@ -31,6 +31,21 @@ fn compile_overlay_regex(app: &App) -> Option<Regex> {
     None
 }
 
+/// Compute underline range for a given terminal row if hover_word matches.
+/// Returns char range in display-text coordinates (after horizontal_scroll skip).
+fn underline_range_for_row(app: &App, terminal_row: usize) -> Option<(usize, usize)> {
+    let hover = app.hover_word.as_ref()?;
+    if hover.row != terminal_row {
+        return None;
+    }
+    let start = hover.char_start.saturating_sub(app.horizontal_scroll);
+    let end = hover.char_end.saturating_sub(app.horizontal_scroll);
+    if start >= end {
+        return None;
+    }
+    Some((start, end))
+}
+
 /// Draw the main log view
 pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height as usize;
@@ -77,6 +92,7 @@ fn draw_log_view_nowrap(
     // Build visual lines, accounting for expanded entries
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
+    let mut terminal_row = 0usize;
 
     while visual_lines.len() < viewport_height && current_entry_idx < app.filtered_indices.len() {
         let entry_idx = app.filtered_indices[current_entry_idx];
@@ -99,6 +115,8 @@ fn draw_log_view_nowrap(
         let skip = app.horizontal_scroll.min(message.len());
         let display_msg: String = message.chars().skip(skip).collect();
 
+        let ul_range = underline_range_for_row(app, terminal_row);
+
         let mut spans = vec![
             Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
             level_span,
@@ -109,6 +127,7 @@ fn draw_log_view_nowrap(
             hl_regex,
             Style::default(),
             syntax_on && !is_selected,
+            ul_range,
         ));
 
         // Show expand indicator
@@ -127,6 +146,7 @@ fn draw_log_view_nowrap(
         }
 
         visual_lines.push((Line::from(spans), is_selected, entry.level));
+        terminal_row += 1;
 
         // Add continuation lines if expanded
         if is_expanded {
@@ -137,6 +157,9 @@ fn draw_log_view_nowrap(
                 let skip = app.horizontal_scroll.min(cont_line.len());
                 let display: String = cont_line.chars().skip(skip).collect();
                 let cont_style = Style::default().fg(Color::DarkGray);
+
+                let ul_range = underline_range_for_row(app, terminal_row);
+
                 let mut cont_spans = vec![
                     Span::raw("              "),             // timestamp placeholder
                     Span::styled("     ", Style::default()), // level placeholder
@@ -147,9 +170,11 @@ fn draw_log_view_nowrap(
                     hl_regex,
                     cont_style,
                     syntax_on && !is_selected,
+                    ul_range,
                 ));
                 let line = Line::from(cont_spans);
                 visual_lines.push((line, is_selected, entry.level));
+                terminal_row += 1;
             }
         }
 
@@ -211,6 +236,7 @@ fn draw_log_view_wrapped(
     // Build visual lines for display, starting from scroll_offset
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
+    let mut terminal_row = 0usize;
 
     while visual_lines.len() < viewport_height && current_entry_idx < app.filtered_indices.len() {
         let entry_idx = app.filtered_indices[current_entry_idx];
@@ -244,6 +270,8 @@ fn draw_log_view_wrapped(
                 break;
             }
 
+            let ul_range = underline_range_for_row(app, terminal_row);
+
             let line = if i == 0 {
                 // First line: show timestamp and level
                 let mut spans = vec![
@@ -259,6 +287,7 @@ fn draw_log_view_wrapped(
                     hl_regex,
                     Style::default(),
                     syntax_on && !is_selected,
+                    ul_range,
                 ));
                 if let Some(ref ind) = indicator {
                     spans.push(Span::styled(
@@ -277,11 +306,13 @@ fn draw_log_view_wrapped(
                     hl_regex,
                     Style::default(),
                     syntax_on && !is_selected,
+                    ul_range,
                 ));
                 Line::from(spans)
             };
 
             visual_lines.push((line, is_selected, entry.level));
+            terminal_row += 1;
         }
 
         // Add expanded continuation lines
@@ -296,15 +327,18 @@ fn draw_log_view_wrapped(
                         break;
                     }
                     let cont_style = Style::default().fg(Color::DarkGray);
+                    let ul_range = underline_range_for_row(app, terminal_row);
                     let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
                     cont_spans.extend(styled_spans(
                         &part,
                         hl_regex,
                         cont_style,
                         syntax_on && !is_selected,
+                        ul_range,
                     ));
                     let line = Line::from(cont_spans);
                     visual_lines.push((line, is_selected, entry.level));
+                    terminal_row += 1;
                 }
             }
         }

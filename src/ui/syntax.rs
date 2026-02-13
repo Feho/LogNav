@@ -112,17 +112,60 @@ fn apply_search_overlay(spans: Vec<Span<'static>>, regex: &Regex) -> Vec<Span<'s
     result
 }
 
-/// Build styled spans with optional syntax highlighting and search overlay
+/// Overlay underline on spans within a char range by splitting at boundaries
+fn apply_underline_overlay(
+    spans: Vec<Span<'static>>,
+    char_start: usize,
+    char_end: usize,
+) -> Vec<Span<'static>> {
+    let mut result = Vec::new();
+    let mut pos = 0;
+
+    for span in spans {
+        let text = span.content.to_string();
+        let span_len = text.chars().count();
+        let span_end = pos + span_len;
+
+        if span_end <= char_start || pos >= char_end {
+            // No overlap
+            result.push(Span::styled(text, span.style));
+        } else {
+            let chars: Vec<char> = text.chars().collect();
+            let overlap_start = char_start.saturating_sub(pos);
+            let overlap_end = (char_end - pos).min(span_len);
+
+            if overlap_start > 0 {
+                let before: String = chars[..overlap_start].iter().collect();
+                result.push(Span::styled(before, span.style));
+            }
+            let mid: String = chars[overlap_start..overlap_end].iter().collect();
+            result.push(Span::styled(
+                mid,
+                span.style.add_modifier(Modifier::UNDERLINED),
+            ));
+            if overlap_end < span_len {
+                let after: String = chars[overlap_end..].iter().collect();
+                result.push(Span::styled(after, span.style));
+            }
+        }
+
+        pos = span_end;
+    }
+
+    result
+}
+
+/// Build styled spans with optional syntax highlighting, search overlay, and underline
 pub fn styled_spans(
     text: &str,
     hl_regex: Option<&Regex>,
     base_style: Style,
     syntax_enabled: bool,
+    underline_range: Option<(usize, usize)>,
 ) -> Vec<Span<'static>> {
-    match (syntax_enabled, hl_regex) {
+    let mut spans = match (syntax_enabled, hl_regex) {
         (false, None) => vec![Span::styled(text.to_string(), base_style)],
         (false, Some(regex)) => {
-            // Search-only highlighting (original behavior)
             let mut spans = Vec::new();
             let mut last_end = 0;
             for m in regex.find_iter(text) {
@@ -151,5 +194,11 @@ pub fn styled_spans(
             let spans = syntax_highlight_spans(text, base_style);
             apply_search_overlay(spans, regex)
         }
+    };
+
+    if let Some((start, end)) = underline_range {
+        spans = apply_underline_overlay(spans, start, end);
     }
+
+    spans
 }

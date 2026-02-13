@@ -63,6 +63,15 @@ pub const QUICK_FILTERS: &[&str] = &[
     "Clear filter",
 ];
 
+#[derive(Debug, Clone)]
+pub struct HoverWord {
+    pub row: usize,        // terminal row
+    pub char_start: usize, // char offset in display text (after prefix)
+    pub char_end: usize,   // exclusive end
+    #[allow(dead_code)]
+    pub word: String, // the word that will be searched
+}
+
 pub struct App {
     // Log data
     pub entries: Vec<LogEntry>,
@@ -117,6 +126,9 @@ pub struct App {
     // Search history (most recent last)
     pub search_history: Vec<String>,
     pub search_history_index: Option<usize>, // None = typing new query, Some(i) = browsing history
+
+    /// Ctrl+hover: word to underline
+    pub hover_word: Option<HoverWord>,
 }
 
 impl Default for App {
@@ -162,6 +174,7 @@ impl App {
             highlight_regex_mode: false,
             search_history: Vec::new(),
             search_history_index: None,
+            hover_word: None,
         }
     }
 
