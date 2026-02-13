@@ -119,6 +119,7 @@ pub struct App {
     pub horizontal_scroll: usize,
     pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
     pub viewport_height: usize,           // Last known viewport height for mouse scroll
+    pub viewport_width: usize,            // Last known viewport width for mouse scroll
 
     // File state
     pub file_path: String,
@@ -177,6 +178,7 @@ impl App {
             horizontal_scroll: 0,
             expanded_entries: HashSet::new(),
             viewport_height: 25, // Default viewport height
+            viewport_width: 80,  // Default viewport width
             file_path: String::new(),
             recent_files: Vec::new(),
             status_message: None,

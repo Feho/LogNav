@@ -24,14 +24,19 @@ impl App {
         }
 
         let new_offset = self.scroll_offset.saturating_sub(amount);
-
-        // If cursor would go below viewport, move it to bottom of new viewport
-        if self.selected_index >= new_offset + viewport_height {
-            self.selected_index =
-                (new_offset + viewport_height - 1).min(self.filtered_indices.len() - 1);
-        }
-
         self.scroll_offset = new_offset;
+
+        // Move cursor up if it would be off-screen (using visual line count)
+        let vw = self.viewport_width;
+        let mut visual_lines = 0;
+        for idx in new_offset..=self.selected_index.min(self.filtered_indices.len() - 1) {
+            visual_lines += self.visual_lines_for_entry(idx, vw);
+            if visual_lines > viewport_height {
+                // Cursor is off-screen; place it at last fully visible entry
+                self.selected_index = idx.saturating_sub(1).max(new_offset);
+                return;
+            }
+        }
     }
 
     /// Scroll viewport down without moving cursor (mouse wheel style)

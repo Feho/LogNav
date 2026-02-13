@@ -52,8 +52,9 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     let viewport_height = area.height as usize;
     let viewport_width = area.width as usize;
 
-    // Store viewport height for mouse scrolling
+    // Store viewport dimensions for mouse scrolling
     app.viewport_height = viewport_height;
+    app.viewport_width = viewport_width;
 
     // Compute highlight regex once: use committed search regex or live overlay query
     let overlay_regex = compile_overlay_regex(app);

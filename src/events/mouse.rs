@@ -69,7 +69,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
             let mut visual_row = 0;
             let mut entry_idx = app.scroll_offset;
             while entry_idx < app.filtered_indices.len() {
-                let lines = app.visual_lines_for_entry(entry_idx, 0);
+                let lines = app.visual_lines_for_entry(entry_idx, app.viewport_width);
                 if visual_row + lines > clicked_row {
                     app.selected_index = entry_idx;
                     break;
@@ -100,7 +100,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 let mut visual_row = 0;
                 let mut entry_idx = app.scroll_offset;
                 while entry_idx < app.filtered_indices.len() {
-                    let lines = app.visual_lines_for_entry(entry_idx, 0);
+                    let lines = app.visual_lines_for_entry(entry_idx, app.viewport_width);
                     if visual_row + lines > row {
                         break;
                     }
