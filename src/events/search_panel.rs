@@ -68,6 +68,8 @@ pub fn handle_search_panel_key(app: &mut App, key: KeyEvent) {
         // Enter: no-op (already selected/synced)
         (_, KeyCode::Enter) => {}
 
-        _ => {}
+        _ => {
+            super::normal::handle_normal_key(app, key);
+        }
     }
 }
