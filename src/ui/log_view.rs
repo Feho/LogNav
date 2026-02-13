@@ -66,6 +66,12 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
         .cloned();
     let hl_regex_ref = hl_regex.as_ref();
 
+    // Show start screen when no file loaded
+    if app.file_path.is_empty() && app.entries.is_empty() {
+        draw_start_screen(frame, area);
+        return;
+    }
+
     if app.wrap_enabled {
         draw_log_view_wrapped(
             frame,
@@ -78,6 +84,55 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     } else {
         draw_log_view_nowrap(frame, app, area, viewport_height, hl_regex_ref);
     }
+}
+
+/// Draw start screen when no file is loaded
+fn draw_start_screen(frame: &mut Frame, area: Rect) {
+    let lines: Vec<Line<'_>> = vec![
+        Line::from(vec![
+            Span::styled(
+                "LogNav",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" v{}", env!("CARGO_PKG_VERSION")),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  o       ", Style::default().fg(Color::Cyan)),
+            Span::styled("Open file", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+p  ", Style::default().fg(Color::Cyan)),
+            Span::styled("Command palette", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ?       ", Style::default().fg(Color::Cyan)),
+            Span::styled("Help", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("  q       ", Style::default().fg(Color::Cyan)),
+            Span::styled("Quit", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    let content_height = lines.len() as u16;
+    let content_width = 25u16; // approx max line width
+    let y = area.y + area.height.saturating_sub(content_height) / 2;
+    let x = area.x + area.width.saturating_sub(content_width) / 2;
+
+    let centered = Rect {
+        x,
+        y,
+        width: content_width.min(area.width),
+        height: content_height.min(area.height),
+    };
+
+    frame.render_widget(Paragraph::new(lines), centered);
 }
 
 /// Draw log view without wrapping (manual rendering for expand support)
