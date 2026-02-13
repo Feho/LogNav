@@ -86,7 +86,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             "n/N:match | j/k:move | /:search | ?:help | q:quit"
         }
         FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open | ?:help | q:quit",
-        FocusState::Search { .. } => "C-r:regex | Enter:search | Esc:cancel ",
+        FocusState::Search { .. } => "Ctrl+r:regex | Enter:search | Esc:cancel ",
         FocusState::CommandPalette { .. } => "Esc:close | Enter:run ",
         FocusState::DateFilter { .. } => "Tab:switch | Enter:apply | Esc:close ",
         FocusState::FileOpen { .. } => "Tab:fill | Enter:open | Esc:cancel ",
