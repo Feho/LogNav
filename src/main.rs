@@ -10,7 +10,8 @@ use app::App;
 use config::Config;
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+        EnableMouseCapture, Event,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -131,6 +132,7 @@ async fn run_app(
         let previous_tail_enabled = app.tail_enabled;
 
         // Wait for at least one event
+        let mut pending: Vec<Event> = Vec::new();
         tokio::select! {
             Some(event) = tailer_rx.recv() => {
                 handle_tailer_event(app, event);
@@ -139,16 +141,36 @@ async fn run_app(
                 if event::poll(Duration::from_millis(50)).unwrap_or(false)
                     && let Ok(evt) = event::read()
                 {
-                    events::handle_event(app, evt);
+                    pending.push(evt);
                 }
             } => {}
         }
 
-        // Drain all remaining terminal events before next draw
-        while event::poll(Duration::ZERO).unwrap_or(false) {
-            if let Ok(evt) = event::read() {
-                events::handle_event(app, evt);
+        // Drain remaining events. If the first event is a plain char key,
+        // briefly wait for more to catch drag-and-drop bursts on terminals
+        // without bracketed paste (chars arrive individually with tiny gaps).
+        let mut coalesce_chars = is_plain_char_event(pending.first());
+        loop {
+            let timeout = if coalesce_chars {
+                Duration::from_millis(5)
+            } else {
+                Duration::ZERO
+            };
+            if !event::poll(timeout).unwrap_or(false) {
+                break;
             }
+            if let Ok(evt) = event::read() {
+                coalesce_chars = coalesce_chars && is_plain_char_event(Some(&evt));
+                pending.push(evt);
+            } else {
+                break;
+            }
+        }
+
+        // Coalesce rapid char-key bursts into Paste events
+        // (handles drag-and-drop on terminals without bracketed paste)
+        for evt in coalesce_char_events(pending) {
+            events::handle_event(app, evt);
         }
 
         // Drain pending tailer events too
@@ -194,6 +216,76 @@ async fn run_app(
     }
 
     Ok(())
+}
+
+fn is_plain_char_event(evt: Option<&Event>) -> bool {
+    use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+    matches!(
+        evt,
+        Some(Event::Key(k))
+            if k.kind == KeyEventKind::Press
+            && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
+            && matches!(k.code, KeyCode::Char(_))
+    )
+}
+
+/// Coalesce runs of plain char key-presses into Paste events.
+/// Terminals without bracketed paste (e.g. Windows drag-and-drop) send
+/// pasted/dropped text as individual KeyCode::Char events. When we see
+/// a burst of 4+ consecutive char keys (no ctrl/alt modifier), we merge
+/// them into a single Event::Paste so the app treats it as dropped text.
+fn coalesce_char_events(events: Vec<Event>) -> Vec<Event> {
+    use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+
+    let mut result: Vec<Event> = Vec::with_capacity(events.len());
+    let mut char_buf = String::new();
+
+    for evt in events {
+        let is_plain_char = matches!(
+            &evt,
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
+                && matches!(k.code, KeyCode::Char(_))
+        );
+        if is_plain_char {
+            if let Event::Key(k) = &evt
+                && let KeyCode::Char(c) = k.code
+            {
+                char_buf.push(c);
+            }
+        } else {
+            flush_char_buf(&mut char_buf, &mut result);
+            result.push(evt);
+        }
+    }
+    flush_char_buf(&mut char_buf, &mut result);
+    result
+}
+
+fn flush_char_buf(buf: &mut String, out: &mut Vec<Event>) {
+    if buf.is_empty() {
+        return;
+    }
+    if buf.len() >= 4 {
+        // Looks like a paste / drag-and-drop
+        out.push(Event::Paste(std::mem::take(buf)));
+    } else {
+        // Re-emit as individual key events
+        for c in buf.drain(..).collect::<Vec<_>>() {
+            use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+            out.push(Event::Key(KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: if c.is_uppercase() {
+                    KeyModifiers::SHIFT
+                } else {
+                    KeyModifiers::NONE
+                },
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+            }));
+        }
+    }
 }
 
 fn handle_tailer_event(app: &mut App, event: TailerEvent) {

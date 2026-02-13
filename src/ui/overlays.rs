@@ -369,23 +369,38 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Path input with cursor
+    // Path input with cursor (horizontally scrolled to keep cursor visible)
     let cursor_style = Style::default().bg(Color::White).fg(Color::Black);
+    let prefix = "Path: ";
+    let prefix_len = prefix.len() as u16;
     let chars: Vec<char> = path.chars().collect();
+    let available = inner.width.saturating_sub(prefix_len + 1) as usize; // +1 for cursor block
+
+    // Compute scroll offset so cursor stays visible
+    let scroll_offset = if available == 0 {
+        0
+    } else if cursor_pos >= available {
+        cursor_pos - available + 1
+    } else {
+        0
+    };
+
+    let visible_end = (scroll_offset + available).min(chars.len());
+    let visible: String = chars[scroll_offset..visible_end].iter().collect();
     let input_line = if cursor_pos >= chars.len() {
-        // Cursor at end: show text + cursor block (space with inverted style)
+        // Cursor at end
         Line::from(vec![
-            Span::styled("Path: ", Style::default().fg(Color::Cyan)),
-            Span::raw(path),
+            Span::styled(prefix, Style::default().fg(Color::Cyan)),
+            Span::raw(visible),
             Span::styled(" ", cursor_style),
         ])
     } else {
-        // Cursor in middle: split into before | cursor_char | after
-        let before: String = chars[..cursor_pos].iter().collect();
+        // Cursor in middle of visible text
+        let before: String = chars[scroll_offset..cursor_pos].iter().collect();
         let cursor_char: String = chars[cursor_pos].to_string();
-        let after: String = chars[cursor_pos + 1..].iter().collect();
+        let after: String = chars[cursor_pos + 1..visible_end].iter().collect();
         Line::from(vec![
-            Span::styled("Path: ", Style::default().fg(Color::Cyan)),
+            Span::styled(prefix, Style::default().fg(Color::Cyan)),
             Span::raw(before),
             Span::styled(cursor_char, cursor_style),
             Span::raw(after),

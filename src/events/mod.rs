@@ -84,10 +84,10 @@ fn handle_paste(app: &mut App, text: String) {
             error,
             ..
         } => {
-            let cleaned = text.trim().to_string();
-            let byte_idx = file_open::char_to_byte_index(path, *cursor_pos);
-            path.insert_str(byte_idx, &cleaned);
-            *cursor_pos += cleaned.chars().count();
+            let cleaned = clean_pasted_path(&text);
+            // Replace entire path with cleaned paste (typical drag-and-drop)
+            *path = cleaned;
+            *cursor_pos = path.chars().count();
             *error = None;
         }
         FocusState::Search { query, .. } => {
