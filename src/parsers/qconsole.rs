@@ -27,10 +27,6 @@ static QCONSOLE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 static COLOR_CODE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\^[0-9]").unwrap());
 
 impl LogParser for QConsoleParser {
-    fn name(&self) -> &str {
-        "qconsole.log"
-    }
-
     fn detect(&self, first_line: &str) -> f64 {
         if QCONSOLE_PATTERN.is_match(first_line) {
             1.0

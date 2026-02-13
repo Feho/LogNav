@@ -1,4 +1,5 @@
 use crate::app::{App, DateFilterFocus, FocusState, QUICK_FILTERS};
+use crate::text_utils::wrap_text;
 use crate::ui::{centered_rect, extract_message, level_color};
 use ratatui::{
     Frame,
@@ -659,7 +660,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
 
     // Main message
     let message = extract_message(&entry.raw_line);
-    for wrapped_line in wrap_text_to_width(&message, inner.width as usize) {
+    for wrapped_line in wrap_text(&message, inner.width as usize) {
         lines.push(Line::from(Span::raw(wrapped_line)));
     }
 
@@ -671,7 +672,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
             Style::default().fg(Color::DarkGray),
         )));
         for cont_line in &entry.continuation_lines {
-            for wrapped_line in wrap_text_to_width(cont_line, inner.width as usize) {
+            for wrapped_line in wrap_text(cont_line, inner.width as usize) {
                 lines.push(Line::from(Span::styled(
                     wrapped_line,
                     Style::default().fg(Color::DarkGray),
@@ -722,58 +723,4 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
             scroll_area,
         );
     }
-}
-
-/// Wrap text to fit within given width
-fn wrap_text_to_width(text: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![text.to_string()];
-    }
-
-    let mut result = Vec::new();
-    let mut current_line = String::new();
-    let mut current_width = 0;
-
-    for word in text.split_inclusive(|c: char| c.is_whitespace()) {
-        let word_width = word.chars().count();
-
-        if current_width + word_width <= width {
-            current_line.push_str(word);
-            current_width += word_width;
-        } else if word_width > width {
-            // Word is longer than width, split it
-            if !current_line.is_empty() {
-                result.push(current_line);
-                current_line = String::new();
-                current_width = 0;
-            }
-            let mut chars = word.chars().peekable();
-            while chars.peek().is_some() {
-                let chunk: String = chars.by_ref().take(width).collect();
-                if chars.peek().is_some() {
-                    result.push(chunk);
-                } else {
-                    current_line = chunk;
-                    current_width = current_line.chars().count();
-                }
-            }
-        } else {
-            // Start new line
-            if !current_line.is_empty() {
-                result.push(current_line);
-            }
-            current_line = word.to_string();
-            current_width = word_width;
-        }
-    }
-
-    if !current_line.is_empty() {
-        result.push(current_line);
-    }
-
-    if result.is_empty() {
-        result.push(String::new());
-    }
-
-    result
 }

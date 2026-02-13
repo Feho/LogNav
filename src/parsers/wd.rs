@@ -29,10 +29,6 @@ static WD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 impl LogParser for WdParser {
-    fn name(&self) -> &str {
-        "wd.log"
-    }
-
     fn detect(&self, first_line: &str) -> f64 {
         if WD_PATTERN.is_match(first_line) {
             1.0

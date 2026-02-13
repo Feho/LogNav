@@ -37,24 +37,6 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    /// Get full text, using cache if available
-    #[allow(dead_code)]
-    pub fn full_text(&mut self) -> &str {
-        if self.cached_full_text.is_none() {
-            self.cached_full_text = Some(if self.continuation_lines.is_empty() {
-                self.raw_line.clone()
-            } else {
-                let mut text = self.raw_line.clone();
-                for line in &self.continuation_lines {
-                    text.push('\n');
-                    text.push_str(line);
-                }
-                text
-            });
-        }
-        self.cached_full_text.as_ref().unwrap()
-    }
-
     /// Get searchable text - includes continuation lines
     pub fn searchable_text(&self) -> &str {
         // Cache should be populated during parsing via ensure_search_cache()
@@ -83,7 +65,10 @@ impl LogEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsers::{detect_parser, fallback_parser, parse_with_parser};
+    use crate::parsers::{
+        LogParser, QConsoleParser, WdParser, WpcParser, detect_parser, fallback_parser,
+        parse_with_parser,
+    };
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum LogFormat {
@@ -94,11 +79,21 @@ mod tests {
     }
 
     fn detect_format(content: &str) -> LogFormat {
-        match detect_parser(content).as_deref().map(|p| p.name()) {
-            Some("wd.log") => LogFormat::WdLog,
-            Some("wpc.log") => LogFormat::WpcLog,
-            Some("qconsole.log") => LogFormat::QConsole,
-            _ => LogFormat::Unknown,
+        if detect_parser(content).is_none() {
+            return LogFormat::Unknown;
+        }
+        let first_line = content
+            .lines()
+            .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .unwrap_or("");
+        if WdParser.detect(first_line) > 0.0 {
+            LogFormat::WdLog
+        } else if WpcParser.detect(first_line) > 0.0 {
+            LogFormat::WpcLog
+        } else if QConsoleParser.detect(first_line) > 0.0 {
+            LogFormat::QConsole
+        } else {
+            LogFormat::Unknown
         }
     }
 

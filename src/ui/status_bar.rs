@@ -59,7 +59,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // Add search/highlight info
     if app.search_panel_open {
-        parts.push(format!("Search:\"{}\"", app.highlight_query));
+        parts.push(format!("Search:\"{}\"", app.search.query));
     }
 
     // Add horizontal scroll indicator if scrolled
@@ -82,7 +82,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::Normal if app.search_panel_open => {
             "n/N:match | Tab:panel | Esc:close | /:search"
         }
-        FocusState::Normal if app.highlight_regex.is_some() => {
+        FocusState::Normal if app.search.regex.is_some() => {
             "n/N:match | j/k:move | /:search | ?:help | q:quit"
         }
         FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open | ?:help | q:quit",

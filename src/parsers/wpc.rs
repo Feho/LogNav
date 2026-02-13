@@ -21,10 +21,6 @@ static WPC_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 impl LogParser for WpcParser {
-    fn name(&self) -> &str {
-        "wpc.log"
-    }
-
     fn detect(&self, first_line: &str) -> f64 {
         // Note: must trim internally as the pattern expects start of line
         let trimmed = first_line.trim();

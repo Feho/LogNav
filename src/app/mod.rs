@@ -6,6 +6,35 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::time::Instant;
 
+/// Unified search state (replaces separate search_regex/highlight_regex systems)
+#[derive(Debug, Clone, Default)]
+pub struct SearchState {
+    pub query: String,
+    pub regex_mode: bool,
+    pub regex: Option<Regex>,
+}
+
+impl SearchState {
+    /// Compile query into regex
+    pub fn compile(&mut self) {
+        if self.query.is_empty() {
+            self.regex = None;
+            return;
+        }
+        let pattern = if self.regex_mode {
+            format!("(?i){}", self.query)
+        } else {
+            format!("(?i){}", regex::escape(&self.query))
+        };
+        self.regex = Regex::new(&pattern).ok();
+    }
+
+    pub fn clear(&mut self) {
+        self.query.clear();
+        self.regex = None;
+    }
+}
+
 pub mod commands;
 pub mod filtering;
 pub mod navigation;
@@ -68,8 +97,6 @@ pub struct HoverWord {
     pub row: usize,        // terminal row
     pub char_start: usize, // char offset in display text (after prefix)
     pub char_end: usize,   // exclusive end
-    #[allow(dead_code)]
-    pub word: String, // the word that will be searched
 }
 
 pub struct App {
@@ -79,8 +106,6 @@ pub struct App {
 
     // Filter state
     pub level_filters: [bool; 6], // ERR, WRN, INF, DBG, TRC, PRF
-    pub search_regex: Option<Regex>,
-    pub search_query: String,
     pub date_from: Option<NaiveDateTime>,
     pub date_to: Option<NaiveDateTime>,
 
@@ -119,9 +144,7 @@ pub struct App {
     pub search_panel_selected: usize,
     pub search_panel_scroll: usize,
     pub search_panel_height: usize,
-    pub highlight_regex: Option<Regex>,
-    pub highlight_query: String,
-    pub highlight_regex_mode: bool,
+    pub search: SearchState,
 
     // Search history (most recent last)
     pub search_history: Vec<String>,
@@ -143,8 +166,6 @@ impl App {
             entries: Vec::new(),
             filtered_indices: Vec::new(),
             level_filters: [true, true, true, true, false, false], // ERR, WRN, INF, DBG on by default
-            search_regex: None,
-            search_query: String::new(),
             date_from: None,
             date_to: None,
             scroll_offset: 0,
@@ -169,9 +190,7 @@ impl App {
             search_panel_selected: 0,
             search_panel_scroll: 0,
             search_panel_height: 0,
-            highlight_regex: None,
-            highlight_query: String::new(),
-            highlight_regex_mode: false,
+            search: SearchState::default(),
             search_history: Vec::new(),
             search_history_index: None,
             hover_word: None,
@@ -265,17 +284,10 @@ impl App {
 
     /// Open search overlay
     pub fn open_search(&mut self) {
-        // Pre-populate from highlight_query (panel search) or search_query (filter search)
-        let query = if !self.highlight_query.is_empty() {
-            self.highlight_query.clone()
-        } else {
-            self.search_query.clone()
-        };
-        let regex_mode = self.highlight_regex_mode;
+        let query = self.search.query.clone();
+        let regex_mode = self.search.regex_mode;
 
-        // Compute match_indices from whichever regex is active
-        let active_regex = self.highlight_regex.as_ref().or(self.search_regex.as_ref());
-        let match_indices = if let Some(regex) = active_regex {
+        let match_indices = if let Some(regex) = self.search.regex.as_ref() {
             self.filtered_indices
                 .iter()
                 .enumerate()
@@ -340,16 +352,15 @@ impl App {
         self.focus = FocusState::Normal;
     }
 
-    /// Close the search results panel and clear highlight.
-    /// Keeps highlight_query/regex_mode so n/N can redo last search.
+    /// Close the search results panel and clear highlight regex.
+    /// Keeps search.query/regex_mode so n/N can redo last search.
     pub fn close_search_panel(&mut self) {
         self.search_panel_open = false;
         self.search_panel_focused = false;
         self.search_panel_matches.clear();
         self.search_panel_selected = 0;
         self.search_panel_scroll = 0;
-        self.highlight_regex = None;
-        // Keep highlight_query and highlight_regex_mode for n/N redo
+        self.search.regex = None;
     }
 
     /// Toggle tail mode

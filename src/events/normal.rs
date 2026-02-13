@@ -50,9 +50,9 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         // n: next search match (vim-style, redo last search if panel closed)
         (_, KeyCode::Char('n')) => {
-            if app.search_panel_matches.is_empty() && !app.highlight_query.is_empty() {
-                let q = app.highlight_query.clone();
-                let m = app.highlight_regex_mode;
+            if app.search_panel_matches.is_empty() && !app.search.query.is_empty() {
+                let q = app.search.query.clone();
+                let m = app.search.regex_mode;
                 app.commit_search_to_panel(&q, m);
             }
             if !app.search_panel_matches.is_empty() {
@@ -62,9 +62,9 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         // N: previous search match (vim-style, redo last search if panel closed)
         (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
-            if app.search_panel_matches.is_empty() && !app.highlight_query.is_empty() {
-                let q = app.highlight_query.clone();
-                let m = app.highlight_regex_mode;
+            if app.search_panel_matches.is_empty() && !app.search.query.is_empty() {
+                let q = app.search.query.clone();
+                let m = app.search.regex_mode;
                 app.commit_search_to_panel(&q, m);
             }
             if !app.search_panel_matches.is_empty() {
@@ -120,41 +120,12 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         }
 
         // Level toggles (1-6) with status messages
-        (_, KeyCode::Char('1')) => {
-            app.toggle_level(0);
-            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][0];
-            let state = if app.level_filters[0] { "ON" } else { "OFF" };
-            app.status_message = Some(format!("Level {} {}", level_name, state));
-        }
-        (_, KeyCode::Char('2')) => {
-            app.toggle_level(1);
-            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][1];
-            let state = if app.level_filters[1] { "ON" } else { "OFF" };
-            app.status_message = Some(format!("Level {} {}", level_name, state));
-        }
-        (_, KeyCode::Char('3')) => {
-            app.toggle_level(2);
-            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][2];
-            let state = if app.level_filters[2] { "ON" } else { "OFF" };
-            app.status_message = Some(format!("Level {} {}", level_name, state));
-        }
-        (_, KeyCode::Char('4')) => {
-            app.toggle_level(3);
-            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][3];
-            let state = if app.level_filters[3] { "ON" } else { "OFF" };
-            app.status_message = Some(format!("Level {} {}", level_name, state));
-        }
-        (_, KeyCode::Char('5')) => {
-            app.toggle_level(4);
-            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][4];
-            let state = if app.level_filters[4] { "ON" } else { "OFF" };
-            app.status_message = Some(format!("Level {} {}", level_name, state));
-        }
-        (_, KeyCode::Char('6')) => {
-            app.toggle_level(5);
-            let level_name = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"][5];
-            let state = if app.level_filters[5] { "ON" } else { "OFF" };
-            app.status_message = Some(format!("Level {} {}", level_name, state));
+        (_, KeyCode::Char(c @ '1'..='6')) => {
+            const LEVEL_NAMES: [&str; 6] = ["ERR", "WRN", "INF", "DBG", "TRC", "PRF"];
+            let idx = (c as u8 - b'1') as usize;
+            app.toggle_level(idx);
+            let state = if app.level_filters[idx] { "ON" } else { "OFF" };
+            app.status_message = Some(format!("Level {} {}", LEVEL_NAMES[idx], state));
         }
         (_, KeyCode::Char('0')) => {
             app.reset_level_filters();

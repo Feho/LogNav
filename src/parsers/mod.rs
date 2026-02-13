@@ -12,10 +12,6 @@ pub use wpc::WpcParser;
 
 /// Trait for log parsers
 pub trait LogParser: Send + Sync {
-    /// Parser name for identification
-    #[allow(dead_code)]
-    fn name(&self) -> &str;
-
     /// Detect if this parser can handle the given line
     /// Returns confidence score 0.0-1.0 (highest wins)
     fn detect(&self, first_line: &str) -> f64;
@@ -84,10 +80,6 @@ pub fn detect_parser(content: &str) -> Option<Arc<dyn LogParser>> {
 pub struct FallbackParser;
 
 impl LogParser for FallbackParser {
-    fn name(&self) -> &str {
-        "fallback"
-    }
-
     fn detect(&self, _first_line: &str) -> f64 {
         0.0
     }

@@ -4,14 +4,15 @@ mod events;
 mod log_entry;
 mod log_tailer;
 mod parsers;
+mod text_utils;
 mod ui;
 
 use app::App;
 use config::Config;
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-        EnableMouseCapture, Event,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},

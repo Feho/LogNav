@@ -108,15 +108,13 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     entry_idx += 1;
                 }
 
-                if let Some((word, char_start, char_end)) =
+                if let Some((_, char_start, char_end)) =
                     word_at_click(app, entry_idx, row, visual_row, col)
-                    && !word.is_empty()
                 {
                     app.hover_word = Some(HoverWord {
                         row,
                         char_start,
                         char_end,
-                        word,
                     });
                     return;
                 }

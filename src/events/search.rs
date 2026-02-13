@@ -78,15 +78,14 @@ fn jump_to_nearest_match(app: &mut App) {
 
 /// Flush pending search: recompute matches and jump to nearest
 pub fn flush_search(app: &mut App) {
-    let (query, regex_mode) = match &app.focus {
-        FocusState::Search {
-            query, regex_mode, ..
-        } => (query.clone(), *regex_mode),
-        _ => {
-            app.search_dirty = None;
-            return;
-        }
+    let FocusState::Search {
+        query, regex_mode, ..
+    } = &app.focus
+    else {
+        app.search_dirty = None;
+        return;
     };
+    let (query, regex_mode) = (query.clone(), *regex_mode);
     app.search_dirty = None;
     if let FocusState::Search {
         match_indices,
@@ -112,10 +111,11 @@ pub fn flush_search(app: &mut App) {
 pub fn handle_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
-            let query_empty = matches!(&app.focus, FocusState::Search { query, .. } if query.is_empty());
+            let query_empty =
+                matches!(&app.focus, FocusState::Search { query, .. } if query.is_empty());
             if query_empty {
                 // Already empty: close the search bar
-                app.set_search("");
+                app.search.clear();
                 app.close_search_panel();
                 app.close_overlay();
             } else {

@@ -1,46 +1,5 @@
 use super::App;
-
-/// Count how many lines text will wrap to at given width
-fn wrap_text_lines(text: &str, width: usize) -> usize {
-    if width == 0 {
-        return 1;
-    }
-
-    let mut lines = 0;
-    let mut current_width = 0;
-
-    for word in text.split_inclusive(|c: char| c.is_whitespace()) {
-        let word_width = word.chars().count();
-
-        if current_width + word_width <= width {
-            current_width += word_width;
-        } else if word_width > width {
-            // Word is longer than width, need to split it
-            if current_width > 0 {
-                lines += 1;
-            }
-            // Split long word across multiple lines
-            let mut remaining = word_width;
-            while remaining > width {
-                lines += 1;
-                remaining -= width;
-            }
-            current_width = remaining;
-        } else {
-            // Start new line
-            if current_width > 0 {
-                lines += 1;
-            }
-            current_width = word_width;
-        }
-    }
-
-    if current_width > 0 || lines == 0 {
-        lines += 1;
-    }
-
-    lines
-}
+use crate::text_utils::wrap_text_line_count;
 
 impl App {
     // Navigation
@@ -175,7 +134,7 @@ impl App {
             let prefix_width = 20; // timestamp + level badge + space
             let available_width = viewport_width.saturating_sub(prefix_width);
             let message = crate::ui::extract_message(&entry.raw_line);
-            wrap_text_lines(&message, available_width)
+            wrap_text_line_count(&message, available_width)
         } else {
             1
         };
@@ -188,7 +147,7 @@ impl App {
                 let cont_lines: usize = entry
                     .continuation_lines
                     .iter()
-                    .map(|line| wrap_text_lines(line, available_width))
+                    .map(|line| wrap_text_line_count(line, available_width))
                     .sum();
                 lines + cont_lines
             } else {

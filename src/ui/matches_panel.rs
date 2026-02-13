@@ -43,7 +43,7 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let hl_regex = app.highlight_regex.as_ref();
+    let hl_regex = app.search.regex.as_ref();
     let syntax_on = app.syntax_highlight;
     let inner_height = inner.height as usize;
 

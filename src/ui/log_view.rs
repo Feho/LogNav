@@ -1,5 +1,6 @@
 use crate::app::{App, FocusState};
 use crate::log_entry::LogLevel;
+use crate::text_utils::wrap_text;
 use crate::ui::extract_message;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{level_color, level_style};
@@ -54,12 +55,12 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     // Store viewport height for mouse scrolling
     app.viewport_height = viewport_height;
 
-    // Compute highlight regex once: use highlight_regex (panel), committed regex, or overlay query
+    // Compute highlight regex once: use committed search regex or live overlay query
     let overlay_regex = compile_overlay_regex(app);
     let hl_regex = app
-        .highlight_regex
+        .search
+        .regex
         .as_ref()
-        .or(app.search_regex.as_ref())
         .or(overlay_regex.as_ref())
         .cloned();
     let hl_regex_ref = hl_regex.as_ref();
@@ -372,59 +373,4 @@ fn draw_log_view_wrapped(
         let paragraph = Paragraph::new(line).style(style);
         frame.render_widget(paragraph, line_area);
     }
-}
-
-/// Wrap text to fit within a given width
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![text.to_string()];
-    }
-
-    let mut result = Vec::new();
-    let mut current_line = String::new();
-    let mut current_width = 0;
-
-    for word in text.split_inclusive(|c: char| c.is_whitespace()) {
-        let word_width = word.chars().count();
-
-        if current_width + word_width <= width {
-            current_line.push_str(word);
-            current_width += word_width;
-        } else if word_width > width {
-            // Word is longer than width, need to split it
-            if !current_line.is_empty() {
-                result.push(current_line);
-                current_line = String::new();
-                current_width = 0;
-            }
-            // Split long word
-            let mut chars = word.chars().peekable();
-            while chars.peek().is_some() {
-                let chunk: String = chars.by_ref().take(width).collect();
-                if chars.peek().is_some() {
-                    result.push(chunk);
-                } else {
-                    current_line = chunk;
-                    current_width = current_line.chars().count();
-                }
-            }
-        } else {
-            // Start new line
-            if !current_line.is_empty() {
-                result.push(current_line);
-            }
-            current_line = word.to_string();
-            current_width = word_width;
-        }
-    }
-
-    if !current_line.is_empty() {
-        result.push(current_line);
-    }
-
-    if result.is_empty() {
-        result.push(String::new());
-    }
-
-    result
 }
