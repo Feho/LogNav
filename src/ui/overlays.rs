@@ -513,7 +513,6 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         Line::from("  h/l/\u{2190}/\u{2192}   Scroll horizontally"),
         Line::from("  Enter     Expand/collapse entry"),
         Line::from("  a         Expand/collapse all"),
-        Line::from("  Mouse     Scroll wheel to navigate"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "SEARCH & FILTER",
@@ -521,10 +520,10 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         )]),
         Line::from("  / or Ctrl+F  Open search (live highlight)"),
         Line::from("  Ctrl+R       Toggle regex mode in search"),
-        Line::from("  Enter        Apply search, open matches panel"),
+        Line::from("  Enter        Apply search, open search results panel"),
         Line::from("  n/N          Next/previous match (vim-style)"),
-        Line::from("  Tab          Switch focus between main/matches panel"),
-        Line::from("  Esc          Close matches panel, clear search"),
+        Line::from("  Tab          Switch focus between main / search results panel"),
+        Line::from("  Esc          Close search results panel, clear search"),
         Line::from("  Ctrl+D       Date range filter"),
         Line::from("  0-6          Toggle levels: 0:Reset 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
         Line::from(""),
@@ -569,10 +568,10 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("  Live search: / to search, matches highlighted"),
-        Line::from("  Enter: opens split-screen matches panel"),
+        Line::from("  Enter: opens split-screen search results panel"),
         Line::from("  n/N: jump to next/prev match (works after panel closed)"),
-        Line::from("  Tab: switch focus between main view and matches"),
-        Line::from("  Esc: close matches panel and clear search"),
+        Line::from("  Tab: switch focus between main view and search results"),
+        Line::from("  Esc: close search results panel and clear search"),
     ];
 
     let visible_height = inner.height as usize;

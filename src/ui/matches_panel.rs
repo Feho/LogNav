@@ -19,9 +19,9 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Title shows match position
     let title = if total > 0 {
-        format!(" Matches {}/{} ", current + 1, total)
+        format!(" Search results {}/{} ", current + 1, total)
     } else {
-        " Matches (0) ".to_string()
+        " Search results (0) ".to_string()
     };
 
     let border_color = if app.search_panel_focused {
