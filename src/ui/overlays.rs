@@ -516,6 +516,8 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  G/End     Go to bottom"),
         Line::from("  e/E       Next/previous error"),
         Line::from("  w/W       Next/previous warning"),
+        Line::from("  m         Toggle bookmark on current line"),
+        Line::from("  b/B       Next/previous bookmark"),
         Line::from("  h/l/\u{2190}/\u{2192}   Scroll horizontally"),
         Line::from("  Enter     Expand/collapse entry"),
         Line::from("  a         Expand/collapse all"),

@@ -25,6 +25,10 @@ pub enum CommandAction {
     PrevError,
     NextWarning,
     PrevWarning,
+    ToggleBookmark,
+    NextBookmark,
+    PrevBookmark,
+    ClearBookmarks,
     Quit,
 }
 
@@ -119,6 +123,26 @@ impl Command {
             name: "Previous warning",
             shortcut: "W",
             action: CommandAction::PrevWarning,
+        },
+        Command {
+            name: "Toggle bookmark",
+            shortcut: "m",
+            action: CommandAction::ToggleBookmark,
+        },
+        Command {
+            name: "Next bookmark",
+            shortcut: "b",
+            action: CommandAction::NextBookmark,
+        },
+        Command {
+            name: "Previous bookmark",
+            shortcut: "B",
+            action: CommandAction::PrevBookmark,
+        },
+        Command {
+            name: "Clear all bookmarks",
+            shortcut: "",
+            action: CommandAction::ClearBookmarks,
         },
         Command {
             name: "Quit",

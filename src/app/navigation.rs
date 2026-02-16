@@ -368,4 +368,61 @@ impl App {
             }
         }
     }
+
+    /// Toggle bookmark on current line
+    pub fn toggle_bookmark(&mut self) {
+        if let Some(&entry_idx) = self.filtered_indices.get(self.selected_index) {
+            if self.bookmarks.contains(&entry_idx) {
+                self.bookmarks.remove(&entry_idx);
+                self.status_message = Some("Bookmark removed".to_string());
+            } else {
+                self.bookmarks.insert(entry_idx);
+                self.status_message = Some("Bookmark added".to_string());
+            }
+        }
+    }
+
+    /// Jump to next bookmark relative to current cursor position
+    pub fn next_bookmark(&mut self) {
+        if self.filtered_indices.is_empty() || self.bookmarks.is_empty() {
+            return;
+        }
+        let start_idx = self.selected_index + 1;
+        for offset in 0..self.filtered_indices.len() {
+            let idx = (start_idx + offset) % self.filtered_indices.len();
+            let entry_idx = self.filtered_indices[idx];
+            if self.bookmarks.contains(&entry_idx) {
+                self.selected_index = idx;
+                self.center_selected();
+                return;
+            }
+        }
+    }
+
+    /// Jump to previous bookmark relative to current cursor position
+    pub fn prev_bookmark(&mut self) {
+        if self.filtered_indices.is_empty() || self.bookmarks.is_empty() {
+            return;
+        }
+        let start_idx = self.selected_index.saturating_sub(1);
+        for offset in 0..self.filtered_indices.len() {
+            let idx = if start_idx >= offset {
+                start_idx - offset
+            } else {
+                self.filtered_indices.len() - 1 - (offset - start_idx - 1)
+            };
+            let entry_idx = self.filtered_indices[idx];
+            if self.bookmarks.contains(&entry_idx) {
+                self.selected_index = idx;
+                self.center_selected();
+                return;
+            }
+        }
+    }
+
+    /// Clear all bookmarks
+    pub fn clear_bookmarks(&mut self) {
+        self.bookmarks.clear();
+        self.status_message = Some("Bookmarks cleared".to_string());
+    }
 }

@@ -156,6 +156,7 @@ fn draw_log_view_nowrap(
         let entry = &app.entries[entry_idx];
         let is_selected = current_entry_idx == app.selected_index;
         let is_expanded = app.is_expanded(entry_idx);
+        let is_bookmarked = app.bookmarks.contains(&entry_idx);
 
         // Build the main line
         let timestamp = entry
@@ -174,7 +175,19 @@ fn draw_log_view_nowrap(
 
         let ul_range = underline_range_for_row(app, terminal_row);
 
+        let bookmark_span = if is_bookmarked {
+            Span::styled(
+                "●",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::raw(" ")
+        };
+
         let mut spans = vec![
+            bookmark_span,
             Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
             level_span,
             Span::raw(" "),
@@ -218,6 +231,7 @@ fn draw_log_view_nowrap(
                 let ul_range = underline_range_for_row(app, terminal_row);
 
                 let mut cont_spans = vec![
+                    Span::raw(" "),                          // bookmark placeholder
                     Span::raw("              "),             // timestamp placeholder
                     Span::styled("     ", Style::default()), // level placeholder
                     Span::raw(" "),
@@ -280,8 +294,8 @@ fn draw_log_view_wrapped(
     // For wrapped mode, we need to calculate how many visual lines each entry takes
     // and handle scrolling based on visual lines, not entries
 
-    // Prefix width: timestamp (14) + level badge (5) + space (1) = 20 chars
-    let prefix_width = 20;
+    // Prefix width: bookmark (1) + timestamp (14) + level badge (5) + space (1) = 21 chars
+    let prefix_width = 21;
     let msg_width = viewport_width.saturating_sub(prefix_width);
     if msg_width == 0 {
         return;
@@ -302,6 +316,7 @@ fn draw_log_view_wrapped(
         let entry = &app.entries[entry_idx];
         let is_selected = current_entry_idx == app.selected_index;
         let is_expanded = app.is_expanded(entry_idx);
+        let is_bookmarked = app.bookmarks.contains(&entry_idx);
 
         let timestamp = entry
             .timestamp
@@ -321,6 +336,17 @@ fn draw_log_view_wrapped(
             None
         };
 
+        let bookmark_span = if is_bookmarked {
+            Span::styled(
+                "●",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::raw(" ")
+        };
+
         // Wrap the main message
         let wrapped_parts = wrap_text(&message, msg_width);
 
@@ -334,6 +360,7 @@ fn draw_log_view_wrapped(
             let line = if i == 0 {
                 // First line: show timestamp and level
                 let mut spans = vec![
+                    bookmark_span.clone(),
                     Span::styled(timestamp.clone(), Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         format!(" {} ", entry.level.short_name()),

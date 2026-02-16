@@ -118,6 +118,7 @@ pub struct App {
     pub syntax_highlight: bool,
     pub horizontal_scroll: usize,
     pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
+    pub bookmarks: HashSet<usize>,        // Entry indices that are bookmarked
     pub viewport_height: usize,           // Last known viewport height for mouse scroll
     pub viewport_width: usize,            // Last known viewport width for mouse scroll
 
@@ -177,6 +178,7 @@ impl App {
             syntax_highlight: true,
             horizontal_scroll: 0,
             expanded_entries: HashSet::new(),
+            bookmarks: HashSet::new(),
             viewport_height: 25, // Default viewport height
             viewport_width: 80,  // Default viewport width
             file_path: String::new(),
@@ -443,6 +445,10 @@ impl App {
             CommandAction::PrevError => self.prev_error(),
             CommandAction::NextWarning => self.next_warning(),
             CommandAction::PrevWarning => self.prev_warning(),
+            CommandAction::ToggleBookmark => self.toggle_bookmark(),
+            CommandAction::NextBookmark => self.next_bookmark(),
+            CommandAction::PrevBookmark => self.prev_bookmark(),
+            CommandAction::ClearBookmarks => self.clear_bookmarks(),
             CommandAction::Quit => self.should_quit = true,
         }
     }

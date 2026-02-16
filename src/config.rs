@@ -1,5 +1,6 @@
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,6 +12,9 @@ pub struct Config {
     pub recent_files: Vec<String>,
     #[serde(default)]
     pub syntax_highlight: Option<bool>,
+    /// Per-file bookmarks: file path -> list of entry indices
+    #[serde(default)]
+    pub bookmarks: HashMap<String, Vec<usize>>,
 }
 
 impl Config {
@@ -51,6 +55,25 @@ impl Config {
             .map_err(|e| format!("Failed to serialize: {}", e))?;
 
         fs::write(&path, content).map_err(|e| format!("Failed to write config: {}", e))
+    }
+
+    /// Save bookmarks for a file (clears entry if empty)
+    pub fn save_bookmarks(&mut self, path: &str, bookmarks: &std::collections::HashSet<usize>) {
+        if bookmarks.is_empty() {
+            self.bookmarks.remove(path);
+        } else {
+            let mut sorted: Vec<usize> = bookmarks.iter().copied().collect();
+            sorted.sort_unstable();
+            self.bookmarks.insert(path.to_string(), sorted);
+        }
+    }
+
+    /// Load bookmarks for a file
+    pub fn load_bookmarks(&self, path: &str) -> std::collections::HashSet<usize> {
+        self.bookmarks
+            .get(path)
+            .map(|v| v.iter().copied().collect())
+            .unwrap_or_default()
     }
 
     /// Add a file to recent files list

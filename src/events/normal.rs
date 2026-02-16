@@ -132,6 +132,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.status_message = Some("Levels reset to default".to_string());
         }
 
+        // Bookmarks
+        (_, KeyCode::Char('m')) => app.toggle_bookmark(),
+        (_, KeyCode::Char('b')) => app.next_bookmark(),
+        (KeyModifiers::SHIFT, KeyCode::Char('B')) => app.prev_bookmark(),
+
         // Navigation
         (_, KeyCode::Up) | (_, KeyCode::Char('k')) => app.scroll_up(1),
         (_, KeyCode::Down) | (_, KeyCode::Char('j')) => app.scroll_down(1),

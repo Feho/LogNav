@@ -62,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             config.add_recent_file(path);
             app.recent_files = config.recent_files.clone();
+            app.bookmarks = config.load_bookmarks(path);
             // Start watching since tail is enabled by default
             if app.tail_enabled {
                 let _ = t.start_watching();
@@ -93,6 +94,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Save config
     config.syntax_highlight = Some(app.syntax_highlight);
+    if !app.file_path.is_empty() {
+        config.save_bookmarks(&app.file_path, &app.bookmarks);
+    }
     let _ = config.save();
 
     if let Err(e) = result {
@@ -181,6 +185,11 @@ async fn run_app(
 
         // Handle file path change (once after all events)
         if app.file_path != previous_path && !app.file_path.is_empty() {
+            // Save bookmarks for previous file before switching
+            if !previous_path.is_empty() {
+                config.save_bookmarks(&previous_path, &app.bookmarks);
+            }
+
             let path = app.file_path.clone();
 
             if let Some(t) = tailer.as_mut() {
@@ -192,6 +201,7 @@ async fn run_app(
                 Ok(()) => {
                     config.add_recent_file(&path);
                     app.recent_files = config.recent_files.clone();
+                    app.bookmarks = config.load_bookmarks(&path);
                     if app.tail_enabled {
                         let _ = new_tailer.start_watching();
                     }
