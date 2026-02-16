@@ -9,23 +9,26 @@ pub fn handle_detail_key(app: &mut App, key: KeyEvent) {
     };
 
     match (key.modifiers, key.code) {
-        // Close popup
+        // Scroll within popup
+        (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            *scroll_offset = scroll_offset.saturating_sub(10);
+        }
+        (_, KeyCode::PageDown)
+        | (KeyModifiers::CONTROL, KeyCode::Char('f'))
+        | (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+            *scroll_offset += 10;
+        }
+
+        // Close popup (after Ctrl+D so it's not shadowed)
         (_, KeyCode::Esc) | (_, KeyCode::Char('q')) | (_, KeyCode::Char('d')) => {
             app.close_overlay();
         }
 
-        // Scroll within popup
         (_, KeyCode::Up) | (_, KeyCode::Char('k')) => {
             *scroll_offset = scroll_offset.saturating_sub(1);
         }
         (_, KeyCode::Down) | (_, KeyCode::Char('j')) => {
             *scroll_offset += 1;
-        }
-        (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
-            *scroll_offset = scroll_offset.saturating_sub(10);
-        }
-        (_, KeyCode::PageDown) | (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
-            *scroll_offset += 10;
         }
         (_, KeyCode::Home) | (_, KeyCode::Char('g')) => {
             *scroll_offset = 0;

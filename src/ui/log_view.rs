@@ -3,7 +3,7 @@ use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
 use crate::ui::extract_message;
 use crate::ui::syntax::styled_spans;
-use crate::ui::{level_color, level_style};
+use crate::ui::{level_color, level_style, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -264,6 +264,8 @@ fn draw_log_view_nowrap(
         let paragraph = Paragraph::new(line).style(style);
         frame.render_widget(paragraph, line_area);
     }
+
+    render_scrollbar(frame, area, app.scroll_offset, app.filtered_indices.len());
 }
 
 /// Draw log view with word wrapping (manual line rendering)
@@ -429,4 +431,6 @@ fn draw_log_view_wrapped(
         let paragraph = Paragraph::new(line).style(style);
         frame.render_widget(paragraph, line_area);
     }
+
+    render_scrollbar(frame, area, app.scroll_offset, app.filtered_indices.len());
 }

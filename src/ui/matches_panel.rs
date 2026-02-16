@@ -1,7 +1,7 @@
 use crate::app::App;
 use crate::ui::extract_message;
 use crate::ui::syntax::styled_spans;
-use crate::ui::{level_color, level_style};
+use crate::ui::{level_color, level_style, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -45,8 +45,6 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let hl_regex = app.search.regex.as_ref();
     let syntax_on = app.syntax_highlight;
-    let inner_height = inner.height as usize;
-
     // Render visible matches
     let mut y = 0u16;
     let start = app.search_panel_scroll;
@@ -117,6 +115,5 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
         y += 1;
     }
 
-    // Scroll indicator at bottom-right of border
-    let _ = inner_height; // used for scroll calculations in ensure_panel_selected_visible
+    render_scrollbar(frame, inner, app.search_panel_scroll, total);
 }

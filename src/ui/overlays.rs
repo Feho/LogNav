@@ -1,6 +1,6 @@
 use crate::app::{App, DateFilterFocus, FocusState, QUICK_FILTERS};
 use crate::text_utils::wrap_text;
-use crate::ui::{centered_rect, extract_message, level_color};
+use crate::ui::{centered_rect, extract_message, level_color, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -66,7 +66,10 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
         })
         .collect();
 
+    let item_count = items.len();
     frame.render_widget(List::new(items), list_area);
+
+    render_scrollbar(frame, list_area, selected, item_count);
 }
 
 /// Draw search bar at top
@@ -464,7 +467,10 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
             })
             .collect();
 
+        let item_count = items.len();
         frame.render_widget(List::new(items), list_area);
+
+        render_scrollbar(frame, list_area, selected, item_count);
     }
 
     // Help text at bottom
@@ -482,7 +488,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
 }
 
 /// Draw help dialog with virtual scroll
-pub fn draw_help(frame: &mut Frame, app: &App) {
+pub fn draw_help(frame: &mut Frame, app: &mut App) {
     let area = centered_rect(70, 80, frame.area());
     frame.render_widget(Clear, area);
 
@@ -579,6 +585,11 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
     let max_scroll = total_lines.saturating_sub(visible_height);
     let scroll = scroll_offset.min(max_scroll);
 
+    // Clamp stored offset so keyboard nav stays in range
+    if let FocusState::Help { scroll_offset } = &mut app.focus {
+        *scroll_offset = scroll;
+    }
+
     // Slice to visible lines
     let visible_lines: Vec<Line> = help_text
         .into_iter()
@@ -588,28 +599,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Paragraph::new(visible_lines), inner);
 
-    // Scroll indicator
-    if max_scroll > 0 {
-        let scroll_text = format!(
-            "{}-{}/{} lines",
-            scroll + 1,
-            (scroll + visible_height).min(total_lines),
-            total_lines
-        );
-        let scroll_area = Rect {
-            x: inner.x,
-            y: inner.y + inner.height.saturating_sub(1),
-            width: inner.width,
-            height: 1,
-        };
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                scroll_text,
-                Style::default().fg(Color::DarkGray),
-            ))),
-            scroll_area,
-        );
-    }
+    render_scrollbar(frame, inner, scroll, total_lines);
 }
 
 /// Draw detail popup showing full entry text with wrapping
@@ -686,6 +676,11 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
     let max_scroll = total_lines.saturating_sub(visible_height);
     let scroll = scroll_offset.min(max_scroll);
 
+    // Clamp stored offset so keyboard nav stays in range
+    if let FocusState::Detail { scroll_offset } = &mut app.focus {
+        *scroll_offset = scroll;
+    }
+
     // Slice lines for display
     let visible_lines: Vec<Line> = lines
         .into_iter()
@@ -694,32 +689,10 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
         .collect();
 
     // Render the text
-    let text_area = inner;
     frame.render_widget(
         Paragraph::new(visible_lines).wrap(ratatui::widgets::Wrap { trim: false }),
-        text_area,
+        inner,
     );
 
-    // Scroll indicator at bottom
-    if max_scroll > 0 {
-        let scroll_text = format!(
-            "{}-{}/{} lines",
-            scroll + 1,
-            (scroll + visible_height).min(total_lines),
-            total_lines
-        );
-        let scroll_area = Rect {
-            x: inner.x,
-            y: inner.y + inner.height.saturating_sub(1),
-            width: inner.width,
-            height: 1,
-        };
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                scroll_text,
-                Style::default().fg(Color::DarkGray),
-            ))),
-            scroll_area,
-        );
-    }
+    render_scrollbar(frame, inner, scroll, total_lines);
 }

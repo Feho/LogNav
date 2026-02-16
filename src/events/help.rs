@@ -27,7 +27,9 @@ pub fn handle_help_key(app: &mut App, key: KeyEvent) {
         (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
             *scroll_offset = scroll_offset.saturating_sub(10);
         }
-        (_, KeyCode::PageDown) | (KeyModifiers::CONTROL, KeyCode::Char('f')) => {
+        (_, KeyCode::PageDown)
+        | (KeyModifiers::CONTROL, KeyCode::Char('f'))
+        | (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
             *scroll_offset += 10;
         }
         (_, KeyCode::Home) | (_, KeyCode::Char('g')) => {

@@ -75,6 +75,26 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
             }
         }
 
+        KeyCode::PageUp => {
+            if let FocusState::FileOpen {
+                selected_recent, ..
+            } = &mut app.focus
+            {
+                *selected_recent = 0;
+            }
+        }
+
+        KeyCode::PageDown => {
+            let len = app.recent_files.len();
+            if let FocusState::FileOpen {
+                selected_recent, ..
+            } = &mut app.focus
+                && len > 0
+            {
+                *selected_recent = len - 1;
+            }
+        }
+
         KeyCode::Left => {
             if let FocusState::FileOpen { cursor_pos, .. } = &mut app.focus {
                 *cursor_pos = cursor_pos.saturating_sub(1);

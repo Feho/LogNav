@@ -4,6 +4,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
+    widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use std::borrow::Cow;
 
@@ -105,6 +106,20 @@ pub fn extract_message(raw_line: &str) -> Cow<'_, str> {
         }
     }
     Cow::Borrowed(raw_line)
+}
+
+/// Render a vertical scrollbar if content exceeds area height
+pub fn render_scrollbar(frame: &mut Frame, area: Rect, position: usize, content_length: usize) {
+    let height = area.height as usize;
+    if content_length <= height {
+        return;
+    }
+    let mut state = ScrollbarState::new(content_length.saturating_sub(height)).position(position);
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight),
+        area,
+        &mut state,
+    );
 }
 
 /// Create a centered rect

@@ -7,6 +7,27 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             app.hover_word = None;
+            match &mut app.focus {
+                FocusState::Help { scroll_offset } => {
+                    *scroll_offset = scroll_offset.saturating_sub(3);
+                    return;
+                }
+                FocusState::Detail { scroll_offset } => {
+                    *scroll_offset = scroll_offset.saturating_sub(3);
+                    return;
+                }
+                FocusState::CommandPalette { selected, .. } => {
+                    *selected = selected.saturating_sub(3);
+                    return;
+                }
+                FocusState::FileOpen {
+                    selected_recent, ..
+                } => {
+                    *selected_recent = selected_recent.saturating_sub(3);
+                    return;
+                }
+                _ => {}
+            }
             if app.search_panel_open && app.search_panel_height > 0 {
                 let terminal_height = app.viewport_height + app.search_panel_height + 1;
                 let panel_start = terminal_height.saturating_sub(app.search_panel_height + 1);
@@ -20,6 +41,38 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 
         MouseEventKind::ScrollDown => {
             app.hover_word = None;
+            // Compute max index for lists before mutable borrow
+            let cmd_count = if let FocusState::CommandPalette { input, .. } = &app.focus {
+                app.get_filtered_commands(input).len()
+            } else {
+                0
+            };
+            let recent_count = app.recent_files.len();
+            match &mut app.focus {
+                FocusState::Help { scroll_offset } => {
+                    *scroll_offset += 3;
+                    return;
+                }
+                FocusState::Detail { scroll_offset } => {
+                    *scroll_offset += 3;
+                    return;
+                }
+                FocusState::CommandPalette { selected, .. } => {
+                    if cmd_count > 0 {
+                        *selected = (*selected + 3).min(cmd_count - 1);
+                    }
+                    return;
+                }
+                FocusState::FileOpen {
+                    selected_recent, ..
+                } => {
+                    if recent_count > 0 {
+                        *selected_recent = (*selected_recent + 3).min(recent_count - 1);
+                    }
+                    return;
+                }
+                _ => {}
+            }
             if app.search_panel_open && app.search_panel_height > 0 {
                 let terminal_height = app.viewport_height + app.search_panel_height + 1;
                 let panel_start = terminal_height.saturating_sub(app.search_panel_height + 1);
