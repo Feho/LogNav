@@ -128,21 +128,31 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Enter => {
-            // Commit search to panel (split-screen mode)
-            let (query, regex_mode) = match &app.focus {
+            // Commit search to panel (split-screen mode) or add exclude filter
+            let (query, regex_mode, regex_error) = match &app.focus {
                 FocusState::Search {
                     query,
                     regex_mode,
                     regex_error,
                     ..
-                } => {
-                    if regex_error.is_some() {
-                        return; // Don't apply invalid regex
-                    }
-                    (query.clone(), *regex_mode)
-                }
+                } => (query.clone(), *regex_mode, regex_error.clone()),
                 _ => return,
             };
+
+            if regex_error.is_some() {
+                return; // Don't apply invalid regex
+            }
+
+            // Check for exclude pattern (starts with !)
+            if let Some(exclude_query) = query.strip_prefix('!') {
+                if !exclude_query.is_empty() {
+                    app.add_exclude(exclude_query, regex_mode);
+                    app.status_message = Some(format!("Exclude filter added: '{}'", exclude_query));
+                }
+                app.close_overlay();
+                return;
+            }
+
             // Push to search history (deduplicate)
             if !query.is_empty() {
                 app.search_history.retain(|h| h != &query);

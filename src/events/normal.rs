@@ -172,6 +172,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.copy_current_line();
         }
 
+        // Clear exclude filters
+        (_, KeyCode::Char('x')) => {
+            let count = app.exclude_patterns.len();
+            app.clear_excludes();
+            app.status_message = Some(format!("Cleared {} exclude filter(s)", count));
+        }
+
         _ => {}
     }
 }

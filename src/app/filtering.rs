@@ -7,24 +7,9 @@ impl App {
         self.filtered_indices.clear();
 
         for (idx, entry) in self.entries.iter().enumerate() {
-            if !self.passes_level_filter(entry.level) {
-                continue;
+            if self.passes_all_filters(entry) {
+                self.filtered_indices.push(idx);
             }
-
-            if let Some(from) = self.date_from
-                && let Some(ts) = entry.timestamp
-                && ts < from
-            {
-                continue;
-            }
-            if let Some(to) = self.date_to
-                && let Some(ts) = entry.timestamp
-                && ts > to
-            {
-                continue;
-            }
-
-            self.filtered_indices.push(idx);
         }
 
         // Clamp selection to valid range
@@ -43,25 +28,9 @@ impl App {
     pub fn apply_filters_incremental(&mut self, start_idx: usize) {
         for idx in start_idx..self.entries.len() {
             let entry = &self.entries[idx];
-
-            if !self.passes_level_filter(entry.level) {
-                continue;
+            if self.passes_all_filters(entry) {
+                self.filtered_indices.push(idx);
             }
-
-            if let Some(from) = self.date_from
-                && let Some(ts) = entry.timestamp
-                && ts < from
-            {
-                continue;
-            }
-            if let Some(to) = self.date_to
-                && let Some(ts) = entry.timestamp
-                && ts > to
-            {
-                continue;
-            }
-
-            self.filtered_indices.push(idx);
         }
     }
 
@@ -75,6 +44,35 @@ impl App {
             LogLevel::Profile => self.level_filters[5],
             LogLevel::Unknown => true, // Always show unknown
         }
+    }
+
+    fn passes_all_filters(&self, entry: &crate::log_entry::LogEntry) -> bool {
+        if !self.passes_level_filter(entry.level) {
+            return false;
+        }
+
+        if let Some(from) = self.date_from
+            && let Some(ts) = entry.timestamp
+            && ts < from
+        {
+            return false;
+        }
+        if let Some(to) = self.date_to
+            && let Some(ts) = entry.timestamp
+            && ts > to
+        {
+            return false;
+        }
+
+        if self
+            .exclude_patterns
+            .iter()
+            .any(|ep| ep.regex.is_match(entry.searchable_text()))
+        {
+            return false;
+        }
+
+        true
     }
 
     /// Reset level filters to defaults (ERR/WRN/INF/DBG on, TRC/PRF off)

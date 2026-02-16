@@ -1,10 +1,10 @@
 use crate::app::{App, FocusState};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 
 /// Draw status bar
@@ -70,6 +70,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Add date filter if active
     if let Some(date_filter) = app.date_filter_display() {
         parts.push(date_filter);
+    }
+
+    // Add exclude filter count if active
+    if !app.exclude_patterns.is_empty() {
+        parts.push(format!("Exclude:{}", app.exclude_patterns.len()));
     }
 
     let left = format!(" {} ", parts.join(" | "));

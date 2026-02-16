@@ -534,6 +534,8 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  Esc          Close search results panel, clear search"),
         Line::from("  Ctrl+D       Date range filter"),
         Line::from("  0-6          Toggle levels: 0:Reset 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
+        Line::from("  !pattern     Exclude lines matching pattern (in search, prefix with !)"),
+        Line::from("  x            Clear all exclude filters"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "VIEW",

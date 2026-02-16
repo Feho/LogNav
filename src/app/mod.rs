@@ -4,6 +4,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use regex::Regex;
 use std::collections::HashSet;
+use std::fmt;
 use std::time::Instant;
 
 /// Unified search state (replaces separate search_regex/highlight_regex systems)
@@ -99,6 +100,21 @@ pub struct HoverWord {
     pub char_end: usize,   // exclusive end
 }
 
+/// An exclude filter: hides lines matching the pattern
+#[derive(Clone)]
+pub struct ExcludePattern {
+    pub query: String,
+    pub regex: Regex,
+}
+
+impl fmt::Debug for ExcludePattern {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExcludePattern")
+            .field("query", &self.query)
+            .finish()
+    }
+}
+
 pub struct App {
     // Log data
     pub entries: Vec<LogEntry>,
@@ -108,6 +124,7 @@ pub struct App {
     pub level_filters: [bool; 6], // ERR, WRN, INF, DBG, TRC, PRF
     pub date_from: Option<NaiveDateTime>,
     pub date_to: Option<NaiveDateTime>,
+    pub exclude_patterns: Vec<ExcludePattern>,
 
     // UI state
     pub scroll_offset: usize,
@@ -170,6 +187,7 @@ impl App {
             level_filters: [true, true, true, true, false, false], // ERR, WRN, INF, DBG on by default
             date_from: None,
             date_to: None,
+            exclude_patterns: Vec::new(),
             scroll_offset: 0,
             selected_index: 0,
             focus: FocusState::Normal,
@@ -367,6 +385,33 @@ impl App {
         self.search.regex = None;
     }
 
+    /// Add an exclude filter pattern
+    pub fn add_exclude(&mut self, query: &str, regex_mode: bool) {
+        if query.is_empty() {
+            return;
+        }
+        let pattern = if regex_mode {
+            format!("(?i){}", query)
+        } else {
+            format!("(?i){}", regex::escape(query))
+        };
+        if let Ok(regex) = Regex::new(&pattern) {
+            self.exclude_patterns.push(ExcludePattern {
+                query: query.to_string(),
+                regex,
+            });
+            self.apply_filters();
+        }
+    }
+
+    /// Clear all exclude filters
+    pub fn clear_excludes(&mut self) {
+        if !self.exclude_patterns.is_empty() {
+            self.exclude_patterns.clear();
+            self.apply_filters();
+        }
+    }
+
     /// Toggle tail mode
     pub fn toggle_tail(&mut self) {
         self.tail_enabled = !self.tail_enabled;
@@ -449,6 +494,11 @@ impl App {
             CommandAction::NextBookmark => self.next_bookmark(),
             CommandAction::PrevBookmark => self.prev_bookmark(),
             CommandAction::ClearBookmarks => self.clear_bookmarks(),
+            CommandAction::ClearExcludes => {
+                let count = self.exclude_patterns.len();
+                self.clear_excludes();
+                self.status_message = Some(format!("Cleared {} exclude filter(s)", count));
+            }
             CommandAction::Quit => self.should_quit = true,
         }
     }
