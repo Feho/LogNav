@@ -16,40 +16,64 @@ impl App {
         self.ensure_selected_visible();
     }
 
-    /// Scroll viewport up without moving cursor (mouse wheel style)
-    /// When cursor would go off-screen, it jumps to bottom of viewport
+    /// Scroll viewport up by `amount` visual lines.
+    /// When cursor would go off-screen, it jumps to bottom of viewport.
     pub fn scroll_viewport_up(&mut self, amount: usize, viewport_height: usize) {
         if self.filtered_indices.is_empty() || viewport_height == 0 {
             return;
         }
 
-        let new_offset = self.scroll_offset.saturating_sub(amount);
+        let vw = self.viewport_width;
+
+        // Walk backwards from scroll_offset counting visual lines
+        let mut visual_lines = 0;
+        let mut new_offset = self.scroll_offset;
+        while new_offset > 0 {
+            let entry_lines = self.visual_lines_for_entry(new_offset - 1, vw);
+            if visual_lines + entry_lines > amount {
+                break;
+            }
+            visual_lines += entry_lines;
+            new_offset -= 1;
+        }
+
         self.scroll_offset = new_offset;
 
-        // Move cursor up if it would be off-screen (using visual line count)
-        let vw = self.viewport_width;
-        let mut visual_lines = 0;
+        // Move cursor up if it would be off-screen
+        let mut vis = 0;
         for idx in new_offset..=self.selected_index.min(self.filtered_indices.len() - 1) {
-            visual_lines += self.visual_lines_for_entry(idx, vw);
-            if visual_lines > viewport_height {
-                // Cursor is off-screen; place it at last fully visible entry
+            vis += self.visual_lines_for_entry(idx, vw);
+            if vis > viewport_height {
                 self.selected_index = idx.saturating_sub(1).max(new_offset);
                 return;
             }
         }
     }
 
-    /// Scroll viewport down without moving cursor (mouse wheel style)
-    /// When cursor would go off-screen, it jumps to top of viewport
+    /// Scroll viewport down by `amount` visual lines.
+    /// When cursor would go off-screen, it jumps to top of viewport.
     pub fn scroll_viewport_down(&mut self, amount: usize, viewport_height: usize) {
         if self.filtered_indices.is_empty() || viewport_height == 0 {
             return;
         }
 
+        let vw = self.viewport_width;
         let max_offset = self.filtered_indices.len().saturating_sub(1);
-        let new_offset = (self.scroll_offset + amount).min(max_offset);
 
-        // If cursor would go above viewport, move it to top of new viewport
+        // Walk forward from scroll_offset counting visual lines
+        let mut visual_lines = 0;
+        let mut new_offset = self.scroll_offset;
+        while new_offset < max_offset {
+            let entry_lines = self.visual_lines_for_entry(new_offset, vw);
+            if visual_lines + entry_lines > amount {
+                break;
+            }
+            visual_lines += entry_lines;
+            new_offset += 1;
+        }
+        // Ensure we advance at least one entry
+        let new_offset = new_offset.max(self.scroll_offset + 1).min(max_offset);
+
         if self.selected_index < new_offset {
             self.selected_index = new_offset;
         }
