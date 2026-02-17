@@ -90,7 +90,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::Normal if app.search.regex.is_some() => {
             "n/N:next/previous match | j/k:move | /:search | ?:help | q:quit"
         }
-        FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open | ?:help | q:quit",
+        FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open file | ?:help | q:quit",
         FocusState::Search { .. } => "Ctrl+r:regex | Enter:search | Esc:cancel ",
         FocusState::CommandPalette { .. } => "Esc:close | Enter:run ",
         FocusState::DateFilter { .. } => "Tab:switch | Enter:apply | Esc:close ",
