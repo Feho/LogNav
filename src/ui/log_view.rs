@@ -237,11 +237,7 @@ fn draw_log_view_nowrap(
                     Span::raw(" "),
                 ];
                 cont_spans.extend(styled_spans(
-                    &display,
-                    hl_regex,
-                    cont_style,
-                    syntax_on,
-                    ul_range,
+                    &display, hl_regex, cont_style, syntax_on, ul_range,
                 ));
                 let line = Line::from(cont_spans);
                 visual_lines.push((line, false, entry.level));
@@ -415,11 +411,7 @@ fn draw_log_view_wrapped(
                     let ul_range = underline_range_for_row(app, terminal_row);
                     let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
                     cont_spans.extend(styled_spans(
-                        &part,
-                        hl_regex,
-                        cont_style,
-                        syntax_on,
-                        ul_range,
+                        &part, hl_regex, cont_style, syntax_on, ul_range,
                     ));
                     let line = Line::from(cont_spans);
                     visual_lines.push((line, false, entry.level));

@@ -1,17 +1,17 @@
 use crate::log_entry::{LogEntry, LogLevel};
 use chrono::NaiveDateTime;
+use directories::ProjectDirs;
 use std::sync::Arc;
 
-mod qconsole;
-mod wd;
-mod wpc;
-
-pub use qconsole::QConsoleParser;
-pub use wd::WdParser;
-pub use wpc::WpcParser;
+mod defaults;
+pub mod yaml_parser;
 
 /// Trait for log parsers
 pub trait LogParser: Send + Sync {
+    /// Parser name (e.g. "wd", "wpc")
+    #[allow(dead_code)]
+    fn name(&self) -> &str;
+
     /// Detect if this parser can handle the given line
     /// Returns confidence score 0.0-1.0 (highest wins)
     fn detect(&self, first_line: &str) -> f64;
@@ -26,21 +26,17 @@ pub trait LogParser: Send + Sync {
     }
 }
 
-/// Parse timestamp string into NaiveDateTime (assumes current year)
-pub fn parse_timestamp(ts: &str) -> Option<NaiveDateTime> {
-    const TIMESTAMP_FORMAT: &str = "%m-%d %H:%M:%S%.3f";
-    let current_year = chrono::Local::now().format("%Y").to_string();
-    let full_ts = format!("{}-{}", current_year, ts);
-    NaiveDateTime::parse_from_str(&full_ts, &format!("%Y-{}", TIMESTAMP_FORMAT)).ok()
+fn formats_dir() -> Option<std::path::PathBuf> {
+    ProjectDirs::from("", "", "lognav").map(|dirs| dirs.config_dir().join("formats"))
 }
 
-/// Get all registered parsers
+/// Get all registered parsers (loaded from YAML format files)
 pub fn all_parsers() -> Vec<Arc<dyn LogParser>> {
-    vec![
-        Arc::new(WdParser),
-        Arc::new(WpcParser),
-        Arc::new(QConsoleParser),
-    ]
+    let Some(dir) = formats_dir() else {
+        return Vec::new();
+    };
+    defaults::ensure_default_formats(&dir);
+    yaml_parser::load_formats(&dir)
 }
 
 /// Detect the best parser for the given content
@@ -76,20 +72,20 @@ pub fn detect_parser(content: &str) -> Option<Arc<dyn LogParser>> {
     None
 }
 
-/// Fallback parser that tries all parsers in order
+/// Generic fallback parser — every line is a separate entry
 pub struct FallbackParser;
 
 impl LogParser for FallbackParser {
+    fn name(&self) -> &str {
+        "fallback"
+    }
+
     fn detect(&self, _first_line: &str) -> f64 {
         0.0
     }
 
-    fn parse_line(&self, line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)> {
-        // Try each parser in order
-        WdParser
-            .parse_line(line)
-            .or_else(|| WpcParser.parse_line(line))
-            .or_else(|| QConsoleParser.parse_line(line))
+    fn parse_line(&self, _line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)> {
+        Some((LogLevel::Unknown, None))
     }
 }
 

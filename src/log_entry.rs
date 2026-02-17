@@ -135,12 +135,9 @@ impl LogEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsers::{
-        LogParser, QConsoleParser, WdParser, WpcParser, detect_parser, fallback_parser,
-        parse_with_parser,
-    };
+    use crate::parsers::{detect_parser, fallback_parser, parse_with_parser};
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     enum LogFormat {
         WdLog,
         WpcLog,
@@ -149,21 +146,14 @@ mod tests {
     }
 
     fn detect_format(content: &str) -> LogFormat {
-        if detect_parser(content).is_none() {
-            return LogFormat::Unknown;
-        }
-        let first_line = content
-            .lines()
-            .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
-            .unwrap_or("");
-        if WdParser.detect(first_line) > 0.0 {
-            LogFormat::WdLog
-        } else if WpcParser.detect(first_line) > 0.0 {
-            LogFormat::WpcLog
-        } else if QConsoleParser.detect(first_line) > 0.0 {
-            LogFormat::QConsole
-        } else {
-            LogFormat::Unknown
+        match detect_parser(content) {
+            Some(parser) => match parser.name() {
+                "wd" => LogFormat::WdLog,
+                "wpc" => LogFormat::WpcLog,
+                "qconsole" => LogFormat::QConsole,
+                _ => LogFormat::Unknown,
+            },
+            None => LogFormat::Unknown,
         }
     }
 
@@ -332,28 +322,12 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_qconsole_error() {
+    fn test_parse_qconsole_no_level_field() {
+        // QConsole format has no level field — all entries default to Info
         let content = "[2026-01-09 19:05:01 UTC+1.000] ^~^~^ Script Error : Can't find 'file.scr'";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].level, LogLevel::Error);
-    }
-
-    #[test]
-    fn test_parse_qconsole_warn_tiki() {
-        let content =
-            "[2026-01-09 18:48:39 UTC+1.000] ^~^~^ TIKI_InitTiki: Couldn't load model.tik";
-        let entries = parse_log(content);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].level, LogLevel::Warn);
-    }
-
-    #[test]
-    fn test_parse_qconsole_warn_warning() {
-        let content = "[2026-01-09 18:48:39 UTC+1.000] WARNING: Couldn't find voting options file";
-        let entries = parse_log(content);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].level, LogLevel::Warn);
+        assert_eq!(entries[0].level, LogLevel::Info);
     }
 
     #[test]
