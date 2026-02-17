@@ -175,17 +175,17 @@ impl App {
 
         // Add continuation lines (also wrapped if needed)
         if self.expanded_entries.contains(&entry_idx) {
+            let display = entry.display_continuation();
             if self.wrap_enabled && viewport_width > 0 {
                 let prefix_width = 20;
                 let available_width = viewport_width.saturating_sub(prefix_width);
-                let cont_lines: usize = entry
-                    .continuation_lines
+                let cont_lines: usize = display
                     .iter()
                     .map(|line| wrap_text_line_count(line, available_width))
                     .sum();
                 lines + cont_lines
             } else {
-                lines + entry.continuation_lines.len()
+                lines + display.len()
             }
         } else {
             lines

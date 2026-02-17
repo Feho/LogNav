@@ -361,6 +361,9 @@ impl App {
 
     /// Open detail popup for selected entry
     pub fn open_detail_popup(&mut self) {
+        if let Some(&entry_idx) = self.filtered_indices.get(self.selected_index) {
+            self.entries[entry_idx].ensure_pretty_continuation();
+        }
         self.focus = FocusState::Detail { scroll_offset: 0 };
     }
 
@@ -438,6 +441,7 @@ impl App {
                 if self.expanded_entries.contains(&entry_idx) {
                     self.expanded_entries.remove(&entry_idx);
                 } else {
+                    self.entries[entry_idx].ensure_pretty_continuation();
                     self.expanded_entries.insert(entry_idx);
                 }
             }
@@ -459,6 +463,9 @@ impl App {
         if all_expanded {
             self.expanded_entries.clear();
         } else {
+            for &idx in &expandable {
+                self.entries[idx].ensure_pretty_continuation();
+            }
             self.expanded_entries.extend(expandable);
         }
     }

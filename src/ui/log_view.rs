@@ -220,7 +220,7 @@ fn draw_log_view_nowrap(
 
         // Add continuation lines if expanded
         if is_expanded {
-            for cont_line in &entry.continuation_lines {
+            for cont_line in entry.display_continuation() {
                 if visual_lines.len() >= viewport_height {
                     break;
                 }
@@ -240,11 +240,11 @@ fn draw_log_view_nowrap(
                     &display,
                     hl_regex,
                     cont_style,
-                    syntax_on && !is_selected,
+                    syntax_on,
                     ul_range,
                 ));
                 let line = Line::from(cont_spans);
-                visual_lines.push((line, is_selected, entry.level));
+                visual_lines.push((line, false, entry.level));
                 terminal_row += 1;
             }
         }
@@ -403,7 +403,7 @@ fn draw_log_view_wrapped(
 
         // Add expanded continuation lines
         if is_expanded {
-            for cont_line in &entry.continuation_lines {
+            for cont_line in entry.display_continuation() {
                 if visual_lines.len() >= viewport_height {
                     break;
                 }
@@ -419,11 +419,11 @@ fn draw_log_view_wrapped(
                         &part,
                         hl_regex,
                         cont_style,
-                        syntax_on && !is_selected,
+                        syntax_on,
                         ul_range,
                     ));
                     let line = Line::from(cont_spans);
-                    visual_lines.push((line, is_selected, entry.level));
+                    visual_lines.push((line, false, entry.level));
                     terminal_row += 1;
                 }
             }

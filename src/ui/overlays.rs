@@ -1,5 +1,6 @@
 use crate::app::{App, DateFilterFocus, FocusState, QUICK_FILTERS};
 use crate::text_utils::wrap_text;
+use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, level_color, render_scrollbar};
 use ratatui::{
     Frame,
@@ -650,11 +651,13 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
 
     // Build lines from entry
     let mut lines: Vec<Line> = Vec::new();
+    let syntax_on = app.syntax_highlight;
 
     // Main message
     let message = extract_message(&entry.raw_line);
     for wrapped_line in wrap_text(&message, inner.width as usize) {
-        lines.push(Line::from(Span::raw(wrapped_line)));
+        let spans = styled_spans(&wrapped_line, None, Style::default(), syntax_on, None);
+        lines.push(Line::from(spans));
     }
 
     // Continuation lines (if any)
@@ -664,12 +667,12 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
             "Continuation lines:",
             Style::default().fg(Color::DarkGray),
         )));
-        for cont_line in &entry.continuation_lines {
+        let cont_style = Style::default().fg(Color::DarkGray);
+        let display = entry.display_continuation();
+        for cont_line in display {
             for wrapped_line in wrap_text(cont_line, inner.width as usize) {
-                lines.push(Line::from(Span::styled(
-                    wrapped_line,
-                    Style::default().fg(Color::DarkGray),
-                )));
+                let spans = styled_spans(&wrapped_line, None, cont_style, syntax_on, None);
+                lines.push(Line::from(spans));
             }
         }
     }

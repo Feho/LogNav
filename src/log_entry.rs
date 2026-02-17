@@ -34,6 +34,8 @@ pub struct LogEntry {
     pub continuation_lines: Vec<String>,
     /// Cached full text for search (raw_line + continuation_lines joined)
     pub(crate) cached_full_text: Option<String>,
+    /// Pretty-printed continuation lines (lazily populated on first expand)
+    pub pretty_continuation: Option<Vec<String>>,
 }
 
 impl LogEntry {
@@ -55,10 +57,78 @@ impl LogEntry {
         }
     }
 
-    /// Add a continuation line, invalidating the cache
+    /// Add a continuation line, invalidating caches
     pub fn add_continuation(&mut self, line: String) {
         self.cached_full_text = None;
+        self.pretty_continuation = None;
         self.continuation_lines.push(line);
+    }
+
+    /// Detect and pretty-print JSON in continuation lines. Idempotent.
+    pub fn ensure_pretty_continuation(&mut self) {
+        if self.pretty_continuation.is_some() || self.continuation_lines.is_empty() {
+            return;
+        }
+
+        // Check if the main line ends with '{' or '[' (JSON starts on the entry line)
+        let raw_trimmed = self.raw_line.trim_end();
+        let json_prefix = if raw_trimmed.ends_with('{') {
+            Some("{")
+        } else if raw_trimmed.ends_with('[') {
+            Some("[")
+        } else {
+            None
+        };
+
+        // Try joining all continuation lines (with prefix from main line if applicable)
+        let joined = self.continuation_lines.join("\n");
+
+        // Strategy 1: with prefix from main line
+        if let Some(prefix) = json_prefix {
+            let combined = format!("{}\n{}", prefix, joined);
+            let trimmed = combined.trim();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed)
+                && let Ok(pretty) = serde_json::to_string_pretty(&val)
+            {
+                self.pretty_continuation = Some(pretty.lines().map(str::to_owned).collect());
+                return;
+            }
+        }
+
+        // Strategy 2: continuation lines alone as a single JSON blob
+        let trimmed = joined.trim();
+        if (trimmed.starts_with('{') || trimmed.starts_with('['))
+            && let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed)
+            && let Ok(pretty) = serde_json::to_string_pretty(&val)
+        {
+            self.pretty_continuation = Some(pretty.lines().map(str::to_owned).collect());
+            return;
+        }
+
+        // Strategy 3: per-line detection, pass non-JSON verbatim
+        let mut result: Vec<String> = Vec::new();
+        let mut any_json = false;
+        for line in &self.continuation_lines {
+            let t = line.trim();
+            if (t.starts_with('{') || t.starts_with('['))
+                && let Ok(val) = serde_json::from_str::<serde_json::Value>(t)
+                && let Ok(pretty) = serde_json::to_string_pretty(&val)
+            {
+                result.extend(pretty.lines().map(str::to_owned));
+                any_json = true;
+            } else {
+                result.push(line.clone());
+            }
+        }
+
+        self.pretty_continuation = if any_json { Some(result) } else { None };
+    }
+
+    /// Get display lines for expanded view (pretty if available, raw otherwise)
+    pub fn display_continuation(&self) -> &[String] {
+        self.pretty_continuation
+            .as_deref()
+            .unwrap_or(&self.continuation_lines)
     }
 }
 

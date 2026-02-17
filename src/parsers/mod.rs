@@ -120,6 +120,7 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
                 raw_line: parser.clean_line(line),
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
+                pretty_continuation: None,
             });
             index += 1;
         } else if !entries.is_empty() {
@@ -158,6 +159,7 @@ pub fn parse_incremental_with_parser(
                 raw_line: parser.clean_line(line),
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
+                pretty_continuation: None,
             });
             index += 1;
         } else {
