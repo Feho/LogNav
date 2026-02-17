@@ -103,19 +103,19 @@ fn draw_start_screen(frame: &mut Frame, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  o       ", Style::default().fg(Color::Cyan)),
+            Span::styled("o       ", Style::default().fg(Color::Cyan)),
             Span::styled("Open file", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl+p  ", Style::default().fg(Color::Cyan)),
+            Span::styled("Ctrl+p  ", Style::default().fg(Color::Cyan)),
             Span::styled("Command palette", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(vec![
-            Span::styled("  ?       ", Style::default().fg(Color::Cyan)),
+            Span::styled("?       ", Style::default().fg(Color::Cyan)),
             Span::styled("Help", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(vec![
-            Span::styled("  q       ", Style::default().fg(Color::Cyan)),
+            Span::styled("q       ", Style::default().fg(Color::Cyan)),
             Span::styled("Quit", Style::default().fg(Color::DarkGray)),
         ]),
     ];
