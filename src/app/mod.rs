@@ -2,10 +2,37 @@ use crate::log_entry::LogEntry;
 use chrono::NaiveDateTime;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::style::Color;
 use regex::Regex;
 use std::collections::HashSet;
 use std::fmt;
 use std::time::Instant;
+
+/// Colors assigned to source files in merged view
+pub const SOURCE_COLORS: [Color; 4] = [Color::Blue, Color::Magenta, Color::Green, Color::Yellow];
+
+/// A source file in a merged view
+#[derive(Debug, Clone)]
+pub struct SourceFile {
+    pub path: String,
+    #[allow(dead_code)]
+    pub color: Color,
+    pub label: String, // basename
+}
+
+impl SourceFile {
+    pub fn new(path: &str, idx: u8) -> Self {
+        let label = std::path::Path::new(path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string());
+        Self {
+            path: path.to_string(),
+            color: SOURCE_COLORS[idx as usize % SOURCE_COLORS.len()],
+            label,
+        }
+    }
+}
 
 /// Unified search state (replaces separate search_regex/highlight_regex systems)
 #[derive(Debug, Clone, Default)]
@@ -68,6 +95,7 @@ pub enum FocusState {
         selected_recent: usize,
         cursor_pos: usize,
         error: Option<String>,
+        is_merge: bool,
     },
     Detail {
         scroll_offset: usize,
@@ -143,6 +171,14 @@ pub struct App {
     pub file_path: String,
     pub recent_files: Vec<String>,
 
+    // Multi-file merged view
+    pub sources: Vec<SourceFile>,
+    pub pending_merge_path: Option<String>,
+    /// Per-source entry counts for assigning source_local_idx
+    pub source_entry_counts: Vec<usize>,
+    /// Stable bookmark IDs: (source_idx, source_local_idx)
+    pub bookmark_stable_ids: HashSet<(u8, usize)>,
+
     // Status
     pub status_message: Option<String>,
     pub should_quit: bool,
@@ -201,6 +237,10 @@ impl App {
             viewport_width: 80,  // Default viewport width
             file_path: String::new(),
             recent_files: Vec::new(),
+            sources: Vec::new(),
+            pending_merge_path: None,
+            source_entry_counts: Vec::new(),
+            bookmark_stable_ids: HashSet::new(),
             status_message: None,
             should_quit: false,
             fuzzy_matcher: SkimMatcherV2::default(),
@@ -356,6 +396,18 @@ impl App {
             selected_recent: 0,
             cursor_pos: 0,
             error: None,
+            is_merge: false,
+        };
+    }
+
+    /// Open file dialog in merge mode (add file to merged view)
+    pub fn open_merge_file_dialog(&mut self) {
+        self.focus = FocusState::FileOpen {
+            path: String::new(),
+            selected_recent: 0,
+            cursor_pos: 0,
+            error: None,
+            is_merge: true,
         };
     }
 
@@ -475,6 +527,134 @@ impl App {
         self.expanded_entries.contains(&entry_idx)
     }
 
+    /// Whether we're in merged multi-file view
+    pub fn is_merged(&self) -> bool {
+        self.sources.len() > 1
+    }
+
+    /// Set the primary source file (single-file mode)
+    pub fn set_primary_source(&mut self, path: &str) {
+        self.sources.clear();
+        self.sources.push(SourceFile::new(path, 0));
+        self.source_entry_counts = vec![0];
+        self.file_path = path.to_string();
+    }
+
+    /// Remove all sources and clear entries (used when opening a new file while merged)
+    pub fn remove_all_sources(&mut self) {
+        self.sources.clear();
+        self.source_entry_counts.clear();
+        self.entries.clear();
+        self.filtered_indices.clear();
+        self.expanded_entries.clear();
+        self.bookmarks.clear();
+        self.bookmark_stable_ids.clear();
+        self.selected_index = 0;
+        self.scroll_offset = 0;
+    }
+
+    /// Merge entries from a source into the main entries vec (sorted by timestamp)
+    pub fn merge_entries_from_source(&mut self, source_idx: u8, mut new_entries: Vec<LogEntry>) {
+        if new_entries.is_empty() {
+            return;
+        }
+
+        // Single source fast path: use existing set_entries/append_entries
+        if self.sources.len() <= 1 && source_idx == 0 {
+            if self.entries.is_empty() {
+                // Tag source_local_idx
+                let count = &mut self.source_entry_counts;
+                if count.is_empty() {
+                    count.push(0);
+                }
+                for entry in &mut new_entries {
+                    entry.source_local_idx = count[0];
+                    count[0] += 1;
+                }
+                self.set_entries(new_entries);
+            } else {
+                let count = &mut self.source_entry_counts;
+                if count.is_empty() {
+                    count.push(self.entries.len());
+                }
+                for entry in &mut new_entries {
+                    entry.source_local_idx = count[0];
+                    count[0] += 1;
+                }
+                self.append_entries(new_entries);
+            }
+            return;
+        }
+
+        // Multi-source merge: tag entries and merge by timestamp
+        let si = source_idx as usize;
+        while self.source_entry_counts.len() <= si {
+            self.source_entry_counts.push(0);
+        }
+        for entry in &mut new_entries {
+            entry.source_idx = source_idx;
+            entry.source_local_idx = self.source_entry_counts[si];
+            self.source_entry_counts[si] += 1;
+        }
+
+        // Insert each new entry in timestamp order
+        for entry in new_entries {
+            let insert_pos = if let Some(ts) = entry.timestamp {
+                self.entries
+                    .partition_point(|e| e.timestamp.map(|t| t <= ts).unwrap_or(true))
+            } else {
+                // No timestamp: insert after last entry from same source
+                self.entries
+                    .iter()
+                    .rposition(|e| e.source_idx == source_idx)
+                    .map(|p| p + 1)
+                    .unwrap_or(self.entries.len())
+            };
+            self.entries.insert(insert_pos, entry);
+        }
+
+        // Re-index all entries
+        for (i, entry) in self.entries.iter_mut().enumerate() {
+            entry.index = i;
+        }
+
+        // Rebuild bookmarks from stable IDs
+        self.rebuild_bookmarks_from_stable();
+
+        self.apply_filters();
+        if self.tail_enabled {
+            self.scroll_to_bottom();
+        }
+    }
+
+    /// Reset entries from a specific source (file truncated/rotated)
+    pub fn reset_source(&mut self, source_idx: u8) {
+        self.entries.retain(|e| e.source_idx != source_idx);
+        let si = source_idx as usize;
+        if si < self.source_entry_counts.len() {
+            self.source_entry_counts[si] = 0;
+        }
+        // Re-index
+        for (i, entry) in self.entries.iter_mut().enumerate() {
+            entry.index = i;
+        }
+        self.rebuild_bookmarks_from_stable();
+        self.apply_filters();
+    }
+
+    /// Rebuild bookmarks HashSet from stable IDs by scanning entries
+    fn rebuild_bookmarks_from_stable(&mut self) {
+        self.bookmarks.clear();
+        for entry in &self.entries {
+            if self
+                .bookmark_stable_ids
+                .contains(&(entry.source_idx, entry.source_local_idx))
+            {
+                self.bookmarks.insert(entry.index);
+            }
+        }
+    }
+
     /// Execute a command action
     pub fn execute_command(&mut self, action: commands::CommandAction) {
         use commands::CommandAction;
@@ -506,6 +686,7 @@ impl App {
                 self.clear_excludes();
                 self.status_message = Some(format!("Cleared {} exclude filter(s)", count));
             }
+            CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::Quit => self.should_quit = true,
         }
     }

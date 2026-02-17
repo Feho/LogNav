@@ -17,13 +17,14 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Enter => {
-            let file_path = match &app.focus {
+            let (file_path, is_merge) = match &app.focus {
                 FocusState::FileOpen {
                     path,
                     selected_recent,
+                    is_merge,
                     ..
                 } => {
-                    if path.is_empty() && !app.recent_files.is_empty() {
+                    let resolved = if path.is_empty() && !app.recent_files.is_empty() {
                         app.recent_files.get(*selected_recent).cloned()
                     } else {
                         // Tilde expansion
@@ -38,7 +39,8 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
                             path.clone()
                         };
                         Some(expanded)
-                    }
+                    };
+                    (resolved, *is_merge)
                 }
                 _ => return,
             };
@@ -50,7 +52,11 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
                     }
                     return;
                 }
-                app.file_path = path;
+                if is_merge {
+                    app.pending_merge_path = Some(path);
+                } else {
+                    app.file_path = path;
+                }
             }
             app.close_overlay();
         }

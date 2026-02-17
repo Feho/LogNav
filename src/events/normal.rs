@@ -31,6 +31,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.open_file_dialog();
         }
 
+        // Merge file (add to merged view)
+        (KeyModifiers::SHIFT, KeyCode::Char('M')) => {
+            app.open_merge_file_dialog();
+        }
+
         // Search
         (KeyModifiers::CONTROL, KeyCode::Char('f')) | (_, KeyCode::Char('/')) => {
             app.open_search();

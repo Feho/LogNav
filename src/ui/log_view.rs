@@ -1,3 +1,4 @@
+use crate::app::SOURCE_COLORS;
 use crate::app::{App, FocusState};
 use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
@@ -12,6 +13,12 @@ use ratatui::{
     widgets::Paragraph,
 };
 use regex::Regex;
+
+/// Create a colored gutter span for source file indication
+fn source_gutter_span(source_idx: u8) -> Span<'static> {
+    let color = SOURCE_COLORS[source_idx as usize % SOURCE_COLORS.len()];
+    Span::styled("▌", Style::default().fg(color))
+}
 
 /// Compile regex from the live search overlay query
 fn compile_overlay_regex(app: &App) -> Option<Regex> {
@@ -67,7 +74,7 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     let hl_regex_ref = hl_regex.as_ref();
 
     // Show start screen when no file loaded
-    if app.file_path.is_empty() && app.entries.is_empty() {
+    if app.sources.is_empty() && app.entries.is_empty() {
         draw_start_screen(frame, area);
         return;
     }
@@ -105,6 +112,10 @@ fn draw_start_screen(frame: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled("o       ", Style::default().fg(Color::Cyan)),
             Span::styled("Open file", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled("M       ", Style::default().fg(Color::Cyan)),
+            Span::styled("Merge file", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(vec![
             Span::styled("Ctrl+p  ", Style::default().fg(Color::Cyan)),
@@ -145,6 +156,7 @@ fn draw_log_view_nowrap(
 ) {
     app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
     let syntax_on = app.syntax_highlight;
+    let is_merged = app.is_merged();
 
     // Build visual lines, accounting for expanded entries
     let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
@@ -186,12 +198,16 @@ fn draw_log_view_nowrap(
             Span::raw(" ")
         };
 
-        let mut spans = vec![
+        let mut spans = Vec::new();
+        if is_merged {
+            spans.push(source_gutter_span(entry.source_idx));
+        }
+        spans.extend([
             bookmark_span,
             Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
             level_span,
             Span::raw(" "),
-        ];
+        ]);
         spans.extend(styled_spans(
             &display_msg,
             hl_regex,
@@ -230,18 +246,18 @@ fn draw_log_view_nowrap(
 
                 let ul_range = underline_range_for_row(app, terminal_row);
 
-                let mut cont_spans = vec![
+                let mut cont_spans = Vec::new();
+                if is_merged {
+                    cont_spans.push(source_gutter_span(entry.source_idx));
+                }
+                cont_spans.extend([
                     Span::raw(" "),                          // bookmark placeholder
                     Span::raw("              "),             // timestamp placeholder
                     Span::styled("     ", Style::default()), // level placeholder
                     Span::raw(" "),
-                ];
+                ]);
                 cont_spans.extend(styled_spans(
-                    &display,
-                    hl_regex,
-                    cont_style,
-                    syntax_on,
-                    ul_range,
+                    &display, hl_regex, cont_style, syntax_on, ul_range,
                 ));
                 let line = Line::from(cont_spans);
                 visual_lines.push((line, false, entry.level));
@@ -294,7 +310,9 @@ fn draw_log_view_wrapped(
     // For wrapped mode, we need to calculate how many visual lines each entry takes
     // and handle scrolling based on visual lines, not entries
 
-    let prefix_width = LINE_PREFIX_WIDTH;
+    let is_merged = app.is_merged();
+    let gutter_extra = if is_merged { 1 } else { 0 };
+    let prefix_width = LINE_PREFIX_WIDTH + gutter_extra;
     let msg_width = viewport_width.saturating_sub(prefix_width);
     if msg_width == 0 {
         return;
@@ -358,7 +376,11 @@ fn draw_log_view_wrapped(
 
             let line = if i == 0 {
                 // First line: show timestamp and level
-                let mut spans = vec![
+                let mut spans = Vec::new();
+                if is_merged {
+                    spans.push(source_gutter_span(entry.source_idx));
+                }
+                spans.extend([
                     bookmark_span.clone(),
                     Span::styled(timestamp.clone(), Style::default().fg(Color::DarkGray)),
                     Span::styled(
@@ -366,7 +388,7 @@ fn draw_log_view_wrapped(
                         level_style(entry.level),
                     ),
                     Span::raw(" "),
-                ];
+                ]);
                 spans.extend(styled_spans(
                     part,
                     hl_regex,
@@ -415,11 +437,7 @@ fn draw_log_view_wrapped(
                     let ul_range = underline_range_for_row(app, terminal_row);
                     let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
                     cont_spans.extend(styled_spans(
-                        &part,
-                        hl_regex,
-                        cont_style,
-                        syntax_on,
-                        ul_range,
+                        &part, hl_regex, cont_style, syntax_on, ul_range,
                     ));
                     let line = Line::from(cont_spans);
                     visual_lines.push((line, false, entry.level));

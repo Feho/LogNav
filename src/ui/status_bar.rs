@@ -1,10 +1,10 @@
 use crate::app::{App, FocusState};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 /// Draw status bar
@@ -13,14 +13,16 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let shown = app.filtered_indices.len();
     let levels = app.active_levels_display();
 
-    let file_display = if app.file_path.is_empty() {
+    let file_display = if app.sources.is_empty() {
         "No file".to_string()
+    } else if app.sources.len() == 1 {
+        app.sources[0].label.clone()
     } else {
-        // Show just filename
-        std::path::Path::new(&app.file_path)
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| app.file_path.clone())
+        app.sources
+            .iter()
+            .map(|s| s.label.as_str())
+            .collect::<Vec<_>>()
+            .join(" + ")
     };
 
     // Mode indicator

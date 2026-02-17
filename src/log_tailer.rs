@@ -13,17 +13,24 @@ const MAX_ENTRIES: usize = 500_000;
 #[derive(Debug)]
 pub enum TailerEvent {
     /// Initial load complete with entries
-    InitialLoad(Vec<LogEntry>),
+    InitialLoad {
+        source_idx: u8,
+        entries: Vec<LogEntry>,
+    },
     /// New entries detected during tailing
-    NewEntries(Vec<LogEntry>),
+    NewEntries {
+        source_idx: u8,
+        entries: Vec<LogEntry>,
+    },
     /// Error occurred
-    Error(String),
+    Error { source_idx: u8, message: String },
     /// File was truncated/rotated
-    FileReset,
+    FileReset { source_idx: u8 },
 }
 
 pub struct LogTailer {
     path: PathBuf,
+    source_idx: u8,
     parser: Arc<dyn LogParser>,
     last_position: u64,
     last_size: u64,
@@ -35,9 +42,14 @@ pub struct LogTailer {
 
 impl LogTailer {
     /// Create a new tailer for the given file path
-    pub fn new(path: impl AsRef<Path>, event_tx: mpsc::Sender<TailerEvent>) -> Self {
+    pub fn new(
+        path: impl AsRef<Path>,
+        source_idx: u8,
+        event_tx: mpsc::Sender<TailerEvent>,
+    ) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
+            source_idx,
             parser: parsers::fallback_parser(),
             last_position: 0,
             last_size: 0,
@@ -84,7 +96,14 @@ impl LogTailer {
             // Re-index
             for (i, entry) in entries.iter_mut().enumerate() {
                 entry.index = i;
+                entry.source_local_idx = i;
             }
+        }
+
+        // Tag entries with source index
+        let source_idx = self.source_idx;
+        for entry in &mut entries {
+            entry.source_idx = source_idx;
         }
 
         self.parser = parser;
@@ -92,9 +111,12 @@ impl LogTailer {
         self.last_size = size;
         self.entry_count = entries.len();
 
-        tx.send(TailerEvent::InitialLoad(entries))
-            .await
-            .map_err(|e| format!("Failed to send event: {}", e))?;
+        tx.send(TailerEvent::InitialLoad {
+            source_idx,
+            entries,
+        })
+        .await
+        .map_err(|e| format!("Failed to send event: {}", e))?;
 
         Ok(())
     }
@@ -146,6 +168,7 @@ impl LogTailer {
         let mut last_position = self.last_position;
         let mut last_size = self.last_size;
         let mut entry_count = self.entry_count;
+        let source_idx = self.source_idx;
 
         tokio::spawn(async move {
             let mut poll_interval = tokio::time::interval(std::time::Duration::from_millis(500));
@@ -161,12 +184,13 @@ impl LogTailer {
                         if let Err(e) = Self::check_for_changes(
                             &path_clone,
                             &*parser,
+                            source_idx,
                             &mut last_position,
                             &mut last_size,
                             &mut entry_count,
                             &tx,
                         ).await {
-                            let _ = tx.send(TailerEvent::Error(e)).await;
+                            let _ = tx.send(TailerEvent::Error { source_idx, message: e }).await;
                         }
                     }
                     _ = poll_interval.tick() => {
@@ -174,12 +198,13 @@ impl LogTailer {
                         if let Err(e) = Self::check_for_changes(
                             &path_clone,
                             &*parser,
+                            source_idx,
                             &mut last_position,
                             &mut last_size,
                             &mut entry_count,
                             &tx,
                         ).await {
-                            let _ = tx.send(TailerEvent::Error(e)).await;
+                            let _ = tx.send(TailerEvent::Error { source_idx, message: e }).await;
                         }
                     }
                 }
@@ -193,6 +218,7 @@ impl LogTailer {
     async fn check_for_changes(
         path: &Path,
         parser: &dyn LogParser,
+        source_idx: u8,
         last_position: &mut u64,
         last_size: &mut u64,
         entry_count: &mut usize,
@@ -247,7 +273,7 @@ impl LogTailer {
             *last_position = 0;
             *last_size = new_size;
             *entry_count = 0;
-            tx.send(TailerEvent::FileReset)
+            tx.send(TailerEvent::FileReset { source_idx })
                 .await
                 .map_err(|e| format!("Failed to send: {}", e))?;
             return Ok(());
@@ -256,14 +282,20 @@ impl LogTailer {
         if let Some(content) = content
             && !content.is_empty()
         {
-            let entries =
+            let mut entries =
                 parsers::parse_incremental_with_parser(&content, parser, *entry_count, None);
 
             if !entries.is_empty() {
+                for entry in &mut entries {
+                    entry.source_idx = source_idx;
+                }
                 *entry_count += entries.len();
-                tx.send(TailerEvent::NewEntries(entries))
-                    .await
-                    .map_err(|e| format!("Failed to send: {}", e))?;
+                tx.send(TailerEvent::NewEntries {
+                    source_idx,
+                    entries,
+                })
+                .await
+                .map_err(|e| format!("Failed to send: {}", e))?;
             }
         }
 

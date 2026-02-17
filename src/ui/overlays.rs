@@ -351,25 +351,32 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     let area = centered_rect(60, 50, frame.area());
     frame.render_widget(Clear, area);
 
-    let (path, selected, cursor_pos, error) = match &app.focus {
+    let (path, selected, cursor_pos, error, is_merge) = match &app.focus {
         FocusState::FileOpen {
             path,
             selected_recent,
             cursor_pos,
             error,
+            is_merge,
         } => (
             path.as_str(),
             *selected_recent,
             *cursor_pos,
             error.as_deref(),
+            *is_merge,
         ),
         _ => return,
     };
 
+    let title = if is_merge {
+        " Merge Log File "
+    } else {
+        " Open Log File "
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(" Open Log File ");
+        .title(title);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -553,6 +560,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from("  o         Open file dialog"),
+        Line::from("  M         Merge file (add to merged view)"),
         Line::from("  Tab       Fill path from recent files"),
         Line::from("  Ctrl+W    Delete word in path input"),
         Line::from("  ~         Tilde expansion for home directory"),

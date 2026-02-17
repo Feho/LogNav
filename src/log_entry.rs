@@ -36,6 +36,10 @@ pub struct LogEntry {
     pub(crate) cached_full_text: Option<String>,
     /// Pretty-printed continuation lines (lazily populated on first expand)
     pub pretty_continuation: Option<Vec<String>>,
+    /// Index into App::sources identifying which file this entry came from
+    pub source_idx: u8,
+    /// Entry's ordinal position within its source file (stable across merges)
+    pub source_local_idx: usize,
 }
 
 impl LogEntry {

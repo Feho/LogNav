@@ -30,6 +30,7 @@ pub enum CommandAction {
     PrevBookmark,
     ClearBookmarks,
     ClearExcludes,
+    MergeFile,
     Quit,
 }
 
@@ -149,6 +150,11 @@ impl Command {
             name: "Clear exclude filters",
             shortcut: "x",
             action: CommandAction::ClearExcludes,
+        },
+        Command {
+            name: "Merge file...",
+            shortcut: "M",
+            action: CommandAction::MergeFile,
         },
         Command {
             name: "Quit",

@@ -121,6 +121,8 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
                 pretty_continuation: None,
+                source_idx: 0,
+                source_local_idx: index,
             });
             index += 1;
         } else if !entries.is_empty() {
@@ -160,6 +162,8 @@ pub fn parse_incremental_with_parser(
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
                 pretty_continuation: None,
+                source_idx: 0,
+                source_local_idx: index,
             });
             index += 1;
         } else {

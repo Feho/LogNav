@@ -376,11 +376,15 @@ impl App {
     /// Toggle bookmark on current line
     pub fn toggle_bookmark(&mut self) {
         if let Some(&entry_idx) = self.filtered_indices.get(self.selected_index) {
+            let entry = &self.entries[entry_idx];
+            let stable_id = (entry.source_idx, entry.source_local_idx);
             if self.bookmarks.contains(&entry_idx) {
                 self.bookmarks.remove(&entry_idx);
+                self.bookmark_stable_ids.remove(&stable_id);
                 self.status_message = Some("Bookmark removed".to_string());
             } else {
                 self.bookmarks.insert(entry_idx);
+                self.bookmark_stable_ids.insert(stable_id);
                 self.status_message = Some("Bookmark added".to_string());
             }
         }
@@ -427,6 +431,7 @@ impl App {
     /// Clear all bookmarks
     pub fn clear_bookmarks(&mut self) {
         self.bookmarks.clear();
+        self.bookmark_stable_ids.clear();
         self.status_message = Some("Bookmarks cleared".to_string());
     }
 }
