@@ -3,7 +3,7 @@ use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
 use crate::ui::extract_message;
 use crate::ui::syntax::styled_spans;
-use crate::ui::{level_color, level_style, render_scrollbar};
+use crate::ui::{LINE_PREFIX_WIDTH, level_color, level_style, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -294,8 +294,7 @@ fn draw_log_view_wrapped(
     // For wrapped mode, we need to calculate how many visual lines each entry takes
     // and handle scrolling based on visual lines, not entries
 
-    // Prefix width: bookmark (1) + timestamp (14) + level badge (5) + space (1) = 21 chars
-    let prefix_width = 21;
+    let prefix_width = LINE_PREFIX_WIDTH;
     let msg_width = viewport_width.saturating_sub(prefix_width);
     if msg_width == 0 {
         return;

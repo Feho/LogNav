@@ -1,5 +1,5 @@
 use crate::app::{App, FocusState, HoverWord};
-use crate::ui::extract_message;
+use crate::ui::{LINE_PREFIX_WIDTH, extract_message};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 /// Handle mouse events
@@ -198,18 +198,15 @@ fn word_at_click(
     let real_idx = app.filtered_indices[entry_idx];
     let entry = &app.entries[real_idx];
 
-    // Layout: timestamp(14) + level_badge(5) + space(1) = 20 char prefix
-    const PREFIX_WIDTH: usize = 20;
-
     let row_within_entry = clicked_row.saturating_sub(entry_visual_start);
 
     // Determine which text line was clicked
     let line_text = if row_within_entry == 0 {
         let msg = extract_message(&entry.raw_line);
-        if clicked_col < PREFIX_WIDTH {
+        if clicked_col < LINE_PREFIX_WIDTH {
             return None;
         }
-        let char_offset = (clicked_col - PREFIX_WIDTH) + app.horizontal_scroll;
+        let char_offset = (clicked_col - LINE_PREFIX_WIDTH) + app.horizontal_scroll;
         return extract_word_at(&msg, char_offset);
     } else {
         let cont_idx = row_within_entry - 1;
@@ -220,10 +217,10 @@ fn word_at_click(
         }
     };
 
-    if clicked_col < PREFIX_WIDTH {
+    if clicked_col < LINE_PREFIX_WIDTH {
         return None;
     }
-    let char_offset = (clicked_col - PREFIX_WIDTH) + app.horizontal_scroll;
+    let char_offset = (clicked_col - LINE_PREFIX_WIDTH) + app.horizontal_scroll;
     extract_word_at(line_text, char_offset)
 }
 

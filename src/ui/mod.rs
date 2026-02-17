@@ -14,6 +14,9 @@ mod overlays;
 mod status_bar;
 pub(crate) mod syntax;
 
+/// Line prefix width: bookmark(1) + timestamp(14) + level badge(5) + space(1)
+pub const LINE_PREFIX_WIDTH: usize = 21;
+
 /// Main UI drawing function
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
