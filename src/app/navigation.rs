@@ -37,6 +37,11 @@ impl App {
             new_offset -= 1;
         }
 
+        // Ensure we move at least one entry when the previous entry is taller than `amount`
+        if new_offset == self.scroll_offset && new_offset > 0 {
+            new_offset -= 1;
+        }
+
         self.scroll_offset = new_offset;
 
         // Move cursor up if it would be off-screen
