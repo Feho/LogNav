@@ -42,9 +42,7 @@ pub fn handle_command_palette_key(app: &mut App, key: KeyEvent) {
             }
         }
 
-        (_, KeyCode::PageUp)
-        | (KeyModifiers::CONTROL, KeyCode::Char('u'))
-        | (_, KeyCode::Home) => {
+        (_, KeyCode::PageUp) | (KeyModifiers::CONTROL, KeyCode::Char('u')) | (_, KeyCode::Home) => {
             if let FocusState::CommandPalette { selected, .. } = &mut app.focus {
                 *selected = 0;
             }

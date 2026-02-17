@@ -19,7 +19,11 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Title shows match position
     let title = if total > 0 {
-        format!(" Search results {}/{} (press <tab> to focus)", current + 1, total)
+        format!(
+            " Search results {}/{} (press <tab> to focus)",
+            current + 1,
+            total
+        )
     } else {
         " Search results (0) ".to_string()
     };

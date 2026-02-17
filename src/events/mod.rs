@@ -70,7 +70,7 @@ fn clean_pasted_path(text: &str) -> String {
 fn handle_paste(app: &mut App, text: String) {
     match &mut app.focus {
         FocusState::Normal | FocusState::Detail { .. } | FocusState::Help { .. } => {
-            // Treat paste as a file path drop
+            // Treat paste as a file path drop (replaces current file)
             let path = clean_pasted_path(&text);
             if !path.is_empty() && std::path::Path::new(&path).is_file() {
                 app.file_path = path;
