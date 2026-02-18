@@ -25,21 +25,8 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .join(" + ")
     };
 
-    // Mode indicator
-    let mode = match app.focus {
-        FocusState::Normal => "[NORMAL]",
-        FocusState::CommandPalette { .. } => "[COMMAND]",
-        FocusState::Search { .. } => "[SEARCH]",
-        FocusState::DateFilter { .. } => "[DATE FILTER]",
-        FocusState::FileOpen { .. } => "[OPEN FILE]",
-        FocusState::Detail { .. } => "[DETAIL]",
-        FocusState::Help { .. } => "[HELP]",
-        FocusState::ExcludeManager { .. } => "[EXCLUDE]",
-    };
-
     // Build status components
     let mut parts = vec![
-        mode.to_string(),
         file_display,
         format!("{}/{}", shown, total),
         levels,
