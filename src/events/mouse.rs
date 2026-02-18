@@ -176,7 +176,8 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 
         MouseEventKind::Moved => {
             let ctrl_held = mouse.modifiers.contains(KeyModifiers::CONTROL);
-            if ctrl_held && matches!(app.focus, FocusState::Normal) {
+            let alt_held = mouse.modifiers.contains(KeyModifiers::ALT);
+            if (ctrl_held || alt_held) && matches!(app.focus, FocusState::Normal) {
                 let row = mouse.row as usize;
                 let col = mouse.column as usize;
 
