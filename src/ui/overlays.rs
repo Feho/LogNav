@@ -1,4 +1,4 @@
-use crate::app::{App, DateFilterFocus, FocusState, QUICK_FILTERS};
+use crate::app::{App, DateFilterFocus, ExcludeManagerFocus, FocusState, QUICK_FILTERS};
 use crate::text_utils::wrap_text;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, level_color, render_scrollbar};
@@ -542,8 +542,9 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  Esc          Close search results panel, clear search"),
         Line::from("  Ctrl+D       Date range filter"),
         Line::from("  0-6          Toggle levels: 0:Reset 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
-        Line::from("  !pattern     Exclude lines matching pattern (in search, prefix with !)"),
-        Line::from("  x            Clear all exclude filters"),
+        Line::from("  x            Open exclude filter manager"),
+        Line::from("  X            Clear all exclude filters"),
+        Line::from("  Alt+Click    Exclude word under cursor"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "VIEW",
@@ -710,4 +711,192 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
     );
 
     render_scrollbar(frame, inner, scroll, total_lines);
+}
+
+/// Draw exclude filter manager overlay
+pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
+    let area = centered_rect(50, 55, frame.area());
+    frame.render_widget(Clear, area);
+
+    let (input, selected, regex_mode, regex_error, focus) = match &app.focus {
+        FocusState::ExcludeManager {
+            input,
+            selected,
+            regex_mode,
+            regex_error,
+            focus,
+        } => (
+            input.as_str(),
+            *selected,
+            *regex_mode,
+            regex_error.as_deref(),
+            *focus,
+        ),
+        _ => return,
+    };
+
+    let input_focused = focus == ExcludeManagerFocus::Input;
+    let list_focused = focus == ExcludeManagerFocus::List;
+
+    let border_color = Color::Cyan;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .title(" Exclude Filters ");
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut y = inner.y;
+
+    // Input bar
+    let input_border_color = if input_focused {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let input_label_style = Style::default().fg(input_border_color);
+
+    let regex_indicator = if regex_mode {
+        Span::styled("[.*] ", Style::default().fg(Color::Magenta))
+    } else {
+        Span::raw("")
+    };
+
+    let cursor = if input_focused {
+        Span::styled(
+            "_",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::SLOW_BLINK),
+        )
+    } else {
+        Span::raw("")
+    };
+
+    let input_line = Line::from(vec![
+        Span::styled("  Exclude: ", input_label_style),
+        regex_indicator,
+        Span::raw(input),
+        cursor,
+    ]);
+    frame.render_widget(
+        Paragraph::new(input_line),
+        Rect {
+            x: inner.x,
+            y,
+            width: inner.width,
+            height: 1,
+        },
+    );
+    y += 1;
+
+    // Error message
+    if let Some(err) = regex_error {
+        let short = if err.len() > 40 { &err[..40] } else { err };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("  Error: {}", short),
+                Style::default().fg(Color::Red),
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    y += 1; // spacer
+
+    // List header
+    let list_header_style = if list_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let count = app.exclude_patterns.len();
+    let header_text = if count == 0 {
+        "  Active filters: (none)".to_string()
+    } else {
+        format!("  Active filters ({})", count)
+    };
+    if y < inner.y + inner.height {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(header_text, list_header_style))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    // List of exclude patterns
+    let list_area = Rect {
+        x: inner.x,
+        y,
+        width: inner.width,
+        height: inner
+            .height
+            .saturating_sub(y - inner.y)
+            .saturating_sub(2), // reserve 2 for help
+    };
+
+    if count > 0 {
+        let items: Vec<ListItem> = app
+            .exclude_patterns
+            .iter()
+            .enumerate()
+            .map(|(i, ep)| {
+                let style = if list_focused && i == selected {
+                    Style::default().bg(Color::Cyan).fg(Color::Black)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(format!("    {}", ep.query)).style(style)
+            })
+            .collect();
+
+        frame.render_widget(List::new(items), list_area);
+        render_scrollbar(frame, list_area, selected, count);
+    }
+
+    // Help text at bottom
+    let help_y = inner.y + inner.height.saturating_sub(2);
+    if help_y > y {
+        let help1 = if list_focused {
+            "  d/Del: remove selected | Tab: switch to input"
+        } else {
+            "  Enter: add pattern | Ctrl+R: regex | Tab: switch to list"
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                help1,
+                Style::default().fg(Color::DarkGray),
+            ))),
+            Rect {
+                x: inner.x,
+                y: help_y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  Esc: close | Alt+Click word in log to exclude",
+                Style::default().fg(Color::DarkGray),
+            ))),
+            Rect {
+                x: inner.x,
+                y: help_y + 1,
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
 }

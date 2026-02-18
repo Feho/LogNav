@@ -5,6 +5,7 @@ use std::time::Instant;
 mod command;
 mod date_filter;
 mod detail;
+mod exclude_manager;
 mod file_open;
 mod help;
 mod mouse;
@@ -42,6 +43,9 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::FileOpen { .. } => file_open::handle_file_open_key(app, key),
         FocusState::Detail { .. } => detail::handle_detail_key(app, key),
         FocusState::Help { .. } => help::handle_help_key(app, key),
+        FocusState::ExcludeManager { .. } => {
+            exclude_manager::handle_exclude_manager_key(app, key)
+        }
     }
 }
 
@@ -93,6 +97,9 @@ fn handle_paste(app: &mut App, text: String) {
         FocusState::Search { query, .. } => {
             query.push_str(text.trim());
             app.search_dirty = Some(Instant::now());
+        }
+        FocusState::ExcludeManager { input, .. } => {
+            input.push_str(text.trim());
         }
         FocusState::CommandPalette { input, selected } => {
             input.push_str(text.trim());

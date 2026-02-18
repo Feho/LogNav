@@ -26,6 +26,14 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     *selected_recent = selected_recent.saturating_sub(3);
                     return;
                 }
+                FocusState::ExcludeManager {
+                    selected, focus, ..
+                } => {
+                    if *focus == crate::app::ExcludeManagerFocus::List {
+                        *selected = selected.saturating_sub(3);
+                    }
+                    return;
+                }
                 _ => {}
             }
             if app.search_panel_open && app.search_panel_height > 0 {
@@ -48,6 +56,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 0
             };
             let recent_count = app.recent_files.len();
+            let exclude_count = app.exclude_patterns.len();
             match &mut app.focus {
                 FocusState::Help { scroll_offset } => {
                     *scroll_offset += 3;
@@ -68,6 +77,14 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 } => {
                     if recent_count > 0 {
                         *selected_recent = (*selected_recent + 3).min(recent_count - 1);
+                    }
+                    return;
+                }
+                FocusState::ExcludeManager {
+                    selected, focus, ..
+                } => {
+                    if *focus == crate::app::ExcludeManagerFocus::List && exclude_count > 0 {
+                        *selected = (*selected + 3).min(exclude_count - 1);
                     }
                     return;
                 }
@@ -94,6 +111,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
             let clicked_row = mouse.row as usize;
             let clicked_col = mouse.column as usize;
             let ctrl_held = mouse.modifiers.contains(KeyModifiers::CONTROL);
+            let alt_held = mouse.modifiers.contains(KeyModifiers::ALT);
 
             // Check if click is in the search panel area
             if app.search_panel_open && app.search_panel_height > 0 {
@@ -140,6 +158,19 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 app.search_history.retain(|h| h != &word);
                 app.search_history.push(word.clone());
                 app.commit_search_to_panel(&word, false);
+            }
+
+            // Alt+Click: extract word under cursor and add as exclude filter
+            if alt_held
+                && let Some((word, _, _)) =
+                    word_at_click(app, entry_idx, clicked_row, visual_row, clicked_col)
+                && !word.is_empty()
+            {
+                if let Some(err) = app.add_exclude(&word, false) {
+                    app.status_message = Some(format!("Invalid exclude: {}", err));
+                } else {
+                    app.status_message = Some(format!("Exclude filter added: '{}'", word));
+                }
             }
         }
 

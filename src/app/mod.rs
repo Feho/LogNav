@@ -103,6 +103,19 @@ pub enum FocusState {
     Help {
         scroll_offset: usize,
     },
+    ExcludeManager {
+        input: String,
+        selected: usize,
+        regex_mode: bool,
+        regex_error: Option<String>,
+        focus: ExcludeManagerFocus,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExcludeManagerFocus {
+    Input,
+    List,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -424,6 +437,17 @@ impl App {
         self.focus = FocusState::Help { scroll_offset: 0 };
     }
 
+    /// Open exclude filter manager overlay
+    pub fn open_exclude_manager(&mut self) {
+        self.focus = FocusState::ExcludeManager {
+            input: String::new(),
+            selected: 0,
+            regex_mode: false,
+            regex_error: None,
+            focus: ExcludeManagerFocus::Input,
+        };
+    }
+
     /// Close any overlay and return to normal
     pub fn close_overlay(&mut self) {
         self.focus = FocusState::Normal;
@@ -440,21 +464,33 @@ impl App {
         self.search.regex = None;
     }
 
-    /// Add an exclude filter pattern
-    pub fn add_exclude(&mut self, query: &str, regex_mode: bool) {
+    /// Add an exclude filter pattern. Returns error string on invalid regex.
+    pub fn add_exclude(&mut self, query: &str, regex_mode: bool) -> Option<String> {
         if query.is_empty() {
-            return;
+            return None;
         }
         let pattern = if regex_mode {
             format!("(?i){}", query)
         } else {
             format!("(?i){}", regex::escape(query))
         };
-        if let Ok(regex) = Regex::new(&pattern) {
-            self.exclude_patterns.push(ExcludePattern {
-                query: query.to_string(),
-                regex,
-            });
+        match Regex::new(&pattern) {
+            Ok(regex) => {
+                self.exclude_patterns.push(ExcludePattern {
+                    query: query.to_string(),
+                    regex,
+                });
+                self.apply_filters();
+                None
+            }
+            Err(e) => Some(e.to_string()),
+        }
+    }
+
+    /// Remove a single exclude filter by index
+    pub fn remove_exclude(&mut self, index: usize) {
+        if index < self.exclude_patterns.len() {
+            self.exclude_patterns.remove(index);
             self.apply_filters();
         }
     }
@@ -686,6 +722,7 @@ impl App {
                 self.clear_excludes();
                 self.status_message = Some(format!("Cleared {} exclude filter(s)", count));
             }
+            CommandAction::ExcludeManager => self.open_exclude_manager(),
             CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::Quit => self.should_quit = true,
         }

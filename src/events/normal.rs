@@ -177,8 +177,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.copy_current_line();
         }
 
-        // Clear exclude filters
+        // Open exclude filter manager
         (_, KeyCode::Char('x')) => {
+            app.open_exclude_manager();
+        }
+
+        // Clear all exclude filters
+        (KeyModifiers::SHIFT, KeyCode::Char('X')) => {
             let count = app.exclude_patterns.len();
             app.clear_excludes();
             app.status_message = Some(format!("Cleared {} exclude filter(s)", count));
