@@ -10,7 +10,7 @@ use std::fmt;
 use std::time::Instant;
 
 /// Colors assigned to source files in merged view
-pub const SOURCE_COLORS: [Color; 4] = [Color::Blue, Color::Magenta, Color::Green, Color::Yellow];
+pub const SOURCE_COLORS: [Color; 4] = [Color::Green, Color::Magenta, Color::Blue, Color::Yellow];
 
 /// A source file in a merged view
 #[derive(Debug, Clone)]
