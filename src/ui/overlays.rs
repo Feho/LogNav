@@ -46,9 +46,21 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     };
 
     let commands = app.get_filtered_commands(input);
+    let item_count = commands.len();
+    let visible_height = list_area.height as usize;
+
+    // Compute scroll offset to keep selected item visible
+    let scroll = if item_count <= visible_height {
+        0
+    } else {
+        selected.saturating_sub(visible_height.saturating_sub(1))
+    };
+
     let items: Vec<ListItem> = commands
         .iter()
         .enumerate()
+        .skip(scroll)
+        .take(visible_height)
         .map(|(i, (_, cmd, _))| {
             let style = if i == selected {
                 Style::default().bg(Color::Cyan).fg(Color::Black)
@@ -67,10 +79,9 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
         })
         .collect();
 
-    let item_count = items.len();
     frame.render_widget(List::new(items), list_area);
 
-    render_scrollbar(frame, list_area, selected, item_count);
+    render_scrollbar(frame, list_area, scroll, item_count);
 }
 
 /// Draw search bar at top
@@ -848,10 +859,19 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
     };
 
     if count > 0 {
+        let visible_height = list_area.height as usize;
+        let scroll = if count <= visible_height {
+            0
+        } else {
+            selected.saturating_sub(visible_height.saturating_sub(1))
+        };
+
         let items: Vec<ListItem> = app
             .exclude_patterns
             .iter()
             .enumerate()
+            .skip(scroll)
+            .take(visible_height)
             .map(|(i, ep)| {
                 let style = if list_focused && i == selected {
                     Style::default().bg(Color::Cyan).fg(Color::Black)
@@ -863,7 +883,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
             .collect();
 
         frame.render_widget(List::new(items), list_area);
-        render_scrollbar(frame, list_area, selected, count);
+        render_scrollbar(frame, list_area, scroll, count);
     }
 
     // Help text at bottom
