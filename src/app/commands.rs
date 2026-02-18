@@ -8,6 +8,7 @@ pub struct Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandAction {
     OpenFile,
+    MergeFile,
     Search,
     DateFilter,
     ToggleError,
@@ -31,7 +32,6 @@ pub enum CommandAction {
     ClearBookmarks,
     ExcludeManager,
     ClearExcludes,
-    MergeFile,
     Quit,
 }
 
@@ -41,6 +41,11 @@ impl Command {
             name: "Open file...",
             shortcut: "Ctrl+O",
             action: CommandAction::OpenFile,
+        },
+        Command {
+            name: "Merge file...",
+            shortcut: "M",
+            action: CommandAction::MergeFile,
         },
         Command {
             name: "Search logs...",
@@ -156,11 +161,6 @@ impl Command {
             name: "Clear exclude filters",
             shortcut: "X",
             action: CommandAction::ClearExcludes,
-        },
-        Command {
-            name: "Merge file...",
-            shortcut: "M",
-            action: CommandAction::MergeFile,
         },
         Command {
             name: "Quit",
