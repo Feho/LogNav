@@ -126,12 +126,35 @@ fn apply_quick_filter(app: &mut App, index: usize) {
     app.close_overlay();
 }
 
+/// Get active TextInput for the current date field focus
+fn with_active_input(
+    app: &mut App,
+    f: impl FnOnce(&mut crate::text_input::TextInput, &mut Option<String>),
+) {
+    if let FocusState::DateFilter {
+        from,
+        to,
+        focus,
+        error,
+        ..
+    } = &mut app.focus
+    {
+        match focus {
+            DateFilterFocus::From => f(from, error),
+            DateFilterFocus::To => f(to, error),
+            _ => {}
+        }
+    }
+}
+
 /// Handle keys when custom date fields are focused
 fn handle_custom_date_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
             let (from, to) = match &app.focus {
-                FocusState::DateFilter { from, to, .. } => (from.clone(), to.clone()),
+                FocusState::DateFilter { from, to, .. } => {
+                    (from.text().to_string(), to.text().to_string())
+                }
                 _ => return,
             };
 
@@ -163,61 +186,54 @@ fn handle_custom_date_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if let FocusState::DateFilter {
-                from,
-                to,
-                focus,
-                error,
-                ..
-            } = &mut app.focus
-            {
+            with_active_input(app, |input, error| {
+                input.clear();
                 *error = None;
-                match focus {
-                    DateFilterFocus::From => from.clear(),
-                    DateFilterFocus::To => to.clear(),
-                    _ => {}
-                }
-            }
+            });
+        }
+
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            with_active_input(app, |input, error| {
+                input.delete_word_back();
+                *error = None;
+            });
+        }
+
+        KeyCode::Left => {
+            with_active_input(app, |input, _| input.move_left());
+        }
+
+        KeyCode::Right => {
+            with_active_input(app, |input, _| input.move_right());
+        }
+
+        KeyCode::Home => {
+            with_active_input(app, |input, _| input.home());
+        }
+
+        KeyCode::End => {
+            with_active_input(app, |input, _| input.end());
+        }
+
+        KeyCode::Delete => {
+            with_active_input(app, |input, error| {
+                input.delete_forward();
+                *error = None;
+            });
         }
 
         KeyCode::Char(c) => {
-            if let FocusState::DateFilter {
-                from,
-                to,
-                focus,
-                error,
-                ..
-            } = &mut app.focus
-            {
+            with_active_input(app, |input, error| {
+                input.insert_char(c);
                 *error = None;
-                match focus {
-                    DateFilterFocus::From => from.push(c),
-                    DateFilterFocus::To => to.push(c),
-                    _ => {}
-                }
-            }
+            });
         }
 
         KeyCode::Backspace => {
-            if let FocusState::DateFilter {
-                from,
-                to,
-                focus,
-                error,
-                ..
-            } = &mut app.focus
-            {
+            with_active_input(app, |input, error| {
+                input.delete_back();
                 *error = None;
-                match focus {
-                    DateFilterFocus::From => {
-                        from.pop();
-                    }
-                    DateFilterFocus::To => {
-                        to.pop();
-                    }
-                    _ => {}
-                }
-            }
+            });
         }
 
         _ => {}

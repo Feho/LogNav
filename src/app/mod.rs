@@ -1,4 +1,5 @@
 use crate::log_entry::LogEntry;
+use crate::text_input::TextInput;
 use chrono::NaiveDateTime;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -73,27 +74,26 @@ const MAX_ENTRIES: usize = 500_000;
 pub enum FocusState {
     Normal,
     CommandPalette {
-        input: String,
+        input: TextInput,
         selected: usize,
     },
     Search {
-        query: String,
+        input: TextInput,
         match_indices: Vec<usize>,
         current_match: usize,
         regex_mode: bool,
         regex_error: Option<String>,
     },
     DateFilter {
-        from: String,
-        to: String,
+        from: TextInput,
+        to: TextInput,
         focus: DateFilterFocus,
         selected_quick: usize,
         error: Option<String>,
     },
     FileOpen {
-        path: String,
+        input: TextInput,
         selected_recent: usize,
-        cursor_pos: usize,
         error: Option<String>,
         is_merge: bool,
     },
@@ -104,7 +104,7 @@ pub enum FocusState {
         scroll_offset: usize,
     },
     ExcludeManager {
-        input: String,
+        input: TextInput,
         selected: usize,
         regex_mode: bool,
         regex_error: Option<String>,
@@ -352,7 +352,7 @@ impl App {
     /// Open command palette
     pub fn open_command_palette(&mut self) {
         self.focus = FocusState::CommandPalette {
-            input: String::new(),
+            input: TextInput::new(),
             selected: 0,
         };
     }
@@ -377,7 +377,7 @@ impl App {
 
         self.search_history_index = None;
         self.focus = FocusState::Search {
-            query,
+            input: TextInput::with_text(query),
             match_indices,
             current_match: 0,
             regex_mode,
@@ -388,14 +388,16 @@ impl App {
     /// Open date filter dialog
     pub fn open_date_filter(&mut self) {
         self.focus = FocusState::DateFilter {
-            from: self
-                .date_from
-                .map(|d| d.format("%m-%d %H:%M").to_string())
-                .unwrap_or_default(),
-            to: self
-                .date_to
-                .map(|d| d.format("%m-%d %H:%M").to_string())
-                .unwrap_or_default(),
+            from: TextInput::with_text(
+                self.date_from
+                    .map(|d| d.format("%m-%d %H:%M").to_string())
+                    .unwrap_or_default(),
+            ),
+            to: TextInput::with_text(
+                self.date_to
+                    .map(|d| d.format("%m-%d %H:%M").to_string())
+                    .unwrap_or_default(),
+            ),
             focus: DateFilterFocus::QuickFilter,
             selected_quick: 0,
             error: None,
@@ -405,9 +407,8 @@ impl App {
     /// Open file open dialog
     pub fn open_file_dialog(&mut self) {
         self.focus = FocusState::FileOpen {
-            path: String::new(),
+            input: TextInput::new(),
             selected_recent: 0,
-            cursor_pos: 0,
             error: None,
             is_merge: false,
         };
@@ -416,9 +417,8 @@ impl App {
     /// Open file dialog in merge mode (add file to merged view)
     pub fn open_merge_file_dialog(&mut self) {
         self.focus = FocusState::FileOpen {
-            path: String::new(),
+            input: TextInput::new(),
             selected_recent: 0,
-            cursor_pos: 0,
             error: None,
             is_merge: true,
         };
@@ -440,7 +440,7 @@ impl App {
     /// Open exclude filter manager overlay
     pub fn open_exclude_manager(&mut self) {
         self.focus = FocusState::ExcludeManager {
-            input: String::new(),
+            input: TextInput::new(),
             selected: 0,
             regex_mode: false,
             regex_error: None,

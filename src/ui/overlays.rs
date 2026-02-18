@@ -10,6 +10,9 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
+/// Consistent cursor style used across all input bars
+const CURSOR_STYLE: Style = Style::new().bg(Color::White).fg(Color::Black);
+
 /// Draw command palette overlay
 pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     let area = centered_rect(50, 60, frame.area());
@@ -18,7 +21,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     frame.render_widget(Clear, area);
 
     let (input, selected) = match &app.focus {
-        FocusState::CommandPalette { input, selected } => (input.as_str(), *selected),
+        FocusState::CommandPalette { input, selected } => (input, *selected),
         _ => return,
     };
 
@@ -30,13 +33,11 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Input line
+    // Input line with cursor
     let input_area = Rect { height: 1, ..inner };
-    let input_line = Line::from(vec![
-        Span::styled("> ", Style::default().fg(Color::Cyan)),
-        Span::raw(input),
-    ]);
-    frame.render_widget(Paragraph::new(input_line), input_area);
+    let prefix = "> ";
+    let prefix_style = Style::default().fg(Color::Cyan);
+    input.render(frame, input_area, prefix, prefix_style, CURSOR_STYLE, true);
 
     // Command list
     let list_area = Rect {
@@ -45,7 +46,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
         ..inner
     };
 
-    let commands = app.get_filtered_commands(input);
+    let commands = app.get_filtered_commands(input.text());
     let item_count = commands.len();
     let visible_height = list_area.height as usize;
 
@@ -93,15 +94,15 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         height: 1,
     };
 
-    let (query, match_count, current, regex_mode, regex_error) = match &app.focus {
+    let (input, match_count, current, regex_mode, regex_error) = match &app.focus {
         FocusState::Search {
-            query,
+            input,
             match_indices,
             current_match,
             regex_mode,
             regex_error,
         } => (
-            query.as_str(),
+            input,
             match_indices.len(),
             *current_match,
             *regex_mode,
@@ -116,7 +117,7 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         format!("[err: {}]", short)
     } else if match_count > 0 {
         format!("{}/{}", current + 1, match_count)
-    } else if !query.is_empty() {
+    } else if !input.is_empty() {
         "No matches".to_string()
     } else {
         String::new()
@@ -134,18 +135,28 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         Span::raw("")
     };
 
-    let line = Line::from(vec![
+    // Build prefix spans manually, then append input spans
+    let prefix_width = 3 + if regex_mode { 5 } else { 0 }; // " / " + optional "[.*] "
+    let suffix = format!(
+        " {} | Ctrl+R:regex | Enter:search | Esc:cancel",
+        match_info
+    );
+    let available_for_input =
+        area.width.saturating_sub(prefix_width as u16 + suffix.len() as u16);
+
+    let mut spans = vec![
         Span::styled(" / ", Style::default().fg(Color::Yellow)),
         regex_indicator,
-        Span::raw(query),
-        Span::raw(" "),
-        Span::styled(match_info, match_info_style),
-        Span::styled(
-            " | Ctrl+R:regex | Enter:search | Esc:cancel",
-            Style::default().fg(Color::DarkGray),
-        ),
-    ]);
+    ];
+    spans.extend(input.to_spans(available_for_input, CURSOR_STYLE, true));
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(&match_info, match_info_style));
+    spans.push(Span::styled(
+        " | Ctrl+R:regex | Enter:search | Esc:cancel",
+        Style::default().fg(Color::DarkGray),
+    ));
 
+    let line = Line::from(spans);
     let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Black));
 
     frame.render_widget(Clear, area);
@@ -164,13 +175,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
             focus,
             selected_quick,
             error,
-        } => (
-            from.as_str(),
-            to.as_str(),
-            *focus,
-            *selected_quick,
-            error.as_deref(),
-        ),
+        } => (from, to, *focus, *selected_quick, error.as_deref()),
         _ => return,
     };
 
@@ -254,56 +259,50 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
 
     // From field
     if y < inner.y + inner.height {
-        let from_style = if focus == DateFilterFocus::From {
+        let from_active = focus == DateFilterFocus::From;
+        let from_style = if from_active {
             Style::default().fg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        let mut spans = vec![Span::styled("  From: ", from_style), Span::raw(from)];
-        if focus == DateFilterFocus::From {
-            spans.push(Span::styled(
-                "_",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ));
-        }
-        frame.render_widget(
-            Paragraph::new(Line::from(spans)),
-            Rect {
-                x: inner.x,
-                y,
-                width: inner.width,
-                height: 1,
-            },
+        let field_area = Rect {
+            x: inner.x,
+            y,
+            width: inner.width,
+            height: 1,
+        };
+        from.render(
+            frame,
+            field_area,
+            "  From: ",
+            from_style,
+            CURSOR_STYLE,
+            from_active,
         );
         y += 1;
     }
 
     // To field
     if y < inner.y + inner.height {
-        let to_style = if focus == DateFilterFocus::To {
+        let to_active = focus == DateFilterFocus::To;
+        let to_style = if to_active {
             Style::default().fg(Color::Cyan)
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        let mut spans = vec![Span::styled("    To: ", to_style), Span::raw(to)];
-        if focus == DateFilterFocus::To {
-            spans.push(Span::styled(
-                "_",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ));
-        }
-        frame.render_widget(
-            Paragraph::new(Line::from(spans)),
-            Rect {
-                x: inner.x,
-                y,
-                width: inner.width,
-                height: 1,
-            },
+        let field_area = Rect {
+            x: inner.x,
+            y,
+            width: inner.width,
+            height: 1,
+        };
+        to.render(
+            frame,
+            field_area,
+            "    To: ",
+            to_style,
+            CURSOR_STYLE,
+            to_active,
         );
         y += 1;
     }
@@ -362,20 +361,13 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     let area = centered_rect(60, 50, frame.area());
     frame.render_widget(Clear, area);
 
-    let (path, selected, cursor_pos, error, is_merge) = match &app.focus {
+    let (input, selected, error, is_merge) = match &app.focus {
         FocusState::FileOpen {
-            path,
+            input,
             selected_recent,
-            cursor_pos,
             error,
             is_merge,
-        } => (
-            path.as_str(),
-            *selected_recent,
-            *cursor_pos,
-            error.as_deref(),
-            *is_merge,
-        ),
+        } => (input, *selected_recent, error.as_deref(), *is_merge),
         _ => return,
     };
 
@@ -392,45 +384,16 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Path input with cursor (horizontally scrolled to keep cursor visible)
-    let cursor_style = Style::default().bg(Color::White).fg(Color::Black);
-    let prefix = "Path: ";
-    let prefix_len = prefix.len() as u16;
-    let chars: Vec<char> = path.chars().collect();
-    let available = inner.width.saturating_sub(prefix_len + 1) as usize; // +1 for cursor block
-
-    // Compute scroll offset so cursor stays visible
-    let scroll_offset = if available == 0 {
-        0
-    } else if cursor_pos >= available {
-        cursor_pos - available + 1
-    } else {
-        0
-    };
-
-    let visible_end = (scroll_offset + available).min(chars.len());
-    let visible: String = chars[scroll_offset..visible_end].iter().collect();
-    let input_line = if cursor_pos >= chars.len() {
-        // Cursor at end
-        Line::from(vec![
-            Span::styled(prefix, Style::default().fg(Color::Cyan)),
-            Span::raw(visible),
-            Span::styled(" ", cursor_style),
-        ])
-    } else {
-        // Cursor in middle of visible text
-        let before: String = chars[scroll_offset..cursor_pos].iter().collect();
-        let cursor_char: String = chars[cursor_pos].to_string();
-        let after: String = chars[cursor_pos + 1..visible_end].iter().collect();
-        Line::from(vec![
-            Span::styled(prefix, Style::default().fg(Color::Cyan)),
-            Span::raw(before),
-            Span::styled(cursor_char, cursor_style),
-            Span::raw(after),
-        ])
-    };
+    // Path input with cursor
     let input_area = Rect { height: 1, ..inner };
-    frame.render_widget(Paragraph::new(input_line), input_area);
+    input.render(
+        frame,
+        input_area,
+        "Path: ",
+        Style::default().fg(Color::Cyan),
+        CURSOR_STYLE,
+        true,
+    );
 
     // Error message
     if let Some(err) = error {
@@ -469,7 +432,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
             ..recent_area
         };
 
-        let typing = !path.is_empty();
+        let typing = !input.is_empty();
         let items: Vec<ListItem> = app
             .recent_files
             .iter()
@@ -585,6 +548,16 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  q         Quit (normal mode)"),
         Line::from("  ? or F1   Show this help"),
         Line::from("  Esc       Close dialog (doesn't quit)"),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "INPUT FIELDS",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from("  \u{2190}/\u{2192}       Move cursor left/right"),
+        Line::from("  Home/End  Move cursor to start/end"),
+        Line::from("  Ctrl+W    Delete word backward"),
+        Line::from("  Ctrl+U    Clear input"),
+        Line::from("  Delete    Forward delete"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "LEVEL FILTERS",
@@ -737,7 +710,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
             regex_error,
             focus,
         } => (
-            input.as_str(),
+            input,
             *selected,
             *regex_mode,
             regex_error.as_deref(),
@@ -760,7 +733,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
 
     let mut y = inner.y;
 
-    // Input bar
+    // Input bar with cursor
     let input_border_color = if input_focused {
         Color::Yellow
     } else {
@@ -774,25 +747,21 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         Span::raw("")
     };
 
-    let cursor = if input_focused {
-        Span::styled(
-            "_",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::SLOW_BLINK),
-        )
-    } else {
-        Span::raw("")
-    };
+    // Build the input line with cursor
+    let prefix = "  Exclude: ";
+    let regex_prefix_len = if regex_mode { 5 } else { 0 };
+    let available = inner
+        .width
+        .saturating_sub(prefix.len() as u16 + regex_prefix_len + 1);
 
-    let input_line = Line::from(vec![
-        Span::styled("  Exclude: ", input_label_style),
+    let mut spans = vec![
+        Span::styled(prefix, input_label_style),
         regex_indicator,
-        Span::raw(input),
-        cursor,
-    ]);
+    ];
+    spans.extend(input.to_spans(available, CURSOR_STYLE, input_focused));
+
     frame.render_widget(
-        Paragraph::new(input_line),
+        Paragraph::new(Line::from(spans)),
         Rect {
             x: inner.x,
             y,

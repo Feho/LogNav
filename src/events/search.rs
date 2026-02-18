@@ -79,13 +79,13 @@ fn jump_to_nearest_match(app: &mut App) {
 /// Flush pending search: recompute matches and jump to nearest
 pub fn flush_search(app: &mut App) {
     let FocusState::Search {
-        query, regex_mode, ..
+        input, regex_mode, ..
     } = &app.focus
     else {
         app.search_dirty = None;
         return;
     };
-    let (query, regex_mode) = (query.clone(), *regex_mode);
+    let (query, regex_mode) = (input.text().to_string(), *regex_mode);
     app.search_dirty = None;
     if let FocusState::Search {
         match_indices,
@@ -112,7 +112,7 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
             let query_empty =
-                matches!(&app.focus, FocusState::Search { query, .. } if query.is_empty());
+                matches!(&app.focus, FocusState::Search { input, .. } if input.is_empty());
             if query_empty {
                 // Already empty: close the search bar
                 app.search.clear();
@@ -120,8 +120,8 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
                 app.close_overlay();
             } else {
                 // Non-empty: clear the text first
-                if let FocusState::Search { ref mut query, .. } = app.focus {
-                    query.clear();
+                if let FocusState::Search { ref mut input, .. } = app.focus {
+                    input.clear();
                 }
                 app.search_dirty = Some(Instant::now());
             }
@@ -131,11 +131,11 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
             // Commit search to panel (split-screen mode)
             let (query, regex_mode, regex_error) = match &app.focus {
                 FocusState::Search {
-                    query,
+                    input,
                     regex_mode,
                     regex_error,
                     ..
-                } => (query.clone(), *regex_mode, regex_error.clone()),
+                } => (input.text().to_string(), *regex_mode, regex_error.clone()),
                 _ => return,
             };
 
@@ -164,6 +164,57 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
             app.search_dirty = Some(Instant::now());
         }
 
+        // Ctrl+U: clear line
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.clear();
+            }
+            app.search_history_index = None;
+            app.search_dirty = Some(Instant::now());
+        }
+
+        // Ctrl+W: delete word
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.delete_word_back();
+            }
+            app.search_history_index = None;
+            app.search_dirty = Some(Instant::now());
+        }
+
+        // Cursor movement
+        KeyCode::Left => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.move_left();
+            }
+        }
+
+        KeyCode::Right => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.move_right();
+            }
+        }
+
+        KeyCode::Home => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.home();
+            }
+        }
+
+        KeyCode::End => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.end();
+            }
+        }
+
+        KeyCode::Delete => {
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.delete_forward();
+            }
+            app.search_history_index = None;
+            app.search_dirty = Some(Instant::now());
+        }
+
         // History: Up = older, Down = newer
         KeyCode::Up => {
             if app.search_history.is_empty() {
@@ -175,8 +226,8 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
             };
             app.search_history_index = Some(new_idx);
             let hist = app.search_history[new_idx].clone();
-            if let FocusState::Search { ref mut query, .. } = app.focus {
-                *query = hist;
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.set_text(hist);
             }
             app.search_dirty = Some(Instant::now());
         }
@@ -187,14 +238,14 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
                     let new_idx = i + 1;
                     app.search_history_index = Some(new_idx);
                     let hist = app.search_history[new_idx].clone();
-                    if let FocusState::Search { ref mut query, .. } = app.focus {
-                        *query = hist;
+                    if let FocusState::Search { ref mut input, .. } = app.focus {
+                        input.set_text(hist);
                     }
                 } else {
                     // Past end of history, clear to empty
                     app.search_history_index = None;
-                    if let FocusState::Search { ref mut query, .. } = app.focus {
-                        query.clear();
+                    if let FocusState::Search { ref mut input, .. } = app.focus {
+                        input.clear();
                     }
                 }
                 app.search_dirty = Some(Instant::now());
@@ -202,16 +253,16 @@ pub fn handle_search_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Char(c) => {
-            if let FocusState::Search { ref mut query, .. } = app.focus {
-                query.push(c);
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.insert_char(c);
             }
             app.search_history_index = None;
             app.search_dirty = Some(Instant::now());
         }
 
         KeyCode::Backspace => {
-            if let FocusState::Search { ref mut query, .. } = app.focus {
-                query.pop();
+            if let FocusState::Search { ref mut input, .. } = app.focus {
+                input.delete_back();
             }
             app.search_history_index = None;
             app.search_dirty = Some(Instant::now());

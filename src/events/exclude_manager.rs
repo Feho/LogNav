@@ -35,7 +35,7 @@ pub fn handle_exclude_manager_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             if *focus == ExcludeManagerFocus::Input {
                 // Add new exclude from input
-                let query = input.clone();
+                let query = input.text().to_string();
                 let rm = *regex_mode;
                 if !query.is_empty() {
                     if let Some(err) = app.add_exclude(&query, rm) {
@@ -98,13 +98,49 @@ pub fn handle_exclude_manager_key(app: &mut App, key: KeyEvent) {
             }
         }
 
+        // Cursor movement (input focused)
+        KeyCode::Left if *focus == ExcludeManagerFocus::Input => {
+            input.move_left();
+        }
+        KeyCode::Right if *focus == ExcludeManagerFocus::Input => {
+            input.move_right();
+        }
+        KeyCode::Home if *focus == ExcludeManagerFocus::Input => {
+            input.home();
+        }
+        KeyCode::End if *focus == ExcludeManagerFocus::Input => {
+            input.end();
+        }
+
+        // Ctrl+U: clear line
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if *focus == ExcludeManagerFocus::Input {
+                input.clear();
+                *regex_error = None;
+            }
+        }
+
+        // Ctrl+W: delete word
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if *focus == ExcludeManagerFocus::Input {
+                input.delete_word_back();
+                *regex_error = None;
+            }
+        }
+
+        // Forward delete
+        KeyCode::Delete if *focus == ExcludeManagerFocus::Input => {
+            input.delete_forward();
+            *regex_error = None;
+        }
+
         // Text input (only when input is focused)
         KeyCode::Char(c) if *focus == ExcludeManagerFocus::Input => {
-            input.push(c);
+            input.insert_char(c);
             *regex_error = None;
         }
         KeyCode::Backspace if *focus == ExcludeManagerFocus::Input => {
-            input.pop();
+            input.delete_back();
             *regex_error = None;
         }
 

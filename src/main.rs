@@ -4,6 +4,7 @@ mod events;
 mod log_entry;
 mod log_tailer;
 mod parsers;
+mod text_input;
 mod text_utils;
 mod ui;
 

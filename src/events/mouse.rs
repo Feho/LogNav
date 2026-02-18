@@ -51,7 +51,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
             app.hover_word = None;
             // Compute max index for lists before mutable borrow
             let cmd_count = if let FocusState::CommandPalette { input, .. } = &app.focus {
-                app.get_filtered_commands(input).len()
+                app.get_filtered_commands(input.text()).len()
             } else {
                 0
             };

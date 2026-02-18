@@ -82,27 +82,26 @@ fn handle_paste(app: &mut App, text: String) {
                 app.status_message = Some(format!("Not a file: {}", text.trim()));
             }
         }
-        FocusState::FileOpen {
-            path,
-            cursor_pos,
-            error,
-            ..
-        } => {
+        FocusState::FileOpen { input, error, .. } => {
             let cleaned = clean_pasted_path(&text);
-            // Replace entire path with cleaned paste (typical drag-and-drop)
-            *path = cleaned;
-            *cursor_pos = path.chars().count();
+            input.set_text(cleaned);
             *error = None;
         }
-        FocusState::Search { query, .. } => {
-            query.push_str(text.trim());
+        FocusState::Search { input, .. } => {
+            for c in text.trim().chars() {
+                input.insert_char(c);
+            }
             app.search_dirty = Some(Instant::now());
         }
         FocusState::ExcludeManager { input, .. } => {
-            input.push_str(text.trim());
+            for c in text.trim().chars() {
+                input.insert_char(c);
+            }
         }
         FocusState::CommandPalette { input, selected } => {
-            input.push_str(text.trim());
+            for c in text.trim().chars() {
+                input.insert_char(c);
+            }
             *selected = 0;
         }
         FocusState::DateFilter { .. } => {

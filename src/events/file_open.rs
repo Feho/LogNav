@@ -1,14 +1,6 @@
 use crate::app::{App, FocusState};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-/// Convert a char index to a byte index within a string
-pub fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
-    s.char_indices()
-        .nth(char_idx)
-        .map(|(i, _)| i)
-        .unwrap_or(s.len())
-}
-
 /// Handle keys in file open dialog
 pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
     match key.code {
@@ -19,24 +11,25 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             let (file_path, is_merge) = match &app.focus {
                 FocusState::FileOpen {
-                    path,
+                    input,
                     selected_recent,
                     is_merge,
                     ..
                 } => {
+                    let path = input.text();
                     let resolved = if path.is_empty() && !app.recent_files.is_empty() {
                         app.recent_files.get(*selected_recent).cloned()
                     } else {
                         // Tilde expansion
                         let expanded = if path == "~" {
-                            std::env::var("HOME").unwrap_or_else(|_| path.clone())
+                            std::env::var("HOME").unwrap_or_else(|_| path.to_string())
                         } else if let Some(rest) = path.strip_prefix("~/") {
                             match std::env::var("HOME") {
                                 Ok(home) => format!("{}/{}", home, rest),
-                                Err(_) => path.clone(),
+                                Err(_) => path.to_string(),
                             }
                         } else {
-                            path.clone()
+                            path.to_string()
                         };
                         Some(expanded)
                     };
@@ -102,35 +95,33 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Left => {
-            if let FocusState::FileOpen { cursor_pos, .. } = &mut app.focus {
-                *cursor_pos = cursor_pos.saturating_sub(1);
+            if let FocusState::FileOpen { input, .. } = &mut app.focus {
+                input.move_left();
             }
         }
 
         KeyCode::Right => {
-            if let FocusState::FileOpen {
-                path, cursor_pos, ..
-            } = &mut app.focus
-            {
-                let char_count = path.chars().count();
-                if *cursor_pos < char_count {
-                    *cursor_pos += 1;
-                }
+            if let FocusState::FileOpen { input, .. } = &mut app.focus {
+                input.move_right();
             }
         }
 
         KeyCode::Home => {
-            if let FocusState::FileOpen { cursor_pos, .. } = &mut app.focus {
-                *cursor_pos = 0;
+            if let FocusState::FileOpen { input, .. } = &mut app.focus {
+                input.home();
             }
         }
 
         KeyCode::End => {
-            if let FocusState::FileOpen {
-                path, cursor_pos, ..
-            } = &mut app.focus
-            {
-                *cursor_pos = path.chars().count();
+            if let FocusState::FileOpen { input, .. } = &mut app.focus {
+                input.end();
+            }
+        }
+
+        KeyCode::Delete => {
+            if let FocusState::FileOpen { input, error, .. } = &mut app.focus {
+                input.delete_forward();
+                *error = None;
             }
         }
 
@@ -143,98 +134,37 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
                 _ => return,
             };
             if let Some(recent) = recent_path
-                && let FocusState::FileOpen {
-                    path,
-                    cursor_pos,
-                    error,
-                    ..
-                } = &mut app.focus
+                && let FocusState::FileOpen { input, error, .. } = &mut app.focus
             {
-                *path = recent;
-                *cursor_pos = path.chars().count();
+                input.set_text(recent);
                 *error = None;
             }
         }
 
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if let FocusState::FileOpen {
-                path,
-                cursor_pos,
-                error,
-                ..
-            } = &mut app.focus
-            {
-                path.clear();
-                *cursor_pos = 0;
+            if let FocusState::FileOpen { input, error, .. } = &mut app.focus {
+                input.clear();
                 *error = None;
             }
         }
 
         KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if let FocusState::FileOpen {
-                path,
-                cursor_pos,
-                error,
-                ..
-            } = &mut app.focus
-                && *cursor_pos > 0
-            {
+            if let FocusState::FileOpen { input, error, .. } = &mut app.focus {
+                input.delete_path_segment_back();
                 *error = None;
-                let byte_end = char_to_byte_index(path, *cursor_pos);
-                let mut new_pos = *cursor_pos;
-
-                // Skip trailing '/' separators
-                while new_pos > 0 {
-                    let bi = char_to_byte_index(path, new_pos - 1);
-                    if path[bi..].starts_with('/') {
-                        new_pos -= 1;
-                    } else {
-                        break;
-                    }
-                }
-
-                // Delete back to previous '/' or start
-                while new_pos > 0 {
-                    let bi = char_to_byte_index(path, new_pos - 1);
-                    if path[bi..].starts_with('/') {
-                        break;
-                    }
-                    new_pos -= 1;
-                }
-
-                let byte_start = char_to_byte_index(path, new_pos);
-                path.drain(byte_start..byte_end);
-                *cursor_pos = new_pos;
             }
         }
 
         KeyCode::Char(c) => {
-            if let FocusState::FileOpen {
-                path,
-                cursor_pos,
-                error,
-                ..
-            } = &mut app.focus
-            {
-                let byte_idx = char_to_byte_index(path, *cursor_pos);
-                path.insert(byte_idx, c);
-                *cursor_pos += 1;
+            if let FocusState::FileOpen { input, error, .. } = &mut app.focus {
+                input.insert_char(c);
                 *error = None;
             }
         }
 
         KeyCode::Backspace => {
-            if let FocusState::FileOpen {
-                path,
-                cursor_pos,
-                error,
-                ..
-            } = &mut app.focus
-                && *cursor_pos > 0
-            {
-                let byte_idx = char_to_byte_index(path, *cursor_pos - 1);
-                path.remove(byte_idx);
-                *cursor_pos -= 1;
+            if let FocusState::FileOpen { input, error, .. } = &mut app.focus {
+                input.delete_back();
                 *error = None;
             }
         }

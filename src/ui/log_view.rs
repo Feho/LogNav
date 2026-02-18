@@ -23,12 +23,13 @@ fn source_gutter_span(source_idx: u8) -> Span<'static> {
 /// Compile regex from the live search overlay query
 fn compile_overlay_regex(app: &App) -> Option<Regex> {
     if let FocusState::Search {
-        ref query,
+        ref input,
         regex_mode,
         ..
     } = app.focus
-        && !query.is_empty()
+        && !input.text().is_empty()
     {
+        let query = input.text();
         let pattern = if regex_mode {
             format!("(?i){}", query)
         } else {
