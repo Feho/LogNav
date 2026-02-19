@@ -187,7 +187,7 @@ async fn run_app(
             }
             if let Ok(evt) = event::read() {
                 // Release events for plain chars don't break a coalescing burst
-                let is_release = matches!(&evt, Event::Key(k) if k.kind != crossterm::event::KeyEventKind::Press && matches!(k.code, crossterm::event::KeyCode::Char(_)));
+                let is_release = matches!(&evt, Event::Key(k) if k.kind != crossterm::event::KeyEventKind::Press && is_plain_char_modifiers(k.modifiers) && matches!(k.code, crossterm::event::KeyCode::Char(_)));
                 if !is_release {
                     coalesce_chars = coalesce_chars && is_plain_char_event(Some(&evt));
                 }
@@ -299,14 +299,22 @@ async fn run_app(
     Ok(())
 }
 
+/// Modifier set that can appear on a "plain" character key: no modifier,
+/// Shift, or AltGr (reported as Ctrl+Alt on non-US keyboard layouts).
+fn is_plain_char_modifiers(m: crossterm::event::KeyModifiers) -> bool {
+    use crossterm::event::KeyModifiers;
+    m.is_empty()
+        || m == KeyModifiers::SHIFT
+        || m == (KeyModifiers::ALT | KeyModifiers::CONTROL)
+}
+
 fn is_plain_char_event(evt: Option<&Event>) -> bool {
-    use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
     matches!(
         evt,
         Some(Event::Key(k))
-            if k.kind == KeyEventKind::Press
-            && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
-            && matches!(k.code, KeyCode::Char(_))
+            if k.kind == crossterm::event::KeyEventKind::Press
+            && is_plain_char_modifiers(k.modifiers)
+            && matches!(k.code, crossterm::event::KeyCode::Char(_))
     )
 }
 
@@ -317,7 +325,7 @@ fn is_plain_char_event(evt: Option<&Event>) -> bool {
 /// a burst of 4+ consecutive char keys (no ctrl/alt modifier), we merge
 /// them into a single Event::Paste so the app treats it as dropped text.
 fn coalesce_char_events(events: Vec<Event>) -> Vec<Event> {
-    use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEventKind};
 
     let mut result: Vec<Event> = Vec::with_capacity(events.len());
     let mut char_buf = String::new();
@@ -327,14 +335,14 @@ fn coalesce_char_events(events: Vec<Event>) -> Vec<Event> {
             &evt,
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
-                && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
+                && is_plain_char_modifiers(k.modifiers)
                 && matches!(k.code, KeyCode::Char(_))
         );
         let is_plain_char_release = matches!(
             &evt,
             Event::Key(k)
                 if k.kind != KeyEventKind::Press
-                && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
+                && is_plain_char_modifiers(k.modifiers)
                 && matches!(k.code, KeyCode::Char(_))
         );
         if is_plain_char_press {
