@@ -176,7 +176,7 @@ async fn run_app(
         let mut coalescing = is_plain_char_press(pending.first());
         loop {
             let timeout = if coalescing {
-                Duration::from_millis(30)
+                Duration::from_millis(5)
             } else {
                 Duration::ZERO
             };
