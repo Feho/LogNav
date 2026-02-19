@@ -140,7 +140,7 @@ impl LogEntry {
 mod tests {
     use super::*;
     use crate::parsers::{
-        LogParser, QConsoleParser, WdParser, WpcParser, detect_parser, fallback_parser,
+        GenericParser, LogParser, QConsoleParser, WdParser, WpcParser, detect_parser,
         parse_with_parser,
     };
 
@@ -172,7 +172,8 @@ mod tests {
     }
 
     fn parse_log(content: &str) -> Vec<LogEntry> {
-        let parser = detect_parser(content).unwrap_or_else(fallback_parser);
+        let parser = detect_parser(content)
+            .unwrap_or_else(|| std::sync::Arc::new(GenericParser));
         parse_with_parser(content, &*parser)
     }
 
@@ -308,6 +309,30 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].level, LogLevel::Info);
         assert_eq!(entries[1].level, LogLevel::Trace);
+    }
+
+    #[test]
+    fn test_parse_wpc_full_date() {
+        let content = "DBG 2025-12-10 14:16:19.408 IPC                  Connecting to pipe...";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Debug);
+        let ts = entries[0].timestamp.unwrap();
+        assert_eq!(ts.to_string(), "2025-12-10 14:16:19.408");
+    }
+
+    #[test]
+    fn test_parse_wpc_dash_level() {
+        let content = "--- 2025-12-10 14:16:20.149 AppSettings          Initializing...";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].level, LogLevel::Trace);
+    }
+
+    #[test]
+    fn test_detect_wpc_full_date() {
+        let content = "DBG 2025-12-10 14:16:19.408 IPC  Connecting to pipe...";
+        assert_eq!(detect_format(content), LogFormat::WpcLog);
     }
 
     // --- QConsole format tests ---

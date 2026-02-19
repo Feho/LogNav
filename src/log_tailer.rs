@@ -50,7 +50,7 @@ impl LogTailer {
         Self {
             path: path.as_ref().to_path_buf(),
             source_idx,
-            parser: parsers::fallback_parser(),
+            parser: Arc::new(parsers::GenericParser),
             last_position: 0,
             last_size: 0,
             entry_count: 0,
@@ -79,7 +79,8 @@ impl LogTailer {
                 .read_to_string(&mut content)
                 .map_err(|e| format!("Failed to read file: {}", e))?;
 
-            let parser = parsers::detect_parser(&content).unwrap_or_else(parsers::fallback_parser);
+            let parser = parsers::detect_parser(&content)
+                .unwrap_or_else(|| Arc::new(parsers::GenericParser));
             let entries = parsers::parse_with_parser(&content, &*parser);
 
             Ok::<_, String>((entries, parser, size))

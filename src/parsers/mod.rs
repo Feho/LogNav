@@ -2,10 +2,12 @@ use crate::log_entry::{LogEntry, LogLevel};
 use chrono::NaiveDateTime;
 use std::sync::Arc;
 
+mod generic;
 mod qconsole;
 mod wd;
 mod wpc;
 
+pub use generic::GenericParser;
 pub use qconsole::QConsoleParser;
 pub use wd::WdParser;
 pub use wpc::WpcParser;
@@ -40,6 +42,7 @@ pub fn all_parsers() -> Vec<Arc<dyn LogParser>> {
         Arc::new(WdParser),
         Arc::new(WpcParser),
         Arc::new(QConsoleParser),
+        Arc::new(GenericParser),
     ]
 }
 
@@ -74,28 +77,6 @@ pub fn detect_parser(content: &str) -> Option<Arc<dyn LogParser>> {
     }
 
     None
-}
-
-/// Fallback parser that tries all parsers in order
-pub struct FallbackParser;
-
-impl LogParser for FallbackParser {
-    fn detect(&self, _first_line: &str) -> f64 {
-        0.0
-    }
-
-    fn parse_line(&self, line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)> {
-        // Try each parser in order
-        WdParser
-            .parse_line(line)
-            .or_else(|| WpcParser.parse_line(line))
-            .or_else(|| QConsoleParser.parse_line(line))
-    }
-}
-
-/// Get the fallback parser
-pub fn fallback_parser() -> Arc<dyn LogParser> {
-    Arc::new(FallbackParser)
 }
 
 /// Parse content with a specific parser

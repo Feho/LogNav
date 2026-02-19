@@ -87,15 +87,25 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
     };
 
-    let left_len = left.len();
-    let right_len = right.len();
-    let padding = (area.width as usize).saturating_sub(left_len + right_len);
+    let mut spans = Vec::new();
+    spans.push(Span::styled(left.clone(), Style::default().fg(Color::White)));
 
-    let line = Line::from(vec![
-        Span::styled(left, Style::default().fg(Color::White)),
-        Span::raw(" ".repeat(padding)),
-        Span::styled(right, Style::default().fg(Color::Cyan)),
-    ]);
+    // Show status message in yellow after main info
+    let status_len;
+    if let Some(msg) = &app.status_message {
+        let status = format!(" {} ", msg);
+        status_len = status.len();
+        spans.push(Span::styled(status, Style::default().fg(Color::Yellow)));
+    } else {
+        status_len = 0;
+    }
+
+    let used = left.len() + status_len + right.len();
+    let padding = (area.width as usize).saturating_sub(used);
+    spans.push(Span::raw(" ".repeat(padding)));
+    spans.push(Span::styled(right, Style::default().fg(Color::Cyan)));
+
+    let line = Line::from(spans);
 
     let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Black).fg(Color::White));
 

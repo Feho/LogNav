@@ -21,7 +21,7 @@ use crossterm::{
 use log_tailer::{LogTailer, TailerEvent};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -134,6 +134,7 @@ async fn run_app(
     config: &mut Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
     const SEARCH_DEBOUNCE: Duration = Duration::from_millis(150);
+    const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 
     loop {
         // Flush debounced search if deadline passed
@@ -141,6 +142,17 @@ async fn run_app(
             && dirty_at.elapsed() >= SEARCH_DEBOUNCE
         {
             events::flush_search(app);
+        }
+
+        // Auto-clear status message after timeout
+        if let Some(t) = app.status_message_time {
+            if t.elapsed() >= STATUS_TIMEOUT {
+                app.status_message = None;
+                app.status_message_time = None;
+            }
+        } else if app.status_message.is_some() {
+            // Stamp newly set messages
+            app.status_message_time = Some(Instant::now());
         }
 
         // Draw UI
@@ -371,7 +383,13 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) {
         TailerEvent::InitialLoad {
             source_idx,
             entries,
-        } => app.merge_entries_from_source(source_idx, entries),
+        } => {
+            let empty = entries.is_empty();
+            app.merge_entries_from_source(source_idx, entries);
+            if empty {
+                app.status_message = Some("No log entries found".to_string());
+            }
+        }
         TailerEvent::NewEntries {
             source_idx,
             entries,

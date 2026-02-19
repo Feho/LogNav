@@ -198,6 +198,7 @@ pub struct App {
 
     // Status
     pub status_message: Option<String>,
+    pub status_message_time: Option<std::time::Instant>,
     pub should_quit: bool,
 
     // Fuzzy matcher for command palette
@@ -259,6 +260,7 @@ impl App {
             source_entry_counts: Vec::new(),
             bookmark_stable_ids: HashSet::new(),
             status_message: None,
+            status_message_time: None,
             should_quit: false,
             fuzzy_matcher: SkimMatcherV2::default(),
             clipboard: arboard::Clipboard::new().ok(),
