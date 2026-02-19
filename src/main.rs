@@ -171,12 +171,14 @@ async fn run_app(
         }
 
         // Drain remaining events. If the first event is a plain char key,
-        // briefly wait for more to catch drag-and-drop bursts on terminals
+        // wait for more to catch drag-and-drop bursts on terminals
         // without bracketed paste (chars arrive individually with tiny gaps).
+        // 30 ms is well below human typing speed (~100 ms) but enough to
+        // capture rapid terminal paste/drop sequences.
         let mut coalesce_chars = is_plain_char_event(pending.first());
         loop {
             let timeout = if coalesce_chars {
-                Duration::from_millis(5)
+                Duration::from_millis(30)
             } else {
                 Duration::ZERO
             };
@@ -184,7 +186,11 @@ async fn run_app(
                 break;
             }
             if let Ok(evt) = event::read() {
-                coalesce_chars = coalesce_chars && is_plain_char_event(Some(&evt));
+                // Release events for plain chars don't break a coalescing burst
+                let is_release = matches!(&evt, Event::Key(k) if k.kind != crossterm::event::KeyEventKind::Press && matches!(k.code, crossterm::event::KeyCode::Char(_)));
+                if !is_release {
+                    coalesce_chars = coalesce_chars && is_plain_char_event(Some(&evt));
+                }
                 pending.push(evt);
             } else {
                 break;
@@ -304,6 +310,7 @@ fn is_plain_char_event(evt: Option<&Event>) -> bool {
     )
 }
 
+
 /// Coalesce runs of plain char key-presses into Paste events.
 /// Terminals without bracketed paste (e.g. Windows drag-and-drop) send
 /// pasted/dropped text as individual KeyCode::Char events. When we see
@@ -316,19 +323,30 @@ fn coalesce_char_events(events: Vec<Event>) -> Vec<Event> {
     let mut char_buf = String::new();
 
     for evt in events {
-        let is_plain_char = matches!(
+        let is_plain_char_press = matches!(
             &evt,
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                 && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
                 && matches!(k.code, KeyCode::Char(_))
         );
-        if is_plain_char {
+        let is_plain_char_release = matches!(
+            &evt,
+            Event::Key(k)
+                if k.kind != KeyEventKind::Press
+                && (k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT)
+                && matches!(k.code, KeyCode::Char(_))
+        );
+        if is_plain_char_press {
             if let Event::Key(k) = &evt
                 && let KeyCode::Char(c) = k.code
             {
                 char_buf.push(c);
             }
+        } else if is_plain_char_release && !char_buf.is_empty() {
+            // Skip release events while accumulating a char burst — terminals
+            // with keyboard enhancement protocols send Press+Release pairs,
+            // and we don't want the Release to break a drag-and-drop sequence.
         } else {
             flush_char_buf(&mut char_buf, &mut result);
             result.push(evt);
