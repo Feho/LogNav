@@ -171,13 +171,11 @@ async fn run_app(
         }
 
         // Drain remaining events. If the first event is a plain char key,
-        // wait for more to catch drag-and-drop bursts on terminals
-        // without bracketed paste (chars arrive individually with tiny gaps).
-        // 30 ms is well below human typing speed (~100 ms) but enough to
-        // capture rapid terminal paste/drop sequences.
-        let mut coalesce_chars = is_plain_char_event(pending.first());
+        // wait longer to catch drag-and-drop bursts on terminals without
+        // bracketed paste (chars arrive individually with tiny gaps).
+        let mut coalescing = is_plain_char_press(pending.first());
         loop {
-            let timeout = if coalesce_chars {
+            let timeout = if coalescing {
                 Duration::from_millis(30)
             } else {
                 Duration::ZERO
@@ -186,10 +184,13 @@ async fn run_app(
                 break;
             }
             if let Ok(evt) = event::read() {
-                // Release events for plain chars don't break a coalescing burst
-                let is_release = matches!(&evt, Event::Key(k) if k.kind != crossterm::event::KeyEventKind::Press && is_plain_char_modifiers(k.modifiers) && matches!(k.code, crossterm::event::KeyCode::Char(_)));
-                if !is_release {
-                    coalesce_chars = coalesce_chars && is_plain_char_event(Some(&evt));
+                // Only plain-char events (press or release) keep the burst alive
+                if let Event::Key(k) = &evt {
+                    if !is_plain_char(k) {
+                        coalescing = false;
+                    }
+                } else {
+                    coalescing = false;
                 }
                 pending.push(evt);
             } else {
@@ -299,62 +300,40 @@ async fn run_app(
     Ok(())
 }
 
-/// Modifier set that can appear on a "plain" character key: no modifier,
-/// Shift, or AltGr (reported as Ctrl+Alt on non-US keyboard layouts).
-fn is_plain_char_modifiers(m: crossterm::event::KeyModifiers) -> bool {
-    use crossterm::event::KeyModifiers;
-    m.is_empty()
-        || m == KeyModifiers::SHIFT
-        || m == (KeyModifiers::ALT | KeyModifiers::CONTROL)
+/// A "plain" char key: printable character with no modifier, Shift, or
+/// AltGr (reported as Ctrl+Alt on non-US keyboard layouts like French).
+fn is_plain_char(key: &crossterm::event::KeyEvent) -> bool {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let m = key.modifiers;
+    (m.is_empty() || m == KeyModifiers::SHIFT || m == (KeyModifiers::ALT | KeyModifiers::CONTROL))
+        && matches!(key.code, KeyCode::Char(_))
 }
 
-fn is_plain_char_event(evt: Option<&Event>) -> bool {
-    matches!(
-        evt,
-        Some(Event::Key(k))
-            if k.kind == crossterm::event::KeyEventKind::Press
-            && is_plain_char_modifiers(k.modifiers)
-            && matches!(k.code, crossterm::event::KeyCode::Char(_))
-    )
+fn is_plain_char_press(evt: Option<&Event>) -> bool {
+    matches!(evt, Some(Event::Key(k)) if k.kind == crossterm::event::KeyEventKind::Press && is_plain_char(k))
 }
-
 
 /// Coalesce runs of plain char key-presses into Paste events.
 /// Terminals without bracketed paste (e.g. Windows drag-and-drop) send
 /// pasted/dropped text as individual KeyCode::Char events. When we see
-/// a burst of 4+ consecutive char keys (no ctrl/alt modifier), we merge
-/// them into a single Event::Paste so the app treats it as dropped text.
+/// a burst of 4+ consecutive char keys we merge them into a single
+/// Event::Paste so the app treats it as dropped text.
 fn coalesce_char_events(events: Vec<Event>) -> Vec<Event> {
-    use crossterm::event::{KeyCode, KeyEventKind};
-
     let mut result: Vec<Event> = Vec::with_capacity(events.len());
     let mut char_buf = String::new();
 
     for evt in events {
-        let is_plain_char_press = matches!(
-            &evt,
-            Event::Key(k)
-                if k.kind == KeyEventKind::Press
-                && is_plain_char_modifiers(k.modifiers)
-                && matches!(k.code, KeyCode::Char(_))
-        );
-        let is_plain_char_release = matches!(
-            &evt,
-            Event::Key(k)
-                if k.kind != KeyEventKind::Press
-                && is_plain_char_modifiers(k.modifiers)
-                && matches!(k.code, KeyCode::Char(_))
-        );
-        if is_plain_char_press {
-            if let Event::Key(k) = &evt
-                && let KeyCode::Char(c) = k.code
+        if let Event::Key(k) = &evt
+            && is_plain_char(k)
+        {
+            if k.kind == crossterm::event::KeyEventKind::Press
+                && let crossterm::event::KeyCode::Char(c) = k.code
             {
                 char_buf.push(c);
             }
-        } else if is_plain_char_release && !char_buf.is_empty() {
-            // Skip release events while accumulating a char burst — terminals
-            // with keyboard enhancement protocols send Press+Release pairs,
-            // and we don't want the Release to break a drag-and-drop sequence.
+            // Release events are silently absorbed while coalescing —
+            // terminals with keyboard enhancement protocols send
+            // Press+Release pairs for each character.
         } else {
             flush_char_buf(&mut char_buf, &mut result);
             result.push(evt);
@@ -369,12 +348,10 @@ fn flush_char_buf(buf: &mut String, out: &mut Vec<Event>) {
         return;
     }
     if buf.len() >= 4 {
-        // Looks like a paste / drag-and-drop
         out.push(Event::Paste(std::mem::take(buf)));
     } else {
-        // Re-emit as individual key events
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
         for c in buf.drain(..).collect::<Vec<_>>() {
-            use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
             out.push(Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: if c.is_uppercase() {
