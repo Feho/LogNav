@@ -36,6 +36,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.open_merge_file_dialog();
         }
 
+        // Export filtered results
+        (KeyModifiers::CONTROL, KeyCode::Char('s')) => {
+            app.open_export_dialog();
+        }
+
         // Search
         (KeyModifiers::CONTROL, KeyCode::Char('f')) | (_, KeyCode::Char('/')) => {
             app.open_search();

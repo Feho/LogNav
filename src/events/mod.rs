@@ -6,6 +6,7 @@ mod command;
 mod date_filter;
 mod detail;
 mod exclude_manager;
+mod export;
 mod file_open;
 mod help;
 mod mouse;
@@ -43,9 +44,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::FileOpen { .. } => file_open::handle_file_open_key(app, key),
         FocusState::Detail { .. } => detail::handle_detail_key(app, key),
         FocusState::Help { .. } => help::handle_help_key(app, key),
-        FocusState::ExcludeManager { .. } => {
-            exclude_manager::handle_exclude_manager_key(app, key)
-        }
+        FocusState::ExcludeManager { .. } => exclude_manager::handle_exclude_manager_key(app, key),
+        FocusState::ExportDialog { .. } => export::handle_export_key(app, key),
     }
 }
 
@@ -106,6 +106,11 @@ fn handle_paste(app: &mut App, text: String) {
         }
         FocusState::DateFilter { .. } => {
             // Not useful for date filter
+        }
+        FocusState::ExportDialog { input, error, .. } => {
+            let cleaned = clean_pasted_path(&text);
+            input.set_text(cleaned);
+            *error = None;
         }
     }
 }

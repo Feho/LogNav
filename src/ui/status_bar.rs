@@ -1,10 +1,10 @@
 use crate::app::{App, FocusState};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 /// Draw status bar
@@ -26,11 +26,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Build status components
-    let mut parts = vec![
-        file_display,
-        format!("{}/{}", shown, total),
-        levels,
-    ];
+    let mut parts = vec![file_display, format!("{}/{}", shown, total), levels];
 
     // Add wrap status
     if app.wrap_enabled {
@@ -88,6 +84,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::Detail { .. } => "j/k:scroll | Esc:close ",
         FocusState::Help { .. } => "j/k:scroll | Esc/q:close ",
         FocusState::ExcludeManager { .. } => "Tab:switch | Enter:add | d:remove | Esc:close ",
+        FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
     };
 
     let left_len = left.len();

@@ -110,6 +110,10 @@ pub enum FocusState {
         regex_error: Option<String>,
         focus: ExcludeManagerFocus,
     },
+    ExportDialog {
+        input: TextInput,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -448,6 +452,61 @@ impl App {
         };
     }
 
+    /// Open export dialog with default path
+    pub fn open_export_dialog(&mut self) {
+        let default_path = if self.file_path.is_empty() {
+            "filtered.log".to_string()
+        } else {
+            let p = std::path::Path::new(&self.file_path);
+            let stem = p
+                .file_stem()
+                .map(|s| s.to_string_lossy())
+                .unwrap_or("output".into());
+            let ext = p
+                .extension()
+                .map(|s| s.to_string_lossy())
+                .unwrap_or("log".into());
+            let dir = p
+                .parent()
+                .map(|d| d.to_string_lossy())
+                .unwrap_or(".".into());
+            format!("{}/{}_filtered.{}", dir, stem, ext)
+        };
+        self.focus = FocusState::ExportDialog {
+            input: TextInput::with_text(default_path),
+            error: None,
+        };
+    }
+
+    /// Export filtered entries to a file
+    pub fn export_filtered(&mut self, path: &str) -> Result<usize, String> {
+        use std::io::Write;
+        let expanded = if path == "~" {
+            std::env::var("HOME").unwrap_or_else(|_| path.to_string())
+        } else if let Some(rest) = path.strip_prefix("~/") {
+            match std::env::var("HOME") {
+                Ok(home) => format!("{}/{}", home, rest),
+                Err(_) => path.to_string(),
+            }
+        } else {
+            path.to_string()
+        };
+
+        let file = std::fs::File::create(&expanded).map_err(|e| e.to_string())?;
+        let mut writer = std::io::BufWriter::new(file);
+        let mut count = 0;
+        for &idx in &self.filtered_indices {
+            let entry = &self.entries[idx];
+            writeln!(writer, "{}", entry.raw_line).map_err(|e| e.to_string())?;
+            for line in &entry.continuation_lines {
+                writeln!(writer, "{}", line).map_err(|e| e.to_string())?;
+            }
+            count += 1;
+        }
+        writer.flush().map_err(|e| e.to_string())?;
+        Ok(count)
+    }
+
     /// Close any overlay and return to normal
     pub fn close_overlay(&mut self) {
         self.focus = FocusState::Normal;
@@ -724,6 +783,7 @@ impl App {
             }
             CommandAction::ExcludeManager => self.open_exclude_manager(),
             CommandAction::MergeFile => self.open_merge_file_dialog(),
+            CommandAction::ExportFiltered => self.open_export_dialog(),
             CommandAction::Quit => self.should_quit = true,
         }
     }

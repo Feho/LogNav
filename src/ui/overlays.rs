@@ -137,12 +137,10 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
 
     // Build prefix spans manually, then append input spans
     let prefix_width = 3 + if regex_mode { 5 } else { 0 }; // " / " + optional "[.*] "
-    let suffix = format!(
-        " {} | Ctrl+R:regex | Enter:search | Esc:cancel",
-        match_info
-    );
-    let available_for_input =
-        area.width.saturating_sub(prefix_width as u16 + suffix.len() as u16);
+    let suffix = format!(" {} | Ctrl+R:regex | Enter:search | Esc:cancel", match_info);
+    let available_for_input = area
+        .width
+        .saturating_sub(prefix_width as u16 + suffix.len() as u16);
 
     let mut spans = vec![
         Span::styled(" / ", Style::default().fg(Color::Yellow)),
@@ -530,6 +528,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  t         Toggle tail mode (auto-scroll)"),
         Line::from("  d         Show entry detail popup"),
         Line::from("  c         Copy current entry to clipboard"),
+        Line::from("  Ctrl+S    Export filtered results to file"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "FILE",
@@ -755,10 +754,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         .width
         .saturating_sub(prefix.len() as u16 + regex_prefix_len + 1);
 
-    let mut spans = vec![
-        Span::styled(prefix, input_label_style),
-        regex_indicator,
-    ];
+    let mut spans = vec![Span::styled(prefix, input_label_style), regex_indicator];
     spans.extend(input.to_spans(available, CURSOR_STYLE, input_focused));
 
     frame.render_widget(
@@ -822,10 +818,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         x: inner.x,
         y,
         width: inner.width,
-        height: inner
-            .height
-            .saturating_sub(y - inner.y)
-            .saturating_sub(2), // reserve 2 for help
+        height: inner.height.saturating_sub(y - inner.y).saturating_sub(2), // reserve 2 for help
     };
 
     if count > 0 {
@@ -888,5 +881,47 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
                 height: 1,
             },
         );
+    }
+}
+
+/// Draw export dialog overlay
+pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
+    let area = centered_rect(60, 20, frame.area());
+    frame.render_widget(Clear, area);
+
+    let (input, error) = match &app.focus {
+        FocusState::ExportDialog { input, error } => (input, error.as_deref()),
+        _ => return,
+    };
+
+    let title = format!(" Export {} filtered entries ", app.filtered_indices.len());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(title);
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Path input with cursor
+    let input_area = Rect { height: 1, ..inner };
+    input.render(
+        frame,
+        input_area,
+        "Path: ",
+        Style::default().fg(Color::Cyan),
+        CURSOR_STYLE,
+        true,
+    );
+
+    // Error message
+    if let Some(err) = error {
+        let error_area = Rect {
+            y: inner.y + 1,
+            height: 1,
+            ..inner
+        };
+        let error_line = Line::from(Span::styled(err, Style::default().fg(Color::Red)));
+        frame.render_widget(Paragraph::new(error_line), error_area);
     }
 }

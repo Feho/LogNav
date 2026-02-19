@@ -57,6 +57,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         FocusState::Detail { .. } => overlays::draw_detail_popup(frame, app),
         FocusState::Help { .. } => overlays::draw_help(frame, app),
         FocusState::ExcludeManager { .. } => overlays::draw_exclude_manager(frame, app),
+        FocusState::ExportDialog { .. } => overlays::draw_export_dialog(frame, app),
     }
 }
 

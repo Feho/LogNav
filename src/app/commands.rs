@@ -32,6 +32,7 @@ pub enum CommandAction {
     ClearBookmarks,
     ExcludeManager,
     ClearExcludes,
+    ExportFiltered,
     Quit,
 }
 
@@ -94,7 +95,7 @@ impl Command {
         },
         Command {
             name: "Toggle word wrap",
-            shortcut: "w",
+            shortcut: "Ctrl+W",
             action: CommandAction::ToggleWrap,
         },
         Command {
@@ -161,6 +162,11 @@ impl Command {
             name: "Clear exclude filters",
             shortcut: "X",
             action: CommandAction::ClearExcludes,
+        },
+        Command {
+            name: "Export filtered results...",
+            shortcut: "Ctrl+S",
+            action: CommandAction::ExportFiltered,
         },
         Command {
             name: "Quit",
