@@ -87,6 +87,8 @@ pub fn flush_search(app: &mut App) {
     };
     let (query, regex_mode) = (input.text().to_string(), *regex_mode);
     app.search_dirty = None;
+    // Cache overlay regex for draw (avoids recompilation per frame)
+    app.overlay_regex_cache = build_search_regex(&query, regex_mode).ok();
     if let FocusState::Search {
         match_indices,
         current_match,

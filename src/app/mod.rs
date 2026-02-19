@@ -222,6 +222,9 @@ pub struct App {
     pub search_history: Vec<String>,
     pub search_history_index: Option<usize>, // None = typing new query, Some(i) = browsing history
 
+    /// Cached overlay regex for live search highlighting (avoids recompilation per frame)
+    pub overlay_regex_cache: Option<Regex>,
+
     /// Ctrl+hover: word to underline
     pub hover_word: Option<HoverWord>,
 }
@@ -272,6 +275,7 @@ impl App {
             search: SearchState::default(),
             search_history: Vec::new(),
             search_history_index: None,
+            overlay_regex_cache: None,
             hover_word: None,
         }
     }
@@ -510,6 +514,7 @@ impl App {
     /// Close any overlay and return to normal
     pub fn close_overlay(&mut self) {
         self.focus = FocusState::Normal;
+        self.overlay_regex_cache = None;
     }
 
     /// Close the search results panel and clear highlight regex.
@@ -692,21 +697,14 @@ impl App {
             self.source_entry_counts[si] += 1;
         }
 
-        // Insert each new entry in timestamp order
-        for entry in new_entries {
-            let insert_pos = if let Some(ts) = entry.timestamp {
-                self.entries
-                    .partition_point(|e| e.timestamp.map(|t| t <= ts).unwrap_or(true))
-            } else {
-                // No timestamp: insert after last entry from same source
-                self.entries
-                    .iter()
-                    .rposition(|e| e.source_idx == source_idx)
-                    .map(|p| p + 1)
-                    .unwrap_or(self.entries.len())
-            };
-            self.entries.insert(insert_pos, entry);
-        }
+        // Merge new entries by appending + stable sort (O(n log n) vs O(n²) insert)
+        self.entries.extend(new_entries);
+        self.entries.sort_by(|a, b| match (a.timestamp, b.timestamp) {
+            (Some(ta), Some(tb)) => ta.cmp(&tb),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
 
         // Re-index all entries
         for (i, entry) in self.entries.iter_mut().enumerate() {

@@ -1,5 +1,5 @@
 use crate::app::SOURCE_COLORS;
-use crate::app::{App, FocusState};
+use crate::app::App;
 use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
 use crate::ui::extract_message;
@@ -20,25 +20,6 @@ fn source_gutter_span(source_idx: u8) -> Span<'static> {
     Span::styled("▌", Style::default().fg(color))
 }
 
-/// Compile regex from the live search overlay query
-fn compile_overlay_regex(app: &App) -> Option<Regex> {
-    if let FocusState::Search {
-        ref input,
-        regex_mode,
-        ..
-    } = app.focus
-        && !input.text().is_empty()
-    {
-        let query = input.text();
-        let pattern = if regex_mode {
-            format!("(?i){}", query)
-        } else {
-            format!("(?i){}", regex::escape(query))
-        };
-        return Regex::new(&pattern).ok();
-    }
-    None
-}
 
 /// Compute underline range for a given terminal row if hover_word matches.
 /// Returns char range in display-text coordinates (after horizontal_scroll skip).
@@ -64,13 +45,12 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     app.viewport_height = viewport_height;
     app.viewport_width = viewport_width;
 
-    // Compute highlight regex once: use committed search regex or live overlay query
-    let overlay_regex = compile_overlay_regex(app);
+    // Compute highlight regex once: use committed search regex or cached overlay
     let hl_regex = app
         .search
         .regex
         .as_ref()
-        .or(overlay_regex.as_ref())
+        .or(app.overlay_regex_cache.as_ref())
         .cloned();
     let hl_regex_ref = hl_regex.as_ref();
 
