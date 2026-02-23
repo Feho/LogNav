@@ -1,10 +1,10 @@
 use crate::app::{App, FocusState};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 
 /// Draw status bar
@@ -63,7 +63,12 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push(format!("Exclude:{}", app.exclude_patterns.len()));
     }
 
-    let left = format!(" {} ", parts.join(" | "));
+    // If there's a status message, show it instead of normal status
+    let left = if let Some(ref msg) = app.status_message {
+        format!(" {} ", msg)
+    } else {
+        format!(" {} ", parts.join(" | "))
+    };
 
     // Right side: context-aware hints
     let right = match app.focus {
@@ -91,8 +96,14 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let right_len = right.len();
     let padding = (area.width as usize).saturating_sub(left_len + right_len);
 
+    let left_style = if app.status_message.is_some() {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
     let line = Line::from(vec![
-        Span::styled(left, Style::default().fg(Color::White)),
+        Span::styled(left, left_style),
         Span::raw(" ".repeat(padding)),
         Span::styled(right, Style::default().fg(Color::Cyan)),
     ]);

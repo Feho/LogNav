@@ -18,6 +18,9 @@ pub use search::flush_search;
 
 /// Handle crossterm events
 pub fn handle_event(app: &mut App, event: Event) {
+    // Clear status message on next user action
+    app.status_message = None;
+
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(app, key),
         Event::Mouse(mouse) => mouse::handle_mouse(app, mouse),
