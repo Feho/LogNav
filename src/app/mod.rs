@@ -622,6 +622,28 @@ impl App {
         self.expanded_entries.contains(&entry_idx)
     }
 
+    /// Auto-expand selected entry if search match is hidden in continuation lines
+    pub fn auto_expand_for_search(&mut self) {
+        let regex = match self.search.regex.as_ref() {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        let entry_idx = match self.filtered_indices.get(self.selected_index) {
+            Some(&idx) => idx,
+            None => return,
+        };
+        let entry = &self.entries[entry_idx];
+        // Only act on entries with continuation lines that aren't already expanded
+        if entry.continuation_lines.is_empty() || self.expanded_entries.contains(&entry_idx) {
+            return;
+        }
+        // If the match is NOT on the main line, it must be in continuation lines
+        if !regex.is_match(&entry.raw_line) {
+            self.entries[entry_idx].ensure_pretty_continuation();
+            self.expanded_entries.insert(entry_idx);
+        }
+    }
+
     /// Whether we're in merged multi-file view
     pub fn is_merged(&self) -> bool {
         self.sources.len() > 1

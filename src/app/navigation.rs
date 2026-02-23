@@ -226,6 +226,7 @@ impl App {
     pub fn sync_main_to_panel_selection(&mut self) {
         if let Some(&filtered_pos) = self.search_panel_matches.get(self.search_panel_selected) {
             self.selected_index = filtered_pos;
+            self.auto_expand_for_search();
             self.center_selected();
         }
         self.ensure_panel_selected_visible();

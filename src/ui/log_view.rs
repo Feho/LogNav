@@ -224,12 +224,20 @@ fn draw_log_view_nowrap(
             } else {
                 format!(" [+{}]", entry.continuation_lines.len())
             };
-            spans.push(Span::styled(
-                indicator,
+            // Highlight collapsed indicator when search matches hide in continuation lines
+            let style = if !is_expanded
+                && hl_regex
+                    .is_some_and(|r| entry.continuation_lines.iter().any(|l| r.is_match(l)))
+            {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
                 Style::default()
                     .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ));
+                    .add_modifier(Modifier::BOLD)
+            };
+            spans.push(Span::styled(indicator, style));
         }
 
         visual_lines.push((Line::from(spans), is_selected, entry.level));
@@ -398,12 +406,21 @@ fn draw_log_view_wrapped(
                     ul_range,
                 ));
                 if let Some(ref ind) = indicator {
-                    spans.push(Span::styled(
-                        ind.clone(),
+                    // Highlight collapsed indicator when search matches hide in continuation lines
+                    let style = if !is_expanded
+                        && hl_regex.is_some_and(|r| {
+                            entry.continuation_lines.iter().any(|l| r.is_match(l))
+                        })
+                    {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
                         Style::default()
                             .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ));
+                            .add_modifier(Modifier::BOLD)
+                    };
+                    spans.push(Span::styled(ind.clone(), style));
                 }
                 Line::from(spans)
             } else {

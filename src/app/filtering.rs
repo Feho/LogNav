@@ -123,6 +123,7 @@ impl App {
         // Jump to first match
         if let Some(&first) = self.search_panel_matches.first() {
             self.selected_index = first;
+            self.auto_expand_for_search();
             self.center_selected();
         }
     }
