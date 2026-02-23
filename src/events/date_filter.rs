@@ -297,8 +297,8 @@ pub fn parse_date_input(input: &str, is_end: bool) -> Option<chrono::NaiveDateTi
     let formats = [
         ("%Y-%m-%d %H:%M:%S", input.to_string()),
         ("%Y-%m-%d %H:%M", input.to_string()),
-        ("%m-%d %H:%M:%S", format!("{}-{}", current_year, input)),
-        ("%m-%d %H:%M", format!("{}-{}", current_year, input)),
+        ("%Y-%m-%d %H:%M:%S", format!("{}-{}", current_year, input)),
+        ("%Y-%m-%d %H:%M", format!("{}-{}", current_year, input)),
     ];
 
     for (fmt, date_str) in &formats {
