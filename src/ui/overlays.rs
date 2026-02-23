@@ -365,6 +365,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
             selected_recent,
             error,
             is_merge,
+            ..
         } => (input, *selected_recent, error.as_deref(), *is_merge),
         _ => return,
     };
@@ -461,7 +462,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
         height: 1,
     };
     let help_line = Line::from(Span::styled(
-        "Esc:cancel | Enter:open | Tab:fill recent | Ctrl+W:delete word | Ctrl+U:clear",
+        "Esc:cancel | Enter:open | Tab:complete path | Ctrl+W:delete segment | Ctrl+U:clear",
         Style::default().fg(Color::DarkGray),
     ));
     frame.render_widget(Paragraph::new(help_line), help_area);
@@ -536,7 +537,8 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         )]),
         Line::from("  o         Open file dialog"),
         Line::from("  M         Merge file (add to merged view)"),
-        Line::from("  Tab       Fill path from recent files"),
+        Line::from("  Tab       Tab-complete path / fill from recent files"),
+        Line::from("  Shift+Tab Cycle backwards through completions"),
         Line::from("  Ctrl+W    Delete word in path input"),
         Line::from("  ~         Tilde expansion for home directory"),
         Line::from(""),

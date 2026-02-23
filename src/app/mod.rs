@@ -96,6 +96,8 @@ pub enum FocusState {
         selected_recent: usize,
         error: Option<String>,
         is_merge: bool,
+        completions: Vec<String>,
+        completion_index: Option<usize>,
     },
     Detail {
         scroll_offset: usize,
@@ -415,6 +417,8 @@ impl App {
             selected_recent: 0,
             error: None,
             is_merge: false,
+            completions: Vec::new(),
+            completion_index: None,
         };
     }
 
@@ -425,6 +429,8 @@ impl App {
             selected_recent: 0,
             error: None,
             is_merge: true,
+            completions: Vec::new(),
+            completion_index: None,
         };
     }
 
