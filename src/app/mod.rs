@@ -237,8 +237,8 @@ pub struct App {
     pub clusters: Vec<Cluster>,
     pub clusters_dirty: bool,
     pub cluster_tx: Option<mpsc::Sender<Vec<Cluster>>>,
-    /// Per-entry cluster lookup: filtered_idx → (cluster_id, offset_in_occurrence)
-    pub cluster_map: HashMap<usize, (usize, usize)>,
+    /// Per-entry cluster lookup: filtered_idx → (cluster_id, offset, group_len)
+    pub cluster_map: HashMap<usize, (usize, usize, usize)>,
     /// Cluster IDs currently folded in main view
     pub folded_clusters: HashSet<usize>,
     /// Whether async cluster detection is in progress
@@ -536,15 +536,49 @@ impl App {
         };
     }
 
-    /// Build per-entry cluster lookup map from cluster occurrences
+    /// Build per-entry cluster lookup map from cluster occurrences.
+    /// For single-line clusters (sequence_len==1), consecutive occurrences are
+    /// grouped visually with sequential offsets so the gutter renders correctly.
     fn build_cluster_map(&mut self) {
         self.cluster_map.clear();
         for (cluster_id, cluster) in self.clusters.iter().enumerate() {
-            for &(start, len) in &cluster.occurrences {
-                for offset in 0..len {
-                    self.cluster_map
-                        .entry(start + offset)
-                        .or_insert((cluster_id, offset));
+            if cluster.sequence_len == 1 && cluster.occurrences.len() > 1 {
+                // Group consecutive single-entry occurrences into visual runs.
+                // Two passes: first collect runs, then assign offsets with group_len.
+                let mut sorted_starts: Vec<usize> =
+                    cluster.occurrences.iter().map(|&(s, _)| s).collect();
+                sorted_starts.sort_unstable();
+
+                // Split into visual runs separated by large gaps
+                let mut runs: Vec<Vec<usize>> = Vec::new();
+                let mut current_run: Vec<usize> = Vec::new();
+                for &idx in &sorted_starts {
+                    if let Some(&last) = current_run.last()
+                        && idx - last > crate::clusters::MAX_SINGLE_GAP + 1
+                    {
+                        runs.push(std::mem::take(&mut current_run));
+                    }
+                    current_run.push(idx);
+                }
+                if !current_run.is_empty() {
+                    runs.push(current_run);
+                }
+
+                for run in &runs {
+                    let group_len = run.len();
+                    for (offset, &idx) in run.iter().enumerate() {
+                        self.cluster_map
+                            .entry(idx)
+                            .or_insert((cluster_id, offset, group_len));
+                    }
+                }
+            } else {
+                for &(start, len) in &cluster.occurrences {
+                    for offset in 0..len {
+                        self.cluster_map
+                            .entry(start + offset)
+                            .or_insert((cluster_id, offset, len));
+                    }
                 }
             }
         }
@@ -556,6 +590,12 @@ impl App {
             self.folded_clusters.remove(&cluster_id);
         } else {
             self.folded_clusters.insert(cluster_id);
+            // Snap cursor to occurrence start if it would be hidden
+            if let Some(&(cid, off, _)) = self.cluster_map.get(&self.selected_index)
+                && cid == cluster_id && off > 0
+            {
+                self.selected_index -= off;
+            }
         }
     }
 

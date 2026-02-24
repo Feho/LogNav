@@ -168,7 +168,7 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         // Fold/unfold cluster occurrence at cursor
         (_, KeyCode::Char(' ')) => {
-            if let Some(&(cluster_id, _)) = app.cluster_map.get(&app.selected_index) {
+            if let Some(&(cluster_id, _, _)) = app.cluster_map.get(&app.selected_index) {
                 app.toggle_fold_cluster(cluster_id);
             }
         }

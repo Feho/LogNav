@@ -56,18 +56,36 @@ fn underline_range_for_row(app: &App, terminal_row: usize) -> Option<(usize, usi
     Some((start, end))
 }
 
-/// Subtle background tint for cluster entries
-const CLUSTER_BG: Color = Color::Indexed(236); // dark gray (xterm-256)
+/// Compute the fixed gutter width needed for cluster annotations.
+/// Returns 0 when no clusters are active.
+fn cluster_gutter_width(app: &App) -> usize {
+    if app.cluster_map.is_empty() {
+        return 0;
+    }
+    // "│" (1) + max digits of count + "×" (1)
+    let max_count = app.clusters.iter().map(|c| c.count).max().unwrap_or(1);
+    let digits = max_count.max(1).ilog10() as usize + 1;
+    1 + digits + 1 // │ + digits + ×
+}
 
-/// Build cluster gutter span: "│N×" for first line of occurrence, "│" for others
-fn cluster_gutter_span(app: &App, cluster_id: usize, offset: usize) -> Span<'static> {
+/// Build cluster gutter span, padded to `width`.
+/// offset==0 → "▼N×", last → "└  ", middle → "│  "
+fn cluster_gutter_span(app: &App, cluster_id: usize, offset: usize, occ_len: usize, width: usize) -> Span<'static> {
     let style = Style::default().fg(Color::DarkGray);
     if offset == 0 {
         let count = app.clusters[cluster_id].count;
-        Span::styled(format!("│{}×", count), style)
+        let label = format!("▼{}×", count);
+        Span::styled(format!("{:<width$}", label, width = width), style)
+    } else if offset == occ_len - 1 {
+        Span::styled(format!("└{:<width$}", "", width = width - 1), style)
     } else {
-        Span::styled("│ ", style)
+        Span::styled(format!("│{:<width$}", "", width = width - 1), style)
     }
+}
+
+/// Build a blank cluster gutter span for non-clustered lines
+fn cluster_gutter_blank(width: usize) -> Span<'static> {
+    Span::raw(" ".repeat(width))
 }
 
 /// Build a fold summary line (rendered as the entry's own row, no extra row)
@@ -88,7 +106,7 @@ fn cluster_fold_line(app: &App, cluster_id: usize, occurrence_len: usize) -> Lin
 
 /// Check if a filtered entry is a folded interior (should be skipped)
 fn is_folded_interior(app: &App, filtered_idx: usize) -> bool {
-    if let Some(&(cluster_id, offset)) = app.cluster_map.get(&filtered_idx) {
+    if let Some(&(cluster_id, offset, _)) = app.cluster_map.get(&filtered_idx) {
         offset > 0 && app.folded_clusters.contains(&cluster_id)
     } else {
         false
@@ -198,10 +216,10 @@ fn draw_log_view_nowrap(
     app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
     let syntax_on = app.syntax_highlight;
     let is_merged = app.is_merged();
+    let cg_width = cluster_gutter_width(app);
 
-    // Build visual lines: (line, is_selected, level, in_cluster)
-    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel, bool)> =
-        Vec::with_capacity(viewport_height);
+    // Build visual lines: (line, is_selected, level)
+    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
 
@@ -214,24 +232,17 @@ fn draw_log_view_nowrap(
 
         let cluster_info = app.cluster_map.get(&current_entry_idx).copied();
         let is_folded =
-            cluster_info.is_some_and(|(cid, off)| off == 0 && app.folded_clusters.contains(&cid));
+            cluster_info.is_some_and(|(cid, off, _)| off == 0 && app.folded_clusters.contains(&cid));
 
         // Folded cluster: render summary as the entry's own row
-        if let Some((cluster_id, 0)) = cluster_info
+        if let Some((cluster_id, 0, group_len)) = cluster_info
             && is_folded
         {
-            let occ_len = app.clusters[cluster_id]
-                .occurrences
-                .iter()
-                .find(|&&(s, _)| s == current_entry_idx)
-                .map(|&(_, l)| l)
-                .unwrap_or(1);
             let is_selected = current_entry_idx == app.selected_index;
             visual_lines.push((
-                cluster_fold_line(app, cluster_id, occ_len),
+                cluster_fold_line(app, cluster_id, group_len),
                 is_selected,
                 LogLevel::Info,
-                true,
             ));
             terminal_row += 1;
             current_entry_idx += 1;
@@ -274,12 +285,16 @@ fn draw_log_view_nowrap(
         };
 
         let mut spans = Vec::new();
-        // Cluster gutter: "│N×" on first line of occurrence, "│ " on others
-        if let Some((cid, off)) = cluster_info {
-            spans.push(cluster_gutter_span(app, cid, off));
-        }
+        // Source gutter first, then cluster gutter
         if is_merged {
             spans.push(source_gutter_span(entry.source_idx));
+        }
+        if cg_width > 0 {
+            if let Some((cid, off, gl)) = cluster_info {
+                spans.push(cluster_gutter_span(app, cid, off, gl, cg_width));
+            } else {
+                spans.push(cluster_gutter_blank(cg_width));
+            }
         }
         spans.extend([
             bookmark_span,
@@ -316,7 +331,7 @@ fn draw_log_view_nowrap(
             spans.push(Span::styled(indicator, style));
         }
 
-        visual_lines.push((Line::from(spans), is_selected, entry.level, in_cluster));
+        visual_lines.push((Line::from(spans), is_selected, entry.level));
         terminal_row += 1;
 
         // Add continuation lines if expanded
@@ -332,11 +347,20 @@ fn draw_log_view_nowrap(
                 let ul_range = underline_range_for_row(app, terminal_row);
 
                 let mut cont_spans = Vec::new();
-                if in_cluster {
-                    cont_spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
-                }
                 if is_merged {
                     cont_spans.push(source_gutter_span(entry.source_idx));
+                }
+                if cg_width > 0 {
+                    let is_last = cluster_info
+                        .is_some_and(|(_, off, gl)| off == gl - 1);
+                    if in_cluster && !is_last {
+                        cont_spans.push(Span::styled(
+                            format!("│{:<width$}", "", width = cg_width - 1),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    } else {
+                        cont_spans.push(cluster_gutter_blank(cg_width));
+                    }
                 }
                 cont_spans.extend([
                     Span::raw(" "),                          // bookmark placeholder
@@ -348,7 +372,7 @@ fn draw_log_view_nowrap(
                     &display, hl_regex, cont_style, syntax_on, ul_range,
                 ));
                 let line = Line::from(cont_spans);
-                visual_lines.push((line, false, entry.level, in_cluster));
+                visual_lines.push((line, false, entry.level));
                 terminal_row += 1;
             }
         }
@@ -357,7 +381,7 @@ fn draw_log_view_nowrap(
     }
 
     // Render each visual line
-    for (i, (line, is_selected, level, in_cluster)) in visual_lines.into_iter().enumerate() {
+    for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
             break;
@@ -375,8 +399,6 @@ fn draw_log_view_nowrap(
                 .bg(level_color(level))
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD)
-        } else if in_cluster {
-            Style::default().bg(CLUSTER_BG)
         } else {
             Style::default()
         };
@@ -401,7 +423,8 @@ fn draw_log_view_wrapped(
     // and handle scrolling based on visual lines, not entries
 
     let is_merged = app.is_merged();
-    let gutter_extra = if is_merged { 1 } else { 0 };
+    let cg_width = cluster_gutter_width(app);
+    let gutter_extra = if is_merged { 1 } else { 0 } + cg_width;
     let prefix_width = LINE_PREFIX_WIDTH + gutter_extra;
     let msg_width = viewport_width.saturating_sub(prefix_width);
     if msg_width == 0 {
@@ -413,9 +436,8 @@ fn draw_log_view_wrapped(
     app.ensure_selected_visible_with_height(viewport_height, viewport_width);
     let syntax_on = app.syntax_highlight;
 
-    // Build visual lines: (line, is_selected, level, in_cluster)
-    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel, bool)> =
-        Vec::with_capacity(viewport_height);
+    // Build visual lines: (line, is_selected, level)
+    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
 
@@ -428,24 +450,17 @@ fn draw_log_view_wrapped(
 
         let cluster_info = app.cluster_map.get(&current_entry_idx).copied();
         let is_folded =
-            cluster_info.is_some_and(|(cid, off)| off == 0 && app.folded_clusters.contains(&cid));
+            cluster_info.is_some_and(|(cid, off, _)| off == 0 && app.folded_clusters.contains(&cid));
 
         // Folded cluster: render summary as the entry's own row
-        if let Some((cluster_id, 0)) = cluster_info
+        if let Some((cluster_id, 0, group_len)) = cluster_info
             && is_folded
         {
-            let occ_len = app.clusters[cluster_id]
-                .occurrences
-                .iter()
-                .find(|&&(s, _)| s == current_entry_idx)
-                .map(|&(_, l)| l)
-                .unwrap_or(1);
             let is_selected = current_entry_idx == app.selected_index;
             visual_lines.push((
-                cluster_fold_line(app, cluster_id, occ_len),
+                cluster_fold_line(app, cluster_id, group_len),
                 is_selected,
                 LogLevel::Info,
-                true,
             ));
             terminal_row += 1;
             current_entry_idx += 1;
@@ -501,11 +516,16 @@ fn draw_log_view_wrapped(
             let line = if i == 0 {
                 // First line: show timestamp and level
                 let mut spans = Vec::new();
-                if let Some((cid, off)) = cluster_info {
-                    spans.push(cluster_gutter_span(app, cid, off));
-                }
+                // Source gutter first, then cluster gutter
                 if is_merged {
                     spans.push(source_gutter_span(entry.source_idx));
+                }
+                if cg_width > 0 {
+                    if let Some((cid, off, gl)) = cluster_info {
+                        spans.push(cluster_gutter_span(app, cid, off, gl, cg_width));
+                    } else {
+                        spans.push(cluster_gutter_blank(cg_width));
+                    }
                 }
                 spans.extend([
                     bookmark_span.clone(),
@@ -542,12 +562,22 @@ fn draw_log_view_wrapped(
             } else {
                 // Wrapped continuation: indent to align with message
                 let mut spans = Vec::new();
-                if in_cluster {
-                    spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::raw(" ".repeat(prefix_width.saturating_sub(2))));
-                } else {
-                    spans.push(Span::raw(" ".repeat(prefix_width)));
+                if is_merged {
+                    spans.push(Span::raw(" ")); // source gutter placeholder
                 }
+                if cg_width > 0 {
+                    let is_last = cluster_info
+                        .is_some_and(|(_, off, gl)| off == gl - 1);
+                    if in_cluster && !is_last {
+                        spans.push(Span::styled(
+                            format!("│{:<width$}", "", width = cg_width - 1),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    } else {
+                        spans.push(cluster_gutter_blank(cg_width));
+                    }
+                }
+                spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                 spans.extend(styled_spans(
                     part,
                     hl_regex,
@@ -558,7 +588,7 @@ fn draw_log_view_wrapped(
                 Line::from(spans)
             };
 
-            visual_lines.push((line, is_selected, entry.level, in_cluster));
+            visual_lines.push((line, is_selected, entry.level));
             terminal_row += 1;
         }
 
@@ -576,17 +606,27 @@ fn draw_log_view_wrapped(
                     let cont_style = Style::default().fg(Color::DarkGray);
                     let ul_range = underline_range_for_row(app, terminal_row);
                     let mut cont_spans = Vec::new();
-                    if in_cluster {
-                        cont_spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
-                        cont_spans.push(Span::raw(" ".repeat(prefix_width.saturating_sub(2))));
-                    } else {
-                        cont_spans.push(Span::raw(" ".repeat(prefix_width)));
+                    if is_merged {
+                        cont_spans.push(Span::raw(" ")); // source gutter placeholder
                     }
+                    if cg_width > 0 {
+                        let is_last = cluster_info
+                            .is_some_and(|(_, off, gl)| off == gl - 1);
+                        if in_cluster && !is_last {
+                            cont_spans.push(Span::styled(
+                                format!("│{:<width$}", "", width = cg_width - 1),
+                                Style::default().fg(Color::DarkGray),
+                            ));
+                        } else {
+                            cont_spans.push(cluster_gutter_blank(cg_width));
+                        }
+                    }
+                    cont_spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                     cont_spans.extend(styled_spans(
                         &part, hl_regex, cont_style, syntax_on, ul_range,
                     ));
                     let line = Line::from(cont_spans);
-                    visual_lines.push((line, false, entry.level, in_cluster));
+                    visual_lines.push((line, false, entry.level));
                     terminal_row += 1;
                 }
             }
@@ -596,7 +636,7 @@ fn draw_log_view_wrapped(
     }
 
     // Render each visual line
-    for (i, (line, is_selected, level, in_cluster)) in visual_lines.into_iter().enumerate() {
+    for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
             break;
@@ -614,8 +654,6 @@ fn draw_log_view_wrapped(
                 .bg(level_color(level))
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD)
-        } else if in_cluster {
-            Style::default().bg(CLUSTER_BG)
         } else {
             Style::default()
         };

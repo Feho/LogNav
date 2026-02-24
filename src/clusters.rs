@@ -107,6 +107,12 @@ fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Clus
             }
 
             if valid.len() >= MIN_SEQ_REPEATS {
+                // Skip sequences where all lines share the same template —
+                // those are better handled as single-line runs
+                let all_same = reference.iter().all(|t| t == &reference[0]);
+                if all_same {
+                    continue;
+                }
                 let coverage = valid.len() * seq_len;
                 candidates.push(Candidate {
                     seq_len,
@@ -160,7 +166,11 @@ fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Clus
     clusters
 }
 
+/// Max gap of non-matching (or used) entries allowed inside a single-line run
+pub const MAX_SINGLE_GAP: usize = 3;
+
 /// Detect single-line run clusters on entries not already used by sequence detection.
+/// Tolerates small gaps of non-matching/used entries within a run.
 fn detect_single_clusters(templates: &[String], used: &[bool]) -> Vec<Cluster> {
     let mut clusters = Vec::new();
     let n = templates.len();
@@ -168,36 +178,51 @@ fn detect_single_clusters(templates: &[String], used: &[bool]) -> Vec<Cluster> {
         return clusters;
     }
 
-    let mut run_start: Option<usize> = None;
-    for i in 0..=n {
-        let continues = if i < n && !used[i] {
-            match run_start {
-                Some(s) => templates[i] == templates[s],
-                None => true,
-            }
-        } else {
-            false
-        };
+    let mut run_template: Option<&str> = None;
+    let mut matching_indices: Vec<usize> = Vec::new();
+    let mut gap = 0usize;
 
-        if continues {
-            if run_start.is_none() {
-                run_start = Some(i);
-            }
+    for i in 0..=n {
+        let matches = i < n && !used[i] && run_template.is_some_and(|t| templates[i] == t);
+
+        if matches {
+            matching_indices.push(i);
+            gap = 0;
+        } else if i < n && !used[i] && run_template.is_none() {
+            // Start new run
+            run_template = Some(&templates[i]);
+            matching_indices.push(i);
+            gap = 0;
+        } else if run_template.is_some() && i < n && gap < MAX_SINGLE_GAP {
+            // Non-matching entry within tolerance
+            gap += 1;
         } else {
-            if let Some(s) = run_start {
-                let count = i - s;
-                if count >= MIN_SINGLE_RUN {
-                    clusters.push(Cluster {
-                        template: templates[s].clone(),
-                        start_filtered_idx: s,
-                        count,
-                        sequence_len: 1,
-                        sequence_templates: Vec::new(),
-                        occurrences: vec![(s, count)],
-                    });
-                }
+            // End of run: emit cluster if enough matching entries
+            if matching_indices.len() >= MIN_SINGLE_RUN {
+                let tmpl = run_template.unwrap();
+                let start = matching_indices[0];
+                // Each matching entry is its own length-1 occurrence
+                // so gap entries are NOT included in cluster_map
+                let occurrences: Vec<(usize, usize)> =
+                    matching_indices.iter().map(|&idx| (idx, 1)).collect();
+                clusters.push(Cluster {
+                    template: tmpl.to_string(),
+                    start_filtered_idx: start,
+                    count: matching_indices.len(),
+                    sequence_len: 1,
+                    sequence_templates: Vec::new(),
+                    occurrences,
+                });
             }
-            run_start = if i < n && !used[i] { Some(i) } else { None };
+            // Start new run if current entry is usable
+            matching_indices.clear();
+            gap = 0;
+            if i < n && !used[i] {
+                run_template = Some(&templates[i]);
+                matching_indices.push(i);
+            } else {
+                run_template = None;
+            }
         }
     }
 
@@ -625,5 +650,67 @@ mod tests {
             strip_component_prefix("plain message with no prefix"),
             "plain message with no prefix"
         );
+    }
+}
+
+#[cfg(test)]
+mod gap_analysis_tests {
+    use super::*;
+
+    fn make_entry(index: usize, raw_line: &str) -> LogEntry {
+        use crate::log_entry::LogLevel;
+        LogEntry {
+            index,
+            level: LogLevel::Info,
+            timestamp: None,
+            raw_line: raw_line.to_string(),
+            continuation_lines: Vec::new(),
+            cached_full_text: None,
+            pretty_continuation: None,
+            source_idx: 0,
+            source_local_idx: index,
+        }
+    }
+
+    /// Test gap tolerance: occurrence span > count when gap entries included
+    /// This demonstrates the core issue: detect_single_clusters creates an occurrence span
+    /// that includes non-matching gap entries, so the span is wider than the actual matches.
+    #[test]
+    fn test_gap_tolerance_span_mismatch() {
+        // Entries where indices 2,3 have DIFFERENT templates (not quoted) to force gap behavior
+        let entries: Vec<LogEntry> = vec![
+            make_entry(0, "01-01 00:00:00.000 INF|Comp \"Match 1\""),  // {STR}
+            make_entry(1, "01-01 00:00:00.000 INF|Comp \"Match 2\""),  // {STR}
+            make_entry(2, "01-01 00:00:00.000 INF|Comp Something"),    // NO {STR} - different!
+            make_entry(3, "01-01 00:00:00.000 INF|Comp Else"),          // NO {STR} - different!
+            make_entry(4, "01-01 00:00:00.000 INF|Comp \"Match 3\""),  // {STR}
+        ];
+
+        let filtered: Vec<usize> = (0..5).collect();
+        let clusters = detect_clusters(&entries, &filtered, 3);
+
+        println!("Clusters:");
+        for (i, c) in clusters.iter().enumerate() {
+            println!("  {}: template='{}', count={}, occurrences={:?}",
+                i, c.template, c.count, c.occurrences);
+        }
+
+        let single_clusters: Vec<_> = clusters.iter()
+            .filter(|c| c.sequence_len == 1)
+            .collect();
+        assert!(!single_clusters.is_empty(), "Should find at least one single-line cluster");
+
+        let cluster = &single_clusters[0];
+
+        // Each matching entry is a separate (idx, 1) occurrence — no gap entries included
+        assert_eq!(cluster.count, 3);
+        assert_eq!(cluster.occurrences.len(), 3);
+        for &(_, len) in &cluster.occurrences {
+            assert_eq!(len, 1, "each occurrence should span exactly 1 entry");
+        }
+        // Gap entries (indices 2, 3) should NOT appear in any occurrence
+        let occ_starts: Vec<usize> = cluster.occurrences.iter().map(|&(s, _)| s).collect();
+        assert!(!occ_starts.contains(&2), "gap entry 2 should not be in occurrences");
+        assert!(!occ_starts.contains(&3), "gap entry 3 should not be in occurrences");
     }
 }

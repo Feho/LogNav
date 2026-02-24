@@ -8,7 +8,7 @@ impl App {
         self.selected_index = self.selected_index.saturating_sub(amount);
         // Skip over folded interior entries (move upward)
         while self.selected_index > 0 {
-            if let Some(&(cid, off)) = self.cluster_map.get(&self.selected_index)
+            if let Some(&(cid, off, _)) = self.cluster_map.get(&self.selected_index)
                 && off > 0
                 && self.folded_clusters.contains(&cid)
             {
@@ -27,7 +27,7 @@ impl App {
             // Skip over folded interior entries (move downward)
             let max = self.filtered_indices.len() - 1;
             while self.selected_index < max {
-                if let Some(&(cid, off)) = self.cluster_map.get(&self.selected_index)
+                if let Some(&(cid, off, _)) = self.cluster_map.get(&self.selected_index)
                     && off > 0
                     && self.folded_clusters.contains(&cid)
                 {
@@ -179,7 +179,7 @@ impl App {
     /// Accounts for continuation lines (when expanded), word wrapping, and cluster annotations
     pub fn visual_lines_for_entry(&self, filtered_idx: usize, viewport_width: usize) -> usize {
         // Folded interior entries take 0 visual lines
-        if let Some(&(cluster_id, offset)) = self.cluster_map.get(&filtered_idx) {
+        if let Some(&(cluster_id, offset, _)) = self.cluster_map.get(&filtered_idx) {
             if offset > 0 && self.folded_clusters.contains(&cluster_id) {
                 return 0;
             }
