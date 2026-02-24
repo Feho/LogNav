@@ -6,6 +6,17 @@ impl App {
     // Navigation
     pub fn scroll_up(&mut self, amount: usize) {
         self.selected_index = self.selected_index.saturating_sub(amount);
+        // Skip over folded interior entries (move upward)
+        while self.selected_index > 0 {
+            if let Some(&(cid, off)) = self.cluster_map.get(&self.selected_index)
+                && off > 0
+                && self.folded_clusters.contains(&cid)
+            {
+                self.selected_index -= 1;
+                continue;
+            }
+            break;
+        }
         self.ensure_selected_visible();
     }
 
@@ -13,6 +24,18 @@ impl App {
         if !self.filtered_indices.is_empty() {
             self.selected_index =
                 (self.selected_index + amount).min(self.filtered_indices.len() - 1);
+            // Skip over folded interior entries (move downward)
+            let max = self.filtered_indices.len() - 1;
+            while self.selected_index < max {
+                if let Some(&(cid, off)) = self.cluster_map.get(&self.selected_index)
+                    && off > 0
+                    && self.folded_clusters.contains(&cid)
+                {
+                    self.selected_index += 1;
+                    continue;
+                }
+                break;
+            }
         }
         self.ensure_selected_visible();
     }
@@ -153,8 +176,19 @@ impl App {
     }
 
     /// Calculate how many visual lines an entry occupies
-    /// Accounts for continuation lines (when expanded) and word wrapping
+    /// Accounts for continuation lines (when expanded), word wrapping, and cluster annotations
     pub fn visual_lines_for_entry(&self, filtered_idx: usize, viewport_width: usize) -> usize {
+        // Folded interior entries take 0 visual lines
+        if let Some(&(cluster_id, offset)) = self.cluster_map.get(&filtered_idx) {
+            if offset > 0 && self.folded_clusters.contains(&cluster_id) {
+                return 0;
+            }
+            // Folded cluster head: 1 line for fold summary
+            if offset == 0 && self.folded_clusters.contains(&cluster_id) {
+                return 1;
+            }
+        }
+
         let entry_idx = match self.filtered_indices.get(filtered_idx) {
             Some(&idx) => idx,
             None => return 1,

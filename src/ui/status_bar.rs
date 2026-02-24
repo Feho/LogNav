@@ -1,10 +1,10 @@
 use crate::app::{App, FocusState};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 /// Draw status bar

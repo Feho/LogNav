@@ -1,5 +1,6 @@
 use crate::app::SOURCE_COLORS;
 use crate::app::{App, FocusState};
+use crate::clusters::display_template;
 use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
 use crate::ui::extract_message;
@@ -53,6 +54,45 @@ fn underline_range_for_row(app: &App, terminal_row: usize) -> Option<(usize, usi
         return None;
     }
     Some((start, end))
+}
+
+/// Subtle background tint for cluster entries
+const CLUSTER_BG: Color = Color::Indexed(236); // dark gray (xterm-256)
+
+/// Build cluster gutter span: "│N×" for first line of occurrence, "│" for others
+fn cluster_gutter_span(app: &App, cluster_id: usize, offset: usize) -> Span<'static> {
+    let style = Style::default().fg(Color::DarkGray);
+    if offset == 0 {
+        let count = app.clusters[cluster_id].count;
+        Span::styled(format!("│{}×", count), style)
+    } else {
+        Span::styled("│ ", style)
+    }
+}
+
+/// Build a fold summary line (rendered as the entry's own row, no extra row)
+fn cluster_fold_line(app: &App, cluster_id: usize, occurrence_len: usize) -> Line<'static> {
+    let cluster = &app.clusters[cluster_id];
+    let tmpl = display_template(&cluster.template);
+    let hidden = occurrence_len.saturating_sub(1);
+    let text = if cluster.sequence_len > 1 {
+        format!(
+            "▶ {}× [{} lines] {} ({} lines hidden)",
+            cluster.count, cluster.sequence_len, tmpl, hidden
+        )
+    } else {
+        format!("▶ {}× {} ({} lines hidden)", cluster.count, tmpl, hidden)
+    };
+    Line::from(Span::styled(text, Style::default().fg(Color::DarkGray)))
+}
+
+/// Check if a filtered entry is a folded interior (should be skipped)
+fn is_folded_interior(app: &App, filtered_idx: usize) -> bool {
+    if let Some(&(cluster_id, offset)) = app.cluster_map.get(&filtered_idx) {
+        offset > 0 && app.folded_clusters.contains(&cluster_id)
+    } else {
+        false
+    }
 }
 
 /// Draw the main log view
@@ -159,17 +199,51 @@ fn draw_log_view_nowrap(
     let syntax_on = app.syntax_highlight;
     let is_merged = app.is_merged();
 
-    // Build visual lines, accounting for expanded entries
-    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
+    // Build visual lines: (line, is_selected, level, in_cluster)
+    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel, bool)> =
+        Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
 
     while visual_lines.len() < viewport_height && current_entry_idx < app.filtered_indices.len() {
+        // Skip folded interior entries
+        if is_folded_interior(app, current_entry_idx) {
+            current_entry_idx += 1;
+            continue;
+        }
+
+        let cluster_info = app.cluster_map.get(&current_entry_idx).copied();
+        let is_folded =
+            cluster_info.is_some_and(|(cid, off)| off == 0 && app.folded_clusters.contains(&cid));
+
+        // Folded cluster: render summary as the entry's own row
+        if let Some((cluster_id, 0)) = cluster_info
+            && is_folded
+        {
+            let occ_len = app.clusters[cluster_id]
+                .occurrences
+                .iter()
+                .find(|&&(s, _)| s == current_entry_idx)
+                .map(|&(_, l)| l)
+                .unwrap_or(1);
+            let is_selected = current_entry_idx == app.selected_index;
+            visual_lines.push((
+                cluster_fold_line(app, cluster_id, occ_len),
+                is_selected,
+                LogLevel::Info,
+                true,
+            ));
+            terminal_row += 1;
+            current_entry_idx += 1;
+            continue;
+        }
+
         let entry_idx = app.filtered_indices[current_entry_idx];
         let entry = &app.entries[entry_idx];
         let is_selected = current_entry_idx == app.selected_index;
         let is_expanded = app.is_expanded(entry_idx);
         let is_bookmarked = app.bookmarks.contains(&entry_idx);
+        let in_cluster = cluster_info.is_some();
 
         // Build the main line
         let timestamp = entry
@@ -200,6 +274,10 @@ fn draw_log_view_nowrap(
         };
 
         let mut spans = Vec::new();
+        // Cluster gutter: "│N×" on first line of occurrence, "│ " on others
+        if let Some((cid, off)) = cluster_info {
+            spans.push(cluster_gutter_span(app, cid, off));
+        }
         if is_merged {
             spans.push(source_gutter_span(entry.source_idx));
         }
@@ -224,10 +302,8 @@ fn draw_log_view_nowrap(
             } else {
                 format!(" [+{}]", entry.continuation_lines.len())
             };
-            // Highlight collapsed indicator when search matches hide in continuation lines
             let style = if !is_expanded
-                && hl_regex
-                    .is_some_and(|r| entry.continuation_lines.iter().any(|l| r.is_match(l)))
+                && hl_regex.is_some_and(|r| entry.continuation_lines.iter().any(|l| r.is_match(l)))
             {
                 Style::default()
                     .fg(Color::Yellow)
@@ -240,7 +316,7 @@ fn draw_log_view_nowrap(
             spans.push(Span::styled(indicator, style));
         }
 
-        visual_lines.push((Line::from(spans), is_selected, entry.level));
+        visual_lines.push((Line::from(spans), is_selected, entry.level, in_cluster));
         terminal_row += 1;
 
         // Add continuation lines if expanded
@@ -256,6 +332,9 @@ fn draw_log_view_nowrap(
                 let ul_range = underline_range_for_row(app, terminal_row);
 
                 let mut cont_spans = Vec::new();
+                if in_cluster {
+                    cont_spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+                }
                 if is_merged {
                     cont_spans.push(source_gutter_span(entry.source_idx));
                 }
@@ -269,7 +348,7 @@ fn draw_log_view_nowrap(
                     &display, hl_regex, cont_style, syntax_on, ul_range,
                 ));
                 let line = Line::from(cont_spans);
-                visual_lines.push((line, false, entry.level));
+                visual_lines.push((line, false, entry.level, in_cluster));
                 terminal_row += 1;
             }
         }
@@ -278,7 +357,7 @@ fn draw_log_view_nowrap(
     }
 
     // Render each visual line
-    for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {
+    for (i, (line, is_selected, level, in_cluster)) in visual_lines.into_iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
             break;
@@ -296,6 +375,8 @@ fn draw_log_view_nowrap(
                 .bg(level_color(level))
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD)
+        } else if in_cluster {
+            Style::default().bg(CLUSTER_BG)
         } else {
             Style::default()
         };
@@ -332,17 +413,51 @@ fn draw_log_view_wrapped(
     app.ensure_selected_visible_with_height(viewport_height, viewport_width);
     let syntax_on = app.syntax_highlight;
 
-    // Build visual lines for display, starting from scroll_offset
-    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
+    // Build visual lines: (line, is_selected, level, in_cluster)
+    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel, bool)> =
+        Vec::with_capacity(viewport_height);
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
 
     while visual_lines.len() < viewport_height && current_entry_idx < app.filtered_indices.len() {
+        // Skip folded interior entries
+        if is_folded_interior(app, current_entry_idx) {
+            current_entry_idx += 1;
+            continue;
+        }
+
+        let cluster_info = app.cluster_map.get(&current_entry_idx).copied();
+        let is_folded =
+            cluster_info.is_some_and(|(cid, off)| off == 0 && app.folded_clusters.contains(&cid));
+
+        // Folded cluster: render summary as the entry's own row
+        if let Some((cluster_id, 0)) = cluster_info
+            && is_folded
+        {
+            let occ_len = app.clusters[cluster_id]
+                .occurrences
+                .iter()
+                .find(|&&(s, _)| s == current_entry_idx)
+                .map(|&(_, l)| l)
+                .unwrap_or(1);
+            let is_selected = current_entry_idx == app.selected_index;
+            visual_lines.push((
+                cluster_fold_line(app, cluster_id, occ_len),
+                is_selected,
+                LogLevel::Info,
+                true,
+            ));
+            terminal_row += 1;
+            current_entry_idx += 1;
+            continue;
+        }
+
         let entry_idx = app.filtered_indices[current_entry_idx];
         let entry = &app.entries[entry_idx];
         let is_selected = current_entry_idx == app.selected_index;
         let is_expanded = app.is_expanded(entry_idx);
         let is_bookmarked = app.bookmarks.contains(&entry_idx);
+        let in_cluster = cluster_info.is_some();
 
         let timestamp = entry
             .timestamp
@@ -386,6 +501,9 @@ fn draw_log_view_wrapped(
             let line = if i == 0 {
                 // First line: show timestamp and level
                 let mut spans = Vec::new();
+                if let Some((cid, off)) = cluster_info {
+                    spans.push(cluster_gutter_span(app, cid, off));
+                }
                 if is_merged {
                     spans.push(source_gutter_span(entry.source_idx));
                 }
@@ -406,11 +524,9 @@ fn draw_log_view_wrapped(
                     ul_range,
                 ));
                 if let Some(ref ind) = indicator {
-                    // Highlight collapsed indicator when search matches hide in continuation lines
                     let style = if !is_expanded
-                        && hl_regex.is_some_and(|r| {
-                            entry.continuation_lines.iter().any(|l| r.is_match(l))
-                        })
+                        && hl_regex
+                            .is_some_and(|r| entry.continuation_lines.iter().any(|l| r.is_match(l)))
                     {
                         Style::default()
                             .fg(Color::Yellow)
@@ -425,7 +541,13 @@ fn draw_log_view_wrapped(
                 Line::from(spans)
             } else {
                 // Wrapped continuation: indent to align with message
-                let mut spans = vec![Span::raw(" ".repeat(prefix_width))];
+                let mut spans = Vec::new();
+                if in_cluster {
+                    spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::raw(" ".repeat(prefix_width.saturating_sub(2))));
+                } else {
+                    spans.push(Span::raw(" ".repeat(prefix_width)));
+                }
                 spans.extend(styled_spans(
                     part,
                     hl_regex,
@@ -436,7 +558,7 @@ fn draw_log_view_wrapped(
                 Line::from(spans)
             };
 
-            visual_lines.push((line, is_selected, entry.level));
+            visual_lines.push((line, is_selected, entry.level, in_cluster));
             terminal_row += 1;
         }
 
@@ -453,12 +575,18 @@ fn draw_log_view_wrapped(
                     }
                     let cont_style = Style::default().fg(Color::DarkGray);
                     let ul_range = underline_range_for_row(app, terminal_row);
-                    let mut cont_spans = vec![Span::raw(" ".repeat(prefix_width))];
+                    let mut cont_spans = Vec::new();
+                    if in_cluster {
+                        cont_spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+                        cont_spans.push(Span::raw(" ".repeat(prefix_width.saturating_sub(2))));
+                    } else {
+                        cont_spans.push(Span::raw(" ".repeat(prefix_width)));
+                    }
                     cont_spans.extend(styled_spans(
                         &part, hl_regex, cont_style, syntax_on, ul_range,
                     ));
                     let line = Line::from(cont_spans);
-                    visual_lines.push((line, false, entry.level));
+                    visual_lines.push((line, false, entry.level, in_cluster));
                     terminal_row += 1;
                 }
             }
@@ -468,7 +596,7 @@ fn draw_log_view_wrapped(
     }
 
     // Render each visual line
-    for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {
+    for (i, (line, is_selected, level, in_cluster)) in visual_lines.into_iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
             break;
@@ -486,6 +614,8 @@ fn draw_log_view_wrapped(
                 .bg(level_color(level))
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD)
+        } else if in_cluster {
+            Style::default().bg(CLUSTER_BG)
         } else {
             Style::default()
         };

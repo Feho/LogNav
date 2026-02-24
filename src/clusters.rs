@@ -19,6 +19,8 @@ pub struct Cluster {
     pub sequence_len: usize,
     /// All templates in the sequence (empty for single-line clusters)
     pub sequence_templates: Vec<String>,
+    /// All occurrence positions: (start_filtered_idx, length) per occurrence
+    pub occurrences: Vec<(usize, usize)>,
 }
 
 const MIN_SEQ_LEN: usize = 3;
@@ -31,21 +33,13 @@ static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
-static HEX_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b[0-9a-fA-F]{8,}\b").unwrap()
-});
+static HEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b[0-9a-fA-F]{8,}\b").unwrap());
 
-static QUOTED_DOUBLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#""[^"]*""#).unwrap()
-});
+static QUOTED_DOUBLE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""[^"]*""#).unwrap());
 
-static QUOTED_SINGLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"'[^']*'").unwrap()
-});
+static QUOTED_SINGLE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"'[^']*'").unwrap());
 
-static NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b\d+\b").unwrap()
-});
+static NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b\d+\b").unwrap());
 
 /// Replace variable parts of a message with placeholders.
 /// Applied in order: UUID → HEX → quoted strings → numbers (most specific first).
@@ -70,9 +64,9 @@ fn fingerprint(templates: &[String], start: usize, len: usize) -> u64 {
 /// A candidate sequence cluster before greedy selection
 struct Candidate {
     seq_len: usize,
-    positions: Vec<usize>,   // non-overlapping start positions
-    templates: Vec<String>,   // the sequence templates
-    coverage: usize,          // positions.len() * seq_len
+    positions: Vec<usize>,  // non-overlapping start positions
+    templates: Vec<String>, // the sequence templates
+    coverage: usize,        // positions.len() * seq_len
 }
 
 /// Detect multi-line sequence clusters.
@@ -150,12 +144,15 @@ fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Clus
                 }
             }
 
+            let occurrences: Vec<(usize, usize)> =
+                valid.iter().map(|&pos| (pos, cand.seq_len)).collect();
             clusters.push(Cluster {
                 template: cand.templates[0].clone(),
                 start_filtered_idx: valid[0],
                 count: valid.len(),
                 sequence_len: cand.seq_len,
                 sequence_templates: cand.templates,
+                occurrences,
             });
         }
     }
@@ -196,6 +193,7 @@ fn detect_single_clusters(templates: &[String], used: &[bool]) -> Vec<Cluster> {
                         count,
                         sequence_len: 1,
                         sequence_templates: Vec::new(),
+                        occurrences: vec![(s, count)],
                     });
                 }
             }
@@ -304,6 +302,7 @@ fn merge_duplicate_clusters(clusters: Vec<Cluster>) -> Vec<Cluster> {
 
         if let Some(&idx) = seen.get(&key) {
             merged[idx].count += c.count;
+            merged[idx].occurrences.extend(c.occurrences);
             if c.start_filtered_idx < merged[idx].start_filtered_idx {
                 merged[idx].start_filtered_idx = c.start_filtered_idx;
             }
@@ -378,7 +377,12 @@ mod tests {
         // Use only 4 identical entries — too short for sequence detection (needs 3+ lines
         // of *different* templates), so these will be detected as a single-line run
         let entries: Vec<LogEntry> = (0..4)
-            .map(|i| make_entry(i, &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", i)))
+            .map(|i| {
+                make_entry(
+                    i,
+                    &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", i),
+                )
+            })
             .collect();
 
         let filtered: Vec<usize> = (0..4).collect();
@@ -438,15 +442,27 @@ mod tests {
         let users = ["olive", "admin"];
         for (rep, user) in users.iter().enumerate() {
             let base = rep * 3;
-            entries.push(make_entry(base, &format!(
-                "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,{},person,False)\"", user
-            )));
-            entries.push(make_entry(base + 1, &format!(
-                "01-01 00:00:00.000 INF|Auth \"GetFromCache(dn_cache, User:{})\"", user
-            )));
-            entries.push(make_entry(base + 2, &format!(
-                "01-01 00:00:00.000 INF|Auth \"Aliased to DOXENSE\\{}\"", user
-            )));
+            entries.push(make_entry(
+                base,
+                &format!(
+                    "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,{},person,False)\"",
+                    user
+                ),
+            ));
+            entries.push(make_entry(
+                base + 1,
+                &format!(
+                    "01-01 00:00:00.000 INF|Auth \"GetFromCache(dn_cache, User:{})\"",
+                    user
+                ),
+            ));
+            entries.push(make_entry(
+                base + 2,
+                &format!(
+                    "01-01 00:00:00.000 INF|Auth \"Aliased to DOXENSE\\{}\"",
+                    user
+                ),
+            ));
         }
 
         let filtered: Vec<usize> = (0..6).collect();
@@ -467,15 +483,27 @@ mod tests {
         let values = ["$NOCOLOR", "$NOPRINT", "$NOCOPY"];
         for (rep, val) in values.iter().enumerate() {
             let base = rep * 3;
-            entries.push(make_entry(base, &format!(
-                "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,\"{}\",group,True)\"", val
-            )));
-            entries.push(make_entry(base + 1, &format!(
-                "01-01 00:00:00.000 INF|Dir \"GetFromCache(dn_cache, \"{}\")\"", val
-            )));
-            entries.push(make_entry(base + 2, &format!(
-                "01-01 00:00:00.000 INF|Dir \"GetFromCache(notfound_cache, \"{}\")\"", val
-            )));
+            entries.push(make_entry(
+                base,
+                &format!(
+                    "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,\"{}\",group,True)\"",
+                    val
+                ),
+            ));
+            entries.push(make_entry(
+                base + 1,
+                &format!(
+                    "01-01 00:00:00.000 INF|Dir \"GetFromCache(dn_cache, \"{}\")\"",
+                    val
+                ),
+            ));
+            entries.push(make_entry(
+                base + 2,
+                &format!(
+                    "01-01 00:00:00.000 INF|Dir \"GetFromCache(notfound_cache, \"{}\")\"",
+                    val
+                ),
+            ));
         }
 
         let filtered: Vec<usize> = (0..9).collect();
@@ -501,7 +529,10 @@ mod tests {
         }
         // Single-line run part
         for i in 0..4 {
-            entries.push(make_entry(6 + i, &format!("01-01 00:00:00.000 INF|B \"repeat {}\"", i)));
+            entries.push(make_entry(
+                6 + i,
+                &format!("01-01 00:00:00.000 INF|B \"repeat {}\"", i),
+            ));
         }
 
         let filtered: Vec<usize> = (0..10).collect();
@@ -525,31 +556,51 @@ mod tests {
         let mut entries = Vec::new();
         // Run 1: 4x "Processing item {N}"
         for i in 0..4 {
-            entries.push(make_entry(i, &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", i)));
+            entries.push(make_entry(
+                i,
+                &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", i),
+            ));
         }
         // Gap: 2 different lines
-        entries.push(make_entry(4, "01-01 00:00:00.000 INF|Other Something else A"));
-        entries.push(make_entry(5, "01-01 00:00:00.000 INF|Other Something else B"));
+        entries.push(make_entry(
+            4,
+            "01-01 00:00:00.000 INF|Other Something else A",
+        ));
+        entries.push(make_entry(
+            5,
+            "01-01 00:00:00.000 INF|Other Something else B",
+        ));
         // Run 2: 3x "Processing item {N}" again
         for i in 0..3 {
-            entries.push(make_entry(6 + i, &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", 10 + i)));
+            entries.push(make_entry(
+                6 + i,
+                &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", 10 + i),
+            ));
         }
 
         let filtered: Vec<usize> = (0..9).collect();
         let clusters = detect_clusters(&entries, &filtered, 3);
 
         // Both runs share same template → merged into 1 cluster
-        let matching: Vec<_> = clusters.iter().filter(|c| c.template.contains("Processing")).collect();
+        let matching: Vec<_> = clusters
+            .iter()
+            .filter(|c| c.template.contains("Processing"))
+            .collect();
         assert_eq!(matching.len(), 1);
         // Total count = sum of both runs' counts
-        assert!(matching[0].count >= 2, "merged count should combine both runs");
+        assert!(
+            matching[0].count >= 2,
+            "merged count should combine both runs"
+        );
     }
 
     #[test]
     fn test_strip_component_prefix_wpc() {
         // WPC format: "[{N}] ComponentName   message"
         assert_eq!(
-            strip_component_prefix("[{N}] SpoolerMonitorActor    Actor {STR} changed IDLE => CHECKING"),
+            strip_component_prefix(
+                "[{N}] SpoolerMonitorActor    Actor {STR} changed IDLE => CHECKING"
+            ),
             "Actor {STR} changed IDLE => CHECKING"
         );
         assert_eq!(

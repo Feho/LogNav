@@ -23,7 +23,11 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
     };
 
     let total = app.clusters.len();
-    let title = format!(" Clusters ({total}) ");
+    let title = if app.clusters_loading {
+        " Clusters ".to_string()
+    } else {
+        format!(" Clusters ({total}) ")
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -32,6 +36,29 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    if app.clusters_loading {
+        // Show loading placeholder
+        let msg = "Detecting clusters...";
+        let x = inner.x + inner.width.saturating_sub(msg.len() as u16) / 2;
+        let y = inner.y + inner.height / 2;
+        if y < inner.y + inner.height {
+            let loading_area = Rect {
+                x,
+                y,
+                width: msg.len() as u16,
+                height: 1,
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    msg,
+                    Style::default().fg(Color::DarkGray),
+                ))),
+                loading_area,
+            );
+        }
+        return;
+    }
 
     if total == 0 || inner.height < 2 {
         return;

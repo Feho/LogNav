@@ -6,7 +6,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::style::Color;
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -237,6 +237,12 @@ pub struct App {
     pub clusters: Vec<Cluster>,
     pub clusters_dirty: bool,
     pub cluster_tx: Option<mpsc::Sender<Vec<Cluster>>>,
+    /// Per-entry cluster lookup: filtered_idx → (cluster_id, offset_in_occurrence)
+    pub cluster_map: HashMap<usize, (usize, usize)>,
+    /// Cluster IDs currently folded in main view
+    pub folded_clusters: HashSet<usize>,
+    /// Whether async cluster detection is in progress
+    pub clusters_loading: bool,
 }
 
 impl Default for App {
@@ -289,6 +295,9 @@ impl App {
             clusters: Vec::new(),
             clusters_dirty: true,
             cluster_tx: None,
+            cluster_map: HashMap::new(),
+            folded_clusters: HashSet::new(),
+            clusters_loading: false,
         }
     }
 
@@ -466,7 +475,8 @@ impl App {
     pub fn open_clusters(&mut self) {
         if !self.clusters_dirty && !self.clusters.is_empty() {
             // Use cached results
-            self.status_message = Some(format!("{} cluster(s) found (cached)", self.clusters.len()));
+            self.status_message =
+                Some(format!("{} cluster(s) found (cached)", self.clusters.len()));
             self.focus = FocusState::Clusters {
                 selected: 0,
                 scroll_offset: 0,
@@ -479,6 +489,7 @@ impl App {
             self.clusters =
                 crate::clusters::detect_clusters(&self.entries, &self.filtered_indices, 3);
             self.clusters_dirty = false;
+            self.build_cluster_map();
             if self.clusters.is_empty() {
                 self.status_message = Some("No clusters detected".to_string());
                 return;
@@ -495,7 +506,12 @@ impl App {
         let entries = self.entries.clone();
         let filtered = self.filtered_indices.clone();
 
+        self.clusters_loading = true;
         self.status_message = Some("Detecting clusters...".to_string());
+        self.focus = FocusState::Clusters {
+            selected: 0,
+            scroll_offset: 0,
+        };
 
         tokio::spawn(async move {
             let result = crate::clusters::detect_clusters(&entries, &filtered, 3);
@@ -507,6 +523,8 @@ impl App {
     pub fn receive_clusters(&mut self, clusters: Vec<Cluster>) {
         self.clusters = clusters;
         self.clusters_dirty = false;
+        self.clusters_loading = false;
+        self.build_cluster_map();
         if self.clusters.is_empty() {
             self.status_message = Some("No clusters detected".to_string());
             return;
@@ -516,6 +534,29 @@ impl App {
             selected: 0,
             scroll_offset: 0,
         };
+    }
+
+    /// Build per-entry cluster lookup map from cluster occurrences
+    fn build_cluster_map(&mut self) {
+        self.cluster_map.clear();
+        for (cluster_id, cluster) in self.clusters.iter().enumerate() {
+            for &(start, len) in &cluster.occurrences {
+                for offset in 0..len {
+                    self.cluster_map
+                        .entry(start + offset)
+                        .or_insert((cluster_id, offset));
+                }
+            }
+        }
+    }
+
+    /// Toggle fold for a cluster by ID
+    pub fn toggle_fold_cluster(&mut self, cluster_id: usize) {
+        if self.folded_clusters.contains(&cluster_id) {
+            self.folded_clusters.remove(&cluster_id);
+        } else {
+            self.folded_clusters.insert(cluster_id);
+        }
     }
 
     /// Open exclude filter manager overlay

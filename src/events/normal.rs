@@ -166,6 +166,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         (_, KeyCode::Left) | (_, KeyCode::Char('h')) => app.scroll_left(4),
         (_, KeyCode::Right) | (_, KeyCode::Char('l')) => app.scroll_right(4),
 
+        // Fold/unfold cluster occurrence at cursor
+        (_, KeyCode::Char(' ')) => {
+            if let Some(&(cluster_id, _)) = app.cluster_map.get(&app.selected_index) {
+                app.toggle_fold_cluster(cluster_id);
+            }
+        }
+
         // Expand/collapse entry
         (_, KeyCode::Enter) => app.toggle_expand(),
         (_, KeyCode::Char('a')) | (_, KeyCode::Char('A')) => {
