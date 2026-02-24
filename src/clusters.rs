@@ -1,0 +1,445 @@
+use crate::log_entry::LogEntry;
+use crate::ui::extract_message;
+use regex::Regex;
+use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::LazyLock;
+
+/// A detected cluster of consecutive similar log entries
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct Cluster {
+    /// Templatized message (single-line) or first line of sequence
+    pub template: String,
+    /// Index into filtered_indices where first occurrence starts
+    pub start_filtered_idx: usize,
+    /// Number of repetitions (single-line: consecutive count, sequence: number of occurrences)
+    pub count: usize,
+    /// Length of the repeating sequence (1 for single-line clusters)
+    pub sequence_len: usize,
+    /// All templates in the sequence (empty for single-line clusters)
+    pub sequence_templates: Vec<String>,
+}
+
+const MIN_SEQ_LEN: usize = 3;
+const MAX_SEQ_LEN: usize = 50;
+const MIN_SINGLE_RUN: usize = 3;
+const MIN_SEQ_REPEATS: usize = 2;
+
+static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+        .unwrap()
+});
+
+static HEX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b[0-9a-fA-F]{8,}\b").unwrap()
+});
+
+static QUOTED_DOUBLE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#""[^"]*""#).unwrap()
+});
+
+static QUOTED_SINGLE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"'[^']*'").unwrap()
+});
+
+static NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b\d+\b").unwrap()
+});
+
+/// Replace variable parts of a message with placeholders.
+/// Applied in order: UUID → HEX → quoted strings → numbers (most specific first).
+pub fn templatize(message: &str) -> String {
+    let s = UUID_RE.replace_all(message, "{UUID}");
+    let s = HEX_RE.replace_all(&s, "{HEX}");
+    let s = QUOTED_DOUBLE_RE.replace_all(&s, "{STR}");
+    let s = QUOTED_SINGLE_RE.replace_all(&s, "{STR}");
+    let s = NUMBER_RE.replace_all(&s, "{N}");
+    s.into_owned()
+}
+
+/// Hash a subsequence of templates into a fingerprint
+fn fingerprint(templates: &[String], start: usize, len: usize) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for t in &templates[start..start + len] {
+        t.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// A candidate sequence cluster before greedy selection
+struct Candidate {
+    seq_len: usize,
+    positions: Vec<usize>,   // non-overlapping start positions
+    templates: Vec<String>,   // the sequence templates
+    coverage: usize,          // positions.len() * seq_len
+}
+
+/// Detect multi-line sequence clusters.
+/// Collects all candidate sequences across all lengths, then greedily selects
+/// by total coverage (count × seq_len) to avoid suboptimal greedy-by-length.
+fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Cluster> {
+    let n = templates.len();
+    let max_len = MAX_SEQ_LEN.min(n / MIN_SEQ_REPEATS);
+
+    // Phase 1: collect all candidates
+    let mut candidates: Vec<Candidate> = Vec::new();
+
+    for seq_len in MIN_SEQ_LEN..=max_len {
+        let mut fp_map: HashMap<u64, Vec<usize>> = HashMap::new();
+        for start in 0..=n - seq_len {
+            let fp = fingerprint(templates, start, seq_len);
+            fp_map.entry(fp).or_default().push(start);
+        }
+
+        for positions in fp_map.values() {
+            if positions.len() < MIN_SEQ_REPEATS {
+                continue;
+            }
+
+            // Verify actual match and collect non-overlapping positions
+            let reference = &templates[positions[0]..positions[0] + seq_len];
+            let mut valid: Vec<usize> = Vec::new();
+            let mut last_end: usize = 0;
+
+            for &pos in positions {
+                if pos < last_end {
+                    continue;
+                }
+                if templates[pos..pos + seq_len] == *reference {
+                    valid.push(pos);
+                    last_end = pos + seq_len;
+                }
+            }
+
+            if valid.len() >= MIN_SEQ_REPEATS {
+                let coverage = valid.len() * seq_len;
+                candidates.push(Candidate {
+                    seq_len,
+                    positions: valid,
+                    templates: reference.to_vec(),
+                    coverage,
+                });
+            }
+        }
+    }
+
+    // Phase 2: greedily select by coverage (most entries covered first)
+    candidates.sort_by(|a, b| b.coverage.cmp(&a.coverage));
+
+    let mut clusters = Vec::new();
+    for cand in candidates {
+        // Re-check positions against used entries
+        let mut valid: Vec<usize> = Vec::new();
+        let mut last_end: usize = 0;
+        for &pos in &cand.positions {
+            if pos < last_end {
+                continue;
+            }
+            if used[pos..pos + cand.seq_len].iter().any(|&u| u) {
+                continue;
+            }
+            valid.push(pos);
+            last_end = pos + cand.seq_len;
+        }
+
+        if valid.len() >= MIN_SEQ_REPEATS {
+            for &pos in &valid {
+                for u in used.iter_mut().skip(pos).take(cand.seq_len) {
+                    *u = true;
+                }
+            }
+
+            clusters.push(Cluster {
+                template: cand.templates[0].clone(),
+                start_filtered_idx: valid[0],
+                count: valid.len(),
+                sequence_len: cand.seq_len,
+                sequence_templates: cand.templates,
+            });
+        }
+    }
+
+    clusters
+}
+
+/// Detect single-line run clusters on entries not already used by sequence detection.
+fn detect_single_clusters(templates: &[String], used: &[bool]) -> Vec<Cluster> {
+    let mut clusters = Vec::new();
+    let n = templates.len();
+    if n == 0 {
+        return clusters;
+    }
+
+    let mut run_start: Option<usize> = None;
+    for i in 0..=n {
+        let continues = if i < n && !used[i] {
+            match run_start {
+                Some(s) => templates[i] == templates[s],
+                None => true,
+            }
+        } else {
+            false
+        };
+
+        if continues {
+            if run_start.is_none() {
+                run_start = Some(i);
+            }
+        } else {
+            if let Some(s) = run_start {
+                let count = i - s;
+                if count >= MIN_SINGLE_RUN {
+                    clusters.push(Cluster {
+                        template: templates[s].clone(),
+                        start_filtered_idx: s,
+                        count,
+                        sequence_len: 1,
+                        sequence_templates: Vec::new(),
+                    });
+                }
+            }
+            run_start = if i < n && !used[i] { Some(i) } else { None };
+        }
+    }
+
+    clusters
+}
+
+/// Detect all clusters (both multi-line sequences and single-line runs).
+/// Sequence detection runs first (greedy, longest first), then single-line on remainder.
+/// Results sorted by position.
+pub fn detect_clusters(
+    entries: &[LogEntry],
+    filtered_indices: &[usize],
+    _min_size: usize,
+) -> Vec<Cluster> {
+    if filtered_indices.is_empty() {
+        return Vec::new();
+    }
+
+    // Templatize all filtered entries
+    let templates: Vec<String> = filtered_indices
+        .iter()
+        .map(|&idx| {
+            let msg = extract_message(&entries[idx].raw_line);
+            templatize(&msg)
+        })
+        .collect();
+
+    let mut used = vec![false; templates.len()];
+
+    // Phase 1: detect multi-line sequences
+    let mut clusters = detect_sequence_clusters(&templates, &mut used);
+
+    // Phase 2: detect single-line runs on remaining entries
+    clusters.extend(detect_single_clusters(&templates, &used));
+
+    // Sort by position
+    clusters.sort_by_key(|c| c.start_filtered_idx);
+
+    clusters
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_templatize_uuid() {
+        let input = "Loaded user 550e8400-e29b-41d4-a716-446655440000 from cache";
+        assert_eq!(templatize(input), "Loaded user {UUID} from cache");
+    }
+
+    #[test]
+    fn test_templatize_hex() {
+        let input = "Object handle DEADBEEF01 released";
+        assert_eq!(templatize(input), "Object handle {HEX} released");
+    }
+
+    #[test]
+    fn test_templatize_numbers() {
+        let input = "Processed 42 items in 100 ms";
+        assert_eq!(templatize(input), "Processed {N} items in {N} ms");
+    }
+
+    #[test]
+    fn test_templatize_quoted() {
+        let input = r#"FindDN(DOXENSE,"$NOCOLOR",group,True)"#;
+        let result = templatize(input);
+        assert_eq!(result, "FindDN(DOXENSE,{STR},group,True)");
+    }
+
+    #[test]
+    fn test_templatize_mixed() {
+        let input = r#"User 123 logged in from "192.168.1.1" at session 0A1B2C3D"#;
+        let result = templatize(input);
+        assert_eq!(result, "User {N} logged in from {STR} at session {HEX}");
+    }
+
+    #[test]
+    fn test_detect_clusters_empty() {
+        let clusters = detect_clusters(&[], &[], 3);
+        assert!(clusters.is_empty());
+    }
+
+    fn make_entry(index: usize, raw_line: &str) -> LogEntry {
+        use crate::log_entry::LogLevel;
+        LogEntry {
+            index,
+            level: LogLevel::Info,
+            timestamp: None,
+            raw_line: raw_line.to_string(),
+            continuation_lines: Vec::new(),
+            cached_full_text: None,
+            pretty_continuation: None,
+            source_idx: 0,
+            source_local_idx: index,
+        }
+    }
+
+    #[test]
+    fn test_single_line_clusters() {
+        // Use only 4 identical entries — too short for sequence detection (needs 3+ lines
+        // of *different* templates), so these will be detected as a single-line run
+        let entries: Vec<LogEntry> = (0..4)
+            .map(|i| make_entry(i, &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", i)))
+            .collect();
+
+        let filtered: Vec<usize> = (0..4).collect();
+        let clusters = detect_clusters(&entries, &filtered, 3);
+
+        // All 4 entries templatize to same template → sequence detector sees them as
+        // a 1-line sequence repeated, but single-line runs catch them since sequence
+        // detection requires seq_len >= 3. Result: 1 single-line cluster
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].count, 4);
+        assert_eq!(clusters[0].sequence_len, 1);
+        assert!(clusters[0].sequence_templates.is_empty());
+    }
+
+    #[test]
+    fn test_single_line_min_size() {
+        let entries: Vec<LogEntry> = (0..2)
+            .map(|i| make_entry(i, &format!("01-01 00:00:00.000 INF|Comp \"Item {}\"", i)))
+            .collect();
+
+        let filtered: Vec<usize> = (0..2).collect();
+        let clusters = detect_clusters(&entries, &filtered, 3);
+        assert!(clusters.is_empty());
+    }
+
+    #[test]
+    fn test_sequence_cluster_basic() {
+        // Create a 3-line sequence that repeats twice
+        let pattern = [
+            "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,user1,person,False)\"",
+            "01-01 00:00:00.000 INF|Auth \"GetFromCache(dn_cache, User:user1)\"",
+            "01-01 00:00:00.000 INF|Auth \"Aliased to DOXENSE\\user1\"",
+        ];
+
+        let mut entries = Vec::new();
+        for rep in 0..2 {
+            for (j, line) in pattern.iter().enumerate() {
+                let idx = rep * 3 + j;
+                entries.push(make_entry(idx, line));
+            }
+        }
+
+        let filtered: Vec<usize> = (0..6).collect();
+        let clusters = detect_clusters(&entries, &filtered, 2);
+
+        // Should detect 1 sequence cluster of length 3, repeated 2x
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].sequence_len, 3);
+        assert_eq!(clusters[0].count, 2);
+        assert_eq!(clusters[0].sequence_templates.len(), 3);
+    }
+
+    #[test]
+    fn test_sequence_with_varying_params() {
+        // Sequence where parameters vary but templates match
+        let mut entries = Vec::new();
+        let users = ["olive", "admin"];
+        for (rep, user) in users.iter().enumerate() {
+            let base = rep * 3;
+            entries.push(make_entry(base, &format!(
+                "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,{},person,False)\"", user
+            )));
+            entries.push(make_entry(base + 1, &format!(
+                "01-01 00:00:00.000 INF|Auth \"GetFromCache(dn_cache, User:{})\"", user
+            )));
+            entries.push(make_entry(base + 2, &format!(
+                "01-01 00:00:00.000 INF|Auth \"Aliased to DOXENSE\\{}\"", user
+            )));
+        }
+
+        let filtered: Vec<usize> = (0..6).collect();
+        let clusters = detect_clusters(&entries, &filtered, 2);
+
+        // Templates won't match because user names aren't quoted/numeric
+        // "olive" and "admin" won't be templatized to same placeholder
+        // So this should NOT form a sequence cluster
+        // (This tests that we don't over-match)
+        let seq_clusters: Vec<_> = clusters.iter().filter(|c| c.sequence_len > 1).collect();
+        assert!(seq_clusters.is_empty());
+    }
+
+    #[test]
+    fn test_sequence_with_quoted_params() {
+        // Sequence where varying params are quoted → templatize matches
+        let mut entries = Vec::new();
+        let values = ["$NOCOLOR", "$NOPRINT", "$NOCOPY"];
+        for (rep, val) in values.iter().enumerate() {
+            let base = rep * 3;
+            entries.push(make_entry(base, &format!(
+                "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,\"{}\",group,True)\"", val
+            )));
+            entries.push(make_entry(base + 1, &format!(
+                "01-01 00:00:00.000 INF|Dir \"GetFromCache(dn_cache, \"{}\")\"", val
+            )));
+            entries.push(make_entry(base + 2, &format!(
+                "01-01 00:00:00.000 INF|Dir \"GetFromCache(notfound_cache, \"{}\")\"", val
+            )));
+        }
+
+        let filtered: Vec<usize> = (0..9).collect();
+        let clusters = detect_clusters(&entries, &filtered, 2);
+
+        // All 3 repetitions should templatize identically → 1 sequence cluster
+        let seq_clusters: Vec<_> = clusters.iter().filter(|c| c.sequence_len > 1).collect();
+        assert_eq!(seq_clusters.len(), 1);
+        assert_eq!(seq_clusters[0].sequence_len, 3);
+        assert_eq!(seq_clusters[0].count, 3);
+    }
+
+    #[test]
+    fn test_mixed_sequence_and_single() {
+        // 3-line sequence repeated 2x, then 4 identical single lines
+        let mut entries = Vec::new();
+        // Sequence part
+        for rep in 0..2 {
+            let base = rep * 3;
+            entries.push(make_entry(base, "01-01 00:00:00.000 INF|A \"step1\""));
+            entries.push(make_entry(base + 1, "01-01 00:00:00.000 INF|A \"step2\""));
+            entries.push(make_entry(base + 2, "01-01 00:00:00.000 INF|A \"step3\""));
+        }
+        // Single-line run part
+        for i in 0..4 {
+            entries.push(make_entry(6 + i, &format!("01-01 00:00:00.000 INF|B \"repeat {}\"", i)));
+        }
+
+        let filtered: Vec<usize> = (0..10).collect();
+        let clusters = detect_clusters(&entries, &filtered, 2);
+
+        // Should have: 1 sequence cluster (3 lines × 2) + 1 single-line cluster (4x)
+        assert_eq!(clusters.len(), 2);
+
+        let seq = clusters.iter().find(|c| c.sequence_len > 1).unwrap();
+        assert_eq!(seq.sequence_len, 3);
+        assert_eq!(seq.count, 2);
+
+        let single = clusters.iter().find(|c| c.sequence_len == 1).unwrap();
+        assert_eq!(single.count, 4);
+    }
+}

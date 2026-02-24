@@ -1,4 +1,5 @@
 mod app;
+mod clusters;
 mod config;
 mod events;
 mod log_entry;

@@ -8,6 +8,7 @@ use ratatui::{
 };
 use std::borrow::Cow;
 
+mod clusters_panel;
 mod log_view;
 mod matches_panel;
 mod overlays;
@@ -58,6 +59,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         FocusState::Help { .. } => overlays::draw_help(frame, app),
         FocusState::ExcludeManager { .. } => overlays::draw_exclude_manager(frame, app),
         FocusState::ExportDialog { .. } => overlays::draw_export_dialog(frame, app),
+        FocusState::Clusters { .. } => clusters_panel::draw_clusters(frame, app),
     }
 }
 

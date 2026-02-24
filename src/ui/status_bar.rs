@@ -90,6 +90,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::Help { .. } => "j/k:scroll | Esc/q:close ",
         FocusState::ExcludeManager { .. } => "Tab:switch | Enter:add | d:remove | Esc:close ",
         FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
+        FocusState::Clusters { .. } => "j/k:navigate | Enter:jump | Esc:close ",
     };
 
     let left_len = left.len();

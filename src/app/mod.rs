@@ -1,3 +1,4 @@
+use crate::clusters::Cluster;
 use crate::log_entry::LogEntry;
 use crate::text_input::TextInput;
 use chrono::NaiveDateTime;
@@ -116,6 +117,10 @@ pub enum FocusState {
         input: TextInput,
         error: Option<String>,
     },
+    Clusters {
+        selected: usize,
+        scroll_offset: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,6 +231,9 @@ pub struct App {
 
     /// Ctrl+hover: word to underline
     pub hover_word: Option<HoverWord>,
+
+    // Cluster detection results
+    pub clusters: Vec<Cluster>,
 }
 
 impl Default for App {
@@ -275,6 +283,7 @@ impl App {
             search_history: Vec::new(),
             search_history_index: None,
             hover_word: None,
+            clusters: Vec::new(),
         }
     }
 
@@ -445,6 +454,21 @@ impl App {
     /// Open help dialog
     pub fn open_help(&mut self) {
         self.focus = FocusState::Help { scroll_offset: 0 };
+    }
+
+    /// Run cluster detection on filtered entries and open overlay
+    pub fn open_clusters(&mut self) {
+        self.clusters =
+            crate::clusters::detect_clusters(&self.entries, &self.filtered_indices, 3);
+        if self.clusters.is_empty() {
+            self.status_message = Some("No clusters detected".to_string());
+            return;
+        }
+        self.status_message = Some(format!("{} cluster(s) found", self.clusters.len()));
+        self.focus = FocusState::Clusters {
+            selected: 0,
+            scroll_offset: 0,
+        };
     }
 
     /// Open exclude filter manager overlay
@@ -812,6 +836,7 @@ impl App {
             CommandAction::ExcludeManager => self.open_exclude_manager(),
             CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::ExportFiltered => self.open_export_dialog(),
+            CommandAction::Clusters => self.open_clusters(),
             CommandAction::Quit => self.should_quit = true,
         }
     }

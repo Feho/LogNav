@@ -33,6 +33,7 @@ pub enum CommandAction {
     ExcludeManager,
     ClearExcludes,
     ExportFiltered,
+    Clusters,
     Quit,
 }
 
@@ -167,6 +168,11 @@ impl Command {
             name: "Export filtered results...",
             shortcut: "Ctrl+S",
             action: CommandAction::ExportFiltered,
+        },
+        Command {
+            name: "Detect clusters",
+            shortcut: "",
+            action: CommandAction::Clusters,
         },
         Command {
             name: "Quit",

@@ -2,6 +2,7 @@ use crate::app::{App, FocusState};
 use crossterm::event::{Event, KeyEvent, KeyEventKind};
 use std::time::Instant;
 
+mod clusters;
 mod command;
 mod date_filter;
 mod detail;
@@ -49,6 +50,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::Help { .. } => help::handle_help_key(app, key),
         FocusState::ExcludeManager { .. } => exclude_manager::handle_exclude_manager_key(app, key),
         FocusState::ExportDialog { .. } => export::handle_export_key(app, key),
+        FocusState::Clusters { .. } => clusters::handle_clusters_key(app, key),
     }
 }
 
@@ -107,8 +109,8 @@ fn handle_paste(app: &mut App, text: String) {
             }
             *selected = 0;
         }
-        FocusState::DateFilter { .. } => {
-            // Not useful for date filter
+        FocusState::DateFilter { .. } | FocusState::Clusters { .. } => {
+            // Not useful for these overlays
         }
         FocusState::ExportDialog { input, error, .. } => {
             let cleaned = clean_pasted_path(&text);

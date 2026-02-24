@@ -34,6 +34,10 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     }
                     return;
                 }
+                FocusState::Clusters { selected, .. } => {
+                    *selected = selected.saturating_sub(3);
+                    return;
+                }
                 _ => {}
             }
             if app.search_panel_open && app.search_panel_height > 0 {
@@ -57,6 +61,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
             };
             let recent_count = app.recent_files.len();
             let exclude_count = app.exclude_patterns.len();
+            let cluster_count = app.clusters.len();
             match &mut app.focus {
                 FocusState::Help { scroll_offset } => {
                     *scroll_offset += 3;
@@ -85,6 +90,12 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 } => {
                     if *focus == crate::app::ExcludeManagerFocus::List && exclude_count > 0 {
                         *selected = (*selected + 3).min(exclude_count - 1);
+                    }
+                    return;
+                }
+                FocusState::Clusters { selected, .. } => {
+                    if cluster_count > 0 {
+                        *selected = (*selected + 3).min(cluster_count - 1);
                     }
                     return;
                 }
