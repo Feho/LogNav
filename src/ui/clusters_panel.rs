@@ -1,4 +1,5 @@
 use crate::app::{App, FocusState};
+use crate::clusters::display_template;
 use crate::ui::{centered_rect, render_scrollbar};
 use ratatui::{
     Frame,
@@ -58,17 +59,19 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
         let y = (i - *scroll_offset) as u16;
         let is_selected = i == *selected;
 
+        let display = display_template(&cluster.template);
+
         let (prefix, preview) = if cluster.sequence_len > 1 {
             // Sequence cluster: "2x [15 lines] first_template..."
             let prefix = format!("{:>4}x [{} lines] ", cluster.count, cluster.sequence_len);
             let max_w = (inner.width as usize).saturating_sub(prefix.len());
-            let preview: String = cluster.template.chars().take(max_w).collect();
+            let preview: String = display.chars().take(max_w).collect();
             (prefix, preview)
         } else {
             // Single-line cluster: "4x template..."
             let prefix = format!("{:>4}x ", cluster.count);
             let max_w = (inner.width as usize).saturating_sub(prefix.len());
-            let preview: String = cluster.template.chars().take(max_w).collect();
+            let preview: String = display.chars().take(max_w).collect();
             (prefix, preview)
         };
 

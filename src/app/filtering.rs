@@ -21,6 +21,7 @@ impl App {
             self.selected_index = 0;
         }
 
+        self.clusters_dirty = true;
         self.clamp_scroll();
     }
 
@@ -32,6 +33,7 @@ impl App {
                 self.filtered_indices.push(idx);
             }
         }
+        self.clusters_dirty = true;
     }
 
     fn passes_level_filter(&self, level: LogLevel) -> bool {

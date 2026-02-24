@@ -235,10 +235,85 @@ pub fn detect_clusters(
     // Phase 2: detect single-line runs on remaining entries
     clusters.extend(detect_single_clusters(&templates, &used));
 
-    // Sort by position
-    clusters.sort_by_key(|c| c.start_filtered_idx);
+    // Merge clusters with identical templates (same template + sequence_templates)
+    clusters = merge_duplicate_clusters(clusters);
+
+    // Sort by total count descending
+    clusters.sort_by(|a, b| b.count.cmp(&a.count));
 
     clusters
+}
+
+/// Strip component prefix for display in the clusters panel.
+pub fn display_template(template: &str) -> &str {
+    strip_component_prefix(template)
+}
+
+/// Strip component prefix from a templatized message for dedup.
+/// Handles patterns like `[{N}] ComponentName   actual message`
+/// and `[{N}] ComponentName   actual message` (WPC format),
+/// or `LVL|Component actual message` (WD format).
+fn strip_component_prefix(template: &str) -> &str {
+    let s = template.trim_start();
+
+    // WPC: "[{N}] ComponentName   message" or "[ {N}] ComponentName   message"
+    if s.starts_with('[') || s.starts_with("{N}]") {
+        // Skip past "] "
+        if let Some(bracket_end) = s.find("] ") {
+            let after_bracket = s[bracket_end + 2..].trim_start();
+            // Skip component name (non-whitespace) then whitespace
+            if let Some(space_pos) = after_bracket.find(|c: char| c.is_whitespace()) {
+                return after_bracket[space_pos..].trim_start();
+            }
+        }
+    }
+
+    // WD: "LVL|Component message" — skip past first space after pipe
+    if let Some(pipe) = s.find('|') {
+        let after_pipe = &s[pipe + 1..];
+        if let Some(space_pos) = after_pipe.find(' ') {
+            return after_pipe[space_pos..].trim_start();
+        }
+    }
+
+    s
+}
+
+/// Build a dedup key for a cluster, stripping component prefixes.
+fn dedup_key(template: &str) -> String {
+    strip_component_prefix(template).to_string()
+}
+
+/// Merge clusters that share the same message body (ignoring component prefix).
+/// Sums counts and keeps the earliest start position.
+fn merge_duplicate_clusters(clusters: Vec<Cluster>) -> Vec<Cluster> {
+    let mut merged: Vec<Cluster> = Vec::new();
+    let mut seen: HashMap<String, usize> = HashMap::new(); // key → index in merged
+
+    for c in clusters {
+        // Build a dedup key stripping component prefixes
+        let key = if c.sequence_len > 1 {
+            c.sequence_templates
+                .iter()
+                .map(|t| dedup_key(t))
+                .collect::<Vec<_>>()
+                .join("\x00")
+        } else {
+            dedup_key(&c.template)
+        };
+
+        if let Some(&idx) = seen.get(&key) {
+            merged[idx].count += c.count;
+            if c.start_filtered_idx < merged[idx].start_filtered_idx {
+                merged[idx].start_filtered_idx = c.start_filtered_idx;
+            }
+        } else {
+            seen.insert(key, merged.len());
+            merged.push(c);
+        }
+    }
+
+    merged
 }
 
 #[cfg(test)]
@@ -441,5 +516,63 @@ mod tests {
 
         let single = clusters.iter().find(|c| c.sequence_len == 1).unwrap();
         assert_eq!(single.count, 4);
+    }
+
+    #[test]
+    fn test_duplicate_single_clusters_merged() {
+        // Two separate runs of identical-template lines, separated by different lines.
+        // Without merging, these would be 2 separate clusters.
+        let mut entries = Vec::new();
+        // Run 1: 4x "Processing item {N}"
+        for i in 0..4 {
+            entries.push(make_entry(i, &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", i)));
+        }
+        // Gap: 2 different lines
+        entries.push(make_entry(4, "01-01 00:00:00.000 INF|Other Something else A"));
+        entries.push(make_entry(5, "01-01 00:00:00.000 INF|Other Something else B"));
+        // Run 2: 3x "Processing item {N}" again
+        for i in 0..3 {
+            entries.push(make_entry(6 + i, &format!("01-01 00:00:00.000 INF|Comp \"Processing item {}\"", 10 + i)));
+        }
+
+        let filtered: Vec<usize> = (0..9).collect();
+        let clusters = detect_clusters(&entries, &filtered, 3);
+
+        // Both runs share same template → merged into 1 cluster
+        let matching: Vec<_> = clusters.iter().filter(|c| c.template.contains("Processing")).collect();
+        assert_eq!(matching.len(), 1);
+        // Total count = sum of both runs' counts
+        assert!(matching[0].count >= 2, "merged count should combine both runs");
+    }
+
+    #[test]
+    fn test_strip_component_prefix_wpc() {
+        // WPC format: "[{N}] ComponentName   message"
+        assert_eq!(
+            strip_component_prefix("[{N}] SpoolerMonitorActor    Actor {STR} changed IDLE => CHECKING"),
+            "Actor {STR} changed IDLE => CHECKING"
+        );
+        assert_eq!(
+            strip_component_prefix("[ {N}] UserActor    Sending UI state {N}"),
+            "Sending UI state {N}"
+        );
+    }
+
+    #[test]
+    fn test_strip_component_prefix_wd() {
+        // WD format: "LVL|Component message"
+        assert_eq!(
+            strip_component_prefix("INF|Auth FindDN(DOXENSE,{STR},person,False)"),
+            "FindDN(DOXENSE,{STR},person,False)"
+        );
+    }
+
+    #[test]
+    fn test_strip_component_prefix_passthrough() {
+        // No recognizable prefix
+        assert_eq!(
+            strip_component_prefix("plain message with no prefix"),
+            "plain message with no prefix"
+        );
     }
 }

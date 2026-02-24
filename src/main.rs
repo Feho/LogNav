@@ -54,6 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create tailer channel (shared across all tailers)
     let (tailer_tx, mut tailer_rx) = mpsc::channel::<TailerEvent>(100);
 
+    // Create cluster detection channel
+    let (cluster_tx, mut cluster_rx) = mpsc::channel(1);
+    app.cluster_tx = Some(cluster_tx);
+
     // Load initial file if provided
     let mut tailers: Vec<LogTailer> = Vec::new();
     if let Some(ref path) = initial_file {
@@ -82,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut terminal,
         &mut app,
         &mut tailer_rx,
+        &mut cluster_rx,
         &mut tailers,
         tailer_tx,
         &mut config,
@@ -130,6 +135,7 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     tailer_rx: &mut mpsc::Receiver<TailerEvent>,
+    cluster_rx: &mut mpsc::Receiver<Vec<crate::clusters::Cluster>>,
     tailers: &mut Vec<LogTailer>,
     tailer_tx: mpsc::Sender<TailerEvent>,
     config: &mut Config,
@@ -161,6 +167,9 @@ async fn run_app(
         tokio::select! {
             Some(event) = tailer_rx.recv() => {
                 handle_tailer_event(app, event);
+            }
+            Some(clusters) = cluster_rx.recv() => {
+                app.receive_clusters(clusters);
             }
             _ = async {
                 if event::poll(Duration::from_millis(50)).unwrap_or(false)

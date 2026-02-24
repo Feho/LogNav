@@ -9,6 +9,7 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::fmt;
 use std::time::Instant;
+use tokio::sync::mpsc;
 
 /// Colors assigned to source files in merged view
 pub const SOURCE_COLORS: [Color; 4] = [Color::Green, Color::Magenta, Color::Blue, Color::Yellow];
@@ -234,6 +235,8 @@ pub struct App {
 
     // Cluster detection results
     pub clusters: Vec<Cluster>,
+    pub clusters_dirty: bool,
+    pub cluster_tx: Option<mpsc::Sender<Vec<Cluster>>>,
 }
 
 impl Default for App {
@@ -284,6 +287,8 @@ impl App {
             search_history_index: None,
             hover_word: None,
             clusters: Vec::new(),
+            clusters_dirty: true,
+            cluster_tx: None,
         }
     }
 
@@ -456,10 +461,52 @@ impl App {
         self.focus = FocusState::Help { scroll_offset: 0 };
     }
 
-    /// Run cluster detection on filtered entries and open overlay
+    /// Run cluster detection on filtered entries and open overlay.
+    /// Uses cached results if filters haven't changed; spawns async task otherwise.
     pub fn open_clusters(&mut self) {
-        self.clusters =
-            crate::clusters::detect_clusters(&self.entries, &self.filtered_indices, 3);
+        if !self.clusters_dirty && !self.clusters.is_empty() {
+            // Use cached results
+            self.status_message = Some(format!("{} cluster(s) found (cached)", self.clusters.len()));
+            self.focus = FocusState::Clusters {
+                selected: 0,
+                scroll_offset: 0,
+            };
+            return;
+        }
+
+        let Some(tx) = self.cluster_tx.clone() else {
+            // Fallback: synchronous detection (no channel wired)
+            self.clusters =
+                crate::clusters::detect_clusters(&self.entries, &self.filtered_indices, 3);
+            self.clusters_dirty = false;
+            if self.clusters.is_empty() {
+                self.status_message = Some("No clusters detected".to_string());
+                return;
+            }
+            self.status_message = Some(format!("{} cluster(s) found", self.clusters.len()));
+            self.focus = FocusState::Clusters {
+                selected: 0,
+                scroll_offset: 0,
+            };
+            return;
+        };
+
+        // Clone data for async task
+        let entries = self.entries.clone();
+        let filtered = self.filtered_indices.clone();
+
+        self.status_message = Some("Detecting clusters...".to_string());
+
+        tokio::spawn(async move {
+            let result = crate::clusters::detect_clusters(&entries, &filtered, 3);
+            let _ = tx.send(result).await;
+        });
+    }
+
+    /// Handle async cluster detection result
+    pub fn receive_clusters(&mut self, clusters: Vec<Cluster>) {
+        self.clusters = clusters;
+        self.clusters_dirty = false;
         if self.clusters.is_empty() {
             self.status_message = Some("No clusters detected".to_string());
             return;
