@@ -1,5 +1,6 @@
 use crate::app::{App, FocusState, HoverWord};
-use crate::ui::{LINE_PREFIX_WIDTH, extract_message};
+use crate::text_utils::wrap_text;
+use crate::ui::extract_message;
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 /// Handle mouse events
@@ -228,6 +229,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 
 /// Extract the word under the cursor for a given click position.
 /// Returns (word, char_start, char_end) where start/end are char offsets in the display text.
+/// Accounts for gutter widths and word-wrapping.
 fn word_at_click(
     app: &App,
     entry_idx: usize,
@@ -240,31 +242,80 @@ fn word_at_click(
     }
     let real_idx = app.filtered_indices[entry_idx];
     let entry = &app.entries[real_idx];
-
+    let prefix_width = app.full_prefix_width();
     let row_within_entry = clicked_row.saturating_sub(entry_visual_start);
 
-    // Determine which text line was clicked
-    let line_text = if row_within_entry == 0 {
-        let msg = extract_message(&entry.raw_line);
-        if clicked_col < LINE_PREFIX_WIDTH {
+    if app.wrap_enabled && app.viewport_width > 0 {
+        let msg_width = app.viewport_width.saturating_sub(prefix_width);
+        if msg_width == 0 {
             return None;
         }
-        let char_offset = (clicked_col - LINE_PREFIX_WIDTH) + app.horizontal_scroll;
-        return extract_word_at(&msg, char_offset);
-    } else {
-        let cont_idx = row_within_entry - 1;
-        if cont_idx < entry.continuation_lines.len() {
-            &entry.continuation_lines[cont_idx]
-        } else {
-            return None;
-        }
-    };
 
-    if clicked_col < LINE_PREFIX_WIDTH {
-        return None;
+        // Wrap the main message into visual segments
+        let message = extract_message(&entry.raw_line);
+        let wrapped = wrap_text(&message, msg_width);
+        let main_visual_rows = wrapped.len();
+
+        if row_within_entry < main_visual_rows {
+            // Click is on a wrapped segment of the main message
+            let segment = &wrapped[row_within_entry];
+            if clicked_col < prefix_width {
+                return None;
+            }
+            let col_in_segment = clicked_col - prefix_width;
+            // Map back to char offset in the full message
+            let chars_before: usize = wrapped[..row_within_entry]
+                .iter()
+                .map(|s| s.chars().count())
+                .sum();
+            let result = extract_word_at(segment, col_in_segment)?;
+            return Some((result.0, result.1 + chars_before, result.2 + chars_before));
+        }
+
+        // Click is on an expanded continuation line (also wrapped)
+        if app.expanded_entries.contains(&real_idx) {
+            let mut vis_row = main_visual_rows;
+            for cont_line in entry.display_continuation() {
+                let wrapped_cont = wrap_text(cont_line, msg_width);
+                let cont_rows = wrapped_cont.len();
+                if row_within_entry < vis_row + cont_rows {
+                    let seg_idx = row_within_entry - vis_row;
+                    let segment = &wrapped_cont[seg_idx];
+                    if clicked_col < prefix_width {
+                        return None;
+                    }
+                    let col_in_segment = clicked_col - prefix_width;
+                    return extract_word_at(segment, col_in_segment);
+                }
+                vis_row += cont_rows;
+            }
+        }
+        None
+    } else {
+        // No-wrap mode: row 0 is main line, rest are continuation lines
+        if row_within_entry == 0 {
+            let msg = extract_message(&entry.raw_line);
+            if clicked_col < prefix_width {
+                return None;
+            }
+            let char_offset = (clicked_col - prefix_width) + app.horizontal_scroll;
+            return extract_word_at(&msg, char_offset);
+        }
+
+        // Continuation lines (expanded)
+        if app.expanded_entries.contains(&real_idx) {
+            let cont_idx = row_within_entry - 1;
+            let display = entry.display_continuation();
+            if cont_idx < display.len() {
+                if clicked_col < prefix_width {
+                    return None;
+                }
+                let char_offset = (clicked_col - prefix_width) + app.horizontal_scroll;
+                return extract_word_at(&display[cont_idx], char_offset);
+            }
+        }
+        None
     }
-    let char_offset = (clicked_col - LINE_PREFIX_WIDTH) + app.horizontal_scroll;
-    extract_word_at(line_text, char_offset)
 }
 
 /// Extract a word at the given character offset within a string.
