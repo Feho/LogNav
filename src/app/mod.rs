@@ -592,7 +592,8 @@ impl App {
             self.folded_clusters.insert(cluster_id);
             // Snap cursor to occurrence start if it would be hidden
             if let Some(&(cid, off, _)) = self.cluster_map.get(&self.selected_index)
-                && cid == cluster_id && off > 0
+                && cid == cluster_id
+                && off > 0
             {
                 self.selected_index -= off;
             }
@@ -805,6 +806,26 @@ impl App {
     /// Whether we're in merged multi-file view
     pub fn is_merged(&self) -> bool {
         self.sources.len() > 1
+    }
+
+    /// Compute the fixed gutter width for cluster annotations.
+    /// Returns 0 when no clusters are active.
+    pub fn cluster_gutter_width(&self) -> usize {
+        if self.cluster_map.is_empty() {
+            return 0;
+        }
+        // "│" (1) + max digits of count + "×" (1)
+        let max_count = self.clusters.iter().map(|c| c.count).max().unwrap_or(1);
+        let digits = max_count.max(1).ilog10() as usize + 1;
+        1 + digits + 1
+    }
+
+    /// Total prefix width used when rendering log lines (timestamp/level + gutters).
+    /// Must match the rendering logic in log_view.rs.
+    pub fn full_prefix_width(&self) -> usize {
+        use crate::ui::LINE_PREFIX_WIDTH;
+        let source_gutter = if self.is_merged() { 1 } else { 0 };
+        LINE_PREFIX_WIDTH + source_gutter + self.cluster_gutter_width()
     }
 
     /// Set the primary source file (single-file mode)

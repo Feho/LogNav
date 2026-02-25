@@ -1,6 +1,5 @@
 use super::App;
 use crate::text_utils::wrap_text_line_count;
-use crate::ui::LINE_PREFIX_WIDTH;
 
 impl App {
     // Navigation
@@ -200,7 +199,7 @@ impl App {
 
         // Calculate lines for the main message
         let lines = if self.wrap_enabled && viewport_width > 0 {
-            let available_width = viewport_width.saturating_sub(LINE_PREFIX_WIDTH);
+            let available_width = viewport_width.saturating_sub(self.full_prefix_width());
             let message = crate::ui::extract_message(&entry.raw_line);
             wrap_text_line_count(&message, available_width)
         } else {
@@ -211,7 +210,7 @@ impl App {
         if self.expanded_entries.contains(&entry_idx) {
             let display = entry.display_continuation();
             if self.wrap_enabled && viewport_width > 0 {
-                let available_width = viewport_width.saturating_sub(LINE_PREFIX_WIDTH);
+                let available_width = viewport_width.saturating_sub(self.full_prefix_width());
                 let cont_lines: usize = display
                     .iter()
                     .map(|line| wrap_text_line_count(line, available_width))

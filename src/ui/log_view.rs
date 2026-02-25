@@ -57,20 +57,20 @@ fn underline_range_for_row(app: &App, terminal_row: usize) -> Option<(usize, usi
 }
 
 /// Compute the fixed gutter width needed for cluster annotations.
-/// Returns 0 when no clusters are active.
+/// Delegates to App method; kept as a thin wrapper for rendering code.
 fn cluster_gutter_width(app: &App) -> usize {
-    if app.cluster_map.is_empty() {
-        return 0;
-    }
-    // "│" (1) + max digits of count + "×" (1)
-    let max_count = app.clusters.iter().map(|c| c.count).max().unwrap_or(1);
-    let digits = max_count.max(1).ilog10() as usize + 1;
-    1 + digits + 1 // │ + digits + ×
+    app.cluster_gutter_width()
 }
 
 /// Build cluster gutter span, padded to `width`.
 /// offset==0 → "▼N×", last → "└  ", middle → "│  "
-fn cluster_gutter_span(app: &App, cluster_id: usize, offset: usize, occ_len: usize, width: usize) -> Span<'static> {
+fn cluster_gutter_span(
+    app: &App,
+    cluster_id: usize,
+    offset: usize,
+    occ_len: usize,
+    width: usize,
+) -> Span<'static> {
     let style = Style::default().fg(Color::DarkGray);
     if offset == 0 {
         let count = app.clusters[cluster_id].count;
@@ -86,6 +86,23 @@ fn cluster_gutter_span(app: &App, cluster_id: usize, offset: usize, occ_len: usi
 /// Build a blank cluster gutter span for non-clustered lines
 fn cluster_gutter_blank(width: usize) -> Span<'static> {
     Span::raw(" ".repeat(width))
+}
+
+/// Build a continuation gutter span: "│" if inside a cluster (not the last
+/// entry), blank otherwise. Used for wrapped-continuation and expanded lines.
+fn cluster_continuation_span(
+    cluster_info: Option<(usize, usize, usize)>,
+    cg_width: usize,
+) -> Span<'static> {
+    let is_last = cluster_info.is_some_and(|(_, off, gl)| off == gl - 1);
+    if cluster_info.is_some() && !is_last {
+        Span::styled(
+            format!("│{:<width$}", "", width = cg_width - 1),
+            Style::default().fg(Color::DarkGray),
+        )
+    } else {
+        cluster_gutter_blank(cg_width)
+    }
 }
 
 /// Build a fold summary line (rendered as the entry's own row, no extra row)
@@ -231,8 +248,8 @@ fn draw_log_view_nowrap(
         }
 
         let cluster_info = app.cluster_map.get(&current_entry_idx).copied();
-        let is_folded =
-            cluster_info.is_some_and(|(cid, off, _)| off == 0 && app.folded_clusters.contains(&cid));
+        let is_folded = cluster_info
+            .is_some_and(|(cid, off, _)| off == 0 && app.folded_clusters.contains(&cid));
 
         // Folded cluster: render summary as the entry's own row
         if let Some((cluster_id, 0, group_len)) = cluster_info
@@ -254,7 +271,6 @@ fn draw_log_view_nowrap(
         let is_selected = current_entry_idx == app.selected_index;
         let is_expanded = app.is_expanded(entry_idx);
         let is_bookmarked = app.bookmarks.contains(&entry_idx);
-        let in_cluster = cluster_info.is_some();
 
         // Build the main line
         let timestamp = entry
@@ -351,16 +367,7 @@ fn draw_log_view_nowrap(
                     cont_spans.push(source_gutter_span(entry.source_idx));
                 }
                 if cg_width > 0 {
-                    let is_last = cluster_info
-                        .is_some_and(|(_, off, gl)| off == gl - 1);
-                    if in_cluster && !is_last {
-                        cont_spans.push(Span::styled(
-                            format!("│{:<width$}", "", width = cg_width - 1),
-                            Style::default().fg(Color::DarkGray),
-                        ));
-                    } else {
-                        cont_spans.push(cluster_gutter_blank(cg_width));
-                    }
+                    cont_spans.push(cluster_continuation_span(cluster_info, cg_width));
                 }
                 cont_spans.extend([
                     Span::raw(" "),                          // bookmark placeholder
@@ -449,8 +456,8 @@ fn draw_log_view_wrapped(
         }
 
         let cluster_info = app.cluster_map.get(&current_entry_idx).copied();
-        let is_folded =
-            cluster_info.is_some_and(|(cid, off, _)| off == 0 && app.folded_clusters.contains(&cid));
+        let is_folded = cluster_info
+            .is_some_and(|(cid, off, _)| off == 0 && app.folded_clusters.contains(&cid));
 
         // Folded cluster: render summary as the entry's own row
         if let Some((cluster_id, 0, group_len)) = cluster_info
@@ -472,7 +479,6 @@ fn draw_log_view_wrapped(
         let is_selected = current_entry_idx == app.selected_index;
         let is_expanded = app.is_expanded(entry_idx);
         let is_bookmarked = app.bookmarks.contains(&entry_idx);
-        let in_cluster = cluster_info.is_some();
 
         let timestamp = entry
             .timestamp
@@ -566,16 +572,7 @@ fn draw_log_view_wrapped(
                     spans.push(Span::raw(" ")); // source gutter placeholder
                 }
                 if cg_width > 0 {
-                    let is_last = cluster_info
-                        .is_some_and(|(_, off, gl)| off == gl - 1);
-                    if in_cluster && !is_last {
-                        spans.push(Span::styled(
-                            format!("│{:<width$}", "", width = cg_width - 1),
-                            Style::default().fg(Color::DarkGray),
-                        ));
-                    } else {
-                        spans.push(cluster_gutter_blank(cg_width));
-                    }
+                    spans.push(cluster_continuation_span(cluster_info, cg_width));
                 }
                 spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                 spans.extend(styled_spans(
@@ -610,16 +607,7 @@ fn draw_log_view_wrapped(
                         cont_spans.push(Span::raw(" ")); // source gutter placeholder
                     }
                     if cg_width > 0 {
-                        let is_last = cluster_info
-                            .is_some_and(|(_, off, gl)| off == gl - 1);
-                        if in_cluster && !is_last {
-                            cont_spans.push(Span::styled(
-                                format!("│{:<width$}", "", width = cg_width - 1),
-                                Style::default().fg(Color::DarkGray),
-                            ));
-                        } else {
-                            cont_spans.push(cluster_gutter_blank(cg_width));
-                        }
+                        cont_spans.push(cluster_continuation_span(cluster_info, cg_width));
                     }
                     cont_spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                     cont_spans.extend(styled_spans(

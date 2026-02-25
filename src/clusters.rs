@@ -166,7 +166,10 @@ fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Clus
     clusters
 }
 
-/// Max gap of non-matching (or used) entries allowed inside a single-line run
+/// Max gap of non-matching (or used) entries tolerated inside a single-line run.
+/// The condition `gap < MAX_SINGLE_GAP` means up to MAX_SINGLE_GAP consecutive
+/// non-matching entries are allowed between two matching entries before the run
+/// is split.
 pub const MAX_SINGLE_GAP: usize = 3;
 
 /// Detect single-line run clusters on entries not already used by sequence detection.
@@ -679,11 +682,11 @@ mod gap_analysis_tests {
     fn test_gap_tolerance_span_mismatch() {
         // Entries where indices 2,3 have DIFFERENT templates (not quoted) to force gap behavior
         let entries: Vec<LogEntry> = vec![
-            make_entry(0, "01-01 00:00:00.000 INF|Comp \"Match 1\""),  // {STR}
-            make_entry(1, "01-01 00:00:00.000 INF|Comp \"Match 2\""),  // {STR}
-            make_entry(2, "01-01 00:00:00.000 INF|Comp Something"),    // NO {STR} - different!
-            make_entry(3, "01-01 00:00:00.000 INF|Comp Else"),          // NO {STR} - different!
-            make_entry(4, "01-01 00:00:00.000 INF|Comp \"Match 3\""),  // {STR}
+            make_entry(0, "01-01 00:00:00.000 INF|Comp \"Match 1\""), // {STR}
+            make_entry(1, "01-01 00:00:00.000 INF|Comp \"Match 2\""), // {STR}
+            make_entry(2, "01-01 00:00:00.000 INF|Comp Something"),   // NO {STR} - different!
+            make_entry(3, "01-01 00:00:00.000 INF|Comp Else"),        // NO {STR} - different!
+            make_entry(4, "01-01 00:00:00.000 INF|Comp \"Match 3\""), // {STR}
         ];
 
         let filtered: Vec<usize> = (0..5).collect();
@@ -691,14 +694,17 @@ mod gap_analysis_tests {
 
         println!("Clusters:");
         for (i, c) in clusters.iter().enumerate() {
-            println!("  {}: template='{}', count={}, occurrences={:?}",
-                i, c.template, c.count, c.occurrences);
+            println!(
+                "  {}: template='{}', count={}, occurrences={:?}",
+                i, c.template, c.count, c.occurrences
+            );
         }
 
-        let single_clusters: Vec<_> = clusters.iter()
-            .filter(|c| c.sequence_len == 1)
-            .collect();
-        assert!(!single_clusters.is_empty(), "Should find at least one single-line cluster");
+        let single_clusters: Vec<_> = clusters.iter().filter(|c| c.sequence_len == 1).collect();
+        assert!(
+            !single_clusters.is_empty(),
+            "Should find at least one single-line cluster"
+        );
 
         let cluster = &single_clusters[0];
 
@@ -710,7 +716,13 @@ mod gap_analysis_tests {
         }
         // Gap entries (indices 2, 3) should NOT appear in any occurrence
         let occ_starts: Vec<usize> = cluster.occurrences.iter().map(|&(s, _)| s).collect();
-        assert!(!occ_starts.contains(&2), "gap entry 2 should not be in occurrences");
-        assert!(!occ_starts.contains(&3), "gap entry 3 should not be in occurrences");
+        assert!(
+            !occ_starts.contains(&2),
+            "gap entry 2 should not be in occurrences"
+        );
+        assert!(
+            !occ_starts.contains(&3),
+            "gap entry 3 should not be in occurrences"
+        );
     }
 }
