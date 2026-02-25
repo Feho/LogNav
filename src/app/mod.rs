@@ -1,6 +1,7 @@
 use crate::clusters::Cluster;
 use crate::log_entry::LogEntry;
 use crate::text_input::TextInput;
+use crate::tips::TipsManager;
 use chrono::NaiveDateTime;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -243,6 +244,9 @@ pub struct App {
     pub folded_clusters: HashSet<usize>,
     /// Whether async cluster detection is in progress
     pub clusters_loading: bool,
+
+    // Tips management
+    pub tips_manager: TipsManager,
 }
 
 impl Default for App {
@@ -298,6 +302,7 @@ impl App {
             cluster_map: HashMap::new(),
             folded_clusters: HashSet::new(),
             clusters_loading: false,
+            tips_manager: TipsManager::new(),
         }
     }
 

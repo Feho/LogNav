@@ -7,6 +7,7 @@ mod log_tailer;
 mod parsers;
 mod text_input;
 mod text_utils;
+mod tips;
 mod ui;
 
 use app::{App, SourceFile};

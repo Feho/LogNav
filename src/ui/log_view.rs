@@ -151,7 +151,7 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
 
     // Show start screen when no file loaded
     if app.sources.is_empty() && app.entries.is_empty() {
-        draw_start_screen(frame, area);
+        draw_start_screen(frame, app, area);
         return;
     }
 
@@ -170,7 +170,9 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Draw start screen when no file is loaded
-fn draw_start_screen(frame: &mut Frame, area: Rect) {
+fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
+    let tip = app.tips_manager.get_current_tip().to_string();
+
     let lines: Vec<Line<'_>> = vec![
         Line::from(vec![
             Span::styled(
@@ -205,10 +207,28 @@ fn draw_start_screen(frame: &mut Frame, area: Rect) {
             Span::styled("q       ", Style::default().fg(Color::Cyan)),
             Span::styled("Quit", Style::default().fg(Color::DarkGray)),
         ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "Tip: ",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::DIM),
+            ),
+            Span::styled(tip, Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "Press Space for next tip",
+                Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+            ),
+        ]),
     ];
 
     let content_height = lines.len() as u16;
-    let content_width = 25u16; // approx max line width
+    let content_width = lines
+        .iter()
+        .map(|l| l.width() as u16)
+        .max()
+        .unwrap_or(25);
     let y = area.y + area.height.saturating_sub(content_height) / 2;
     let x = area.x + area.width.saturating_sub(content_width) / 2;
 
