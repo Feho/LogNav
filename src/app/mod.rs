@@ -990,6 +990,9 @@ impl App {
                 self.clear_excludes();
                 self.status_message = Some(format!("Cleared {} exclude filter(s)", count));
             }
+            CommandAction::VisualSelect => {
+                self.visual_anchor = Some(self.selected_index);
+            }
             CommandAction::ExcludeManager => self.open_exclude_manager(),
             CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::ExportFiltered => self.open_export_dialog(),

@@ -30,6 +30,7 @@ pub enum CommandAction {
     NextBookmark,
     PrevBookmark,
     ClearBookmarks,
+    VisualSelect,
     ExcludeManager,
     ClearExcludes,
     ExportFiltered,
@@ -153,6 +154,11 @@ impl Command {
             name: "Clear all bookmarks",
             shortcut: "",
             action: CommandAction::ClearBookmarks,
+        },
+        Command {
+            name: "Visual select mode",
+            shortcut: "v",
+            action: CommandAction::VisualSelect,
         },
         Command {
             name: "Exclude filters...",
