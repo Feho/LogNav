@@ -40,6 +40,8 @@ pub struct LogEntry {
     pub source_idx: u8,
     /// Entry's ordinal position within its source file (stable across merges)
     pub source_local_idx: usize,
+    /// Byte offset where the message portion starts in raw_line (after timestamp/level/metadata)
+    pub message_offset: Option<usize>,
 }
 
 impl LogEntry {

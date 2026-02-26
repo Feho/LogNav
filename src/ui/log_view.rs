@@ -315,7 +315,7 @@ fn draw_log_view_nowrap(
             level_style(entry.level),
         );
 
-        let message = extract_message(&entry.raw_line);
+        let message = extract_message(&entry.raw_line, entry.message_offset);
         let skip = app.horizontal_scroll.min(message.len());
         let display_msg: String = message.chars().skip(skip).collect();
 
@@ -517,7 +517,7 @@ fn draw_log_view_wrapped(
             .map(|ts| ts.format("%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "             ".to_string());
 
-        let message = extract_message(&entry.raw_line);
+        let message = extract_message(&entry.raw_line, entry.message_offset);
 
         // Build expand indicator separately so it can be styled
         let indicator = if !entry.continuation_lines.is_empty() {

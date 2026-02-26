@@ -3,11 +3,11 @@ use crate::ui::extract_message;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{level_color, level_style, render_scrollbar};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 /// Draw the search matches panel (bottom split)
@@ -81,7 +81,7 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
             level_style(entry.level),
         );
 
-        let message = extract_message(&entry.raw_line);
+        let message = extract_message(&entry.raw_line, entry.message_offset);
         let display_msg: &str = &message;
 
         let mut spans = vec![

@@ -610,7 +610,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
     let syntax_on = app.syntax_highlight;
 
     // Main message
-    let message = extract_message(&entry.raw_line);
+    let message = extract_message(&entry.raw_line, entry.message_offset);
     for wrapped_line in wrap_text(&message, inner.width as usize) {
         let spans = styled_spans(&wrapped_line, None, Style::default(), syntax_on, None);
         lines.push(Line::from(spans));

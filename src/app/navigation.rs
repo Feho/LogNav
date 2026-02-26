@@ -200,7 +200,7 @@ impl App {
         // Calculate lines for the main message
         let lines = if self.wrap_enabled && viewport_width > 0 {
             let available_width = viewport_width.saturating_sub(self.full_prefix_width());
-            let message = crate::ui::extract_message(&entry.raw_line);
+            let message = crate::ui::extract_message(&entry.raw_line, entry.message_offset);
             wrap_text_line_count(&message, available_width)
         } else {
             1

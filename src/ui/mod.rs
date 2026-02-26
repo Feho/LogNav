@@ -84,8 +84,26 @@ pub fn level_style(level: LogLevel) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// Extract message portion from raw log line, stripping outer quotes from wd.log
-pub fn extract_message(raw_line: &str) -> Cow<'_, str> {
+/// Extract message portion from raw log line, stripping outer quotes from wd.log.
+/// If `offset` is provided (from parser), use it directly; otherwise fall back to heuristics.
+pub fn extract_message(raw_line: &str, offset: Option<usize>) -> Cow<'_, str> {
+    // If parser provided an offset, use it directly
+    if let Some(off) = offset
+        && off <= raw_line.len()
+    {
+        let msg = raw_line[off..].trim_start();
+        // Strip outer quotes (wd.log wraps messages in "...")
+        if msg.ends_with('"')
+            && let Some(open) = msg.find('"')
+            && open < msg.len() - 1
+        {
+            let prefix = &msg[..open];
+            let inner = &msg[open + 1..msg.len() - 1];
+            return Cow::Owned(format!("{}{}", prefix, inner));
+        }
+        return Cow::Borrowed(msg);
+    }
+
     // Handle qconsole bracket format: [timestamp] message
     if raw_line.starts_with('[')
         && let Some(end) = raw_line.find("] ")

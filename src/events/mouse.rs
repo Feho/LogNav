@@ -252,7 +252,7 @@ fn word_at_click(
         }
 
         // Wrap the main message into visual segments
-        let message = extract_message(&entry.raw_line);
+        let message = extract_message(&entry.raw_line, entry.message_offset);
         let wrapped = wrap_text(&message, msg_width);
         let main_visual_rows = wrapped.len();
 
@@ -294,7 +294,7 @@ fn word_at_click(
     } else {
         // No-wrap mode: row 0 is main line, rest are continuation lines
         if row_within_entry == 0 {
-            let msg = extract_message(&entry.raw_line);
+            let msg = extract_message(&entry.raw_line, entry.message_offset);
             if clicked_col < prefix_width {
                 return None;
             }

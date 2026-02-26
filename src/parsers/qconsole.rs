@@ -46,6 +46,13 @@ impl LogParser for QConsoleParser {
         })
     }
 
+    fn message_start(&self, line: &str) -> Option<usize> {
+        QCONSOLE_PATTERN
+            .captures(line)
+            .and_then(|caps| caps.get(2))
+            .map(|m| m.start())
+    }
+
     fn clean_line(&self, line: &str) -> String {
         COLOR_CODE_PATTERN.replace_all(line, "").into_owned()
     }

@@ -2,6 +2,9 @@ use crate::log_entry::{LogEntry, LogLevel};
 use chrono::NaiveDateTime;
 use std::sync::Arc;
 
+mod common;
+mod custom;
+mod generic;
 mod qconsole;
 mod wd;
 mod wpc;
@@ -20,6 +23,13 @@ pub trait LogParser: Send + Sync {
     /// Returns None if line is a continuation (doesn't start a new entry)
     fn parse_line(&self, line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)>;
 
+    /// Return the byte offset where the message portion starts in the line
+    /// (after timestamp, level, and any metadata like thread IDs).
+    /// Returns None to fall back to heuristic extraction.
+    fn message_start(&self, _line: &str) -> Option<usize> {
+        None
+    }
+
     /// Clean a line by stripping format-specific artifacts (e.g. color codes)
     fn clean_line(&self, line: &str) -> String {
         line.to_string()
@@ -34,31 +44,38 @@ pub fn parse_timestamp(ts: &str) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(&full_ts, &format!("%Y-{}", TIMESTAMP_FORMAT)).ok()
 }
 
-/// Get all registered parsers
+/// Get all registered parsers (built-in + custom)
 pub fn all_parsers() -> Vec<Arc<dyn LogParser>> {
-    vec![
+    let mut parsers: Vec<Arc<dyn LogParser>> = vec![
         Arc::new(WdParser),
         Arc::new(WpcParser),
         Arc::new(QConsoleParser),
-    ]
+    ];
+    parsers.extend(custom::load_custom_parsers());
+    parsers
 }
 
 /// Detect the best parser for the given content
 pub fn detect_parser(content: &str) -> Option<Arc<dyn LogParser>> {
     let parsers = all_parsers();
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
+    // Collect sample lines for generic parser fallback
+    let sample_lines: Vec<&str> = content
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && !t.starts_with('#')
+        })
+        .take(20)
+        .collect();
 
-        // Find best matching parser
+    // Try built-in + custom parsers on first non-comment line
+    if let Some(first_line) = sample_lines.first() {
         let mut best_parser: Option<Arc<dyn LogParser>> = None;
         let mut best_confidence = 0.0;
 
         for parser in &parsers {
-            let confidence = parser.detect(line);
+            let confidence = parser.detect(first_line);
             if confidence > best_confidence {
                 best_confidence = confidence;
                 best_parser = Some(Arc::clone(parser));
@@ -68,12 +85,22 @@ pub fn detect_parser(content: &str) -> Option<Arc<dyn LogParser>> {
         if best_confidence > 0.0 {
             return best_parser;
         }
-
-        // First non-comment line doesn't match any pattern
-        return None;
     }
 
-    None
+    // Before trying generic, check if any built-in parser can handle the sample lines
+    // (handles cases where first line doesn't match but subsequent lines do)
+    for parser in &parsers {
+        let match_count = sample_lines
+            .iter()
+            .filter(|l| parser.parse_line(l).is_some())
+            .count();
+        if match_count > sample_lines.len() / 3 {
+            return Some(Arc::clone(parser));
+        }
+    }
+
+    // Fall back to generic parser (learns from sample lines)
+    generic::GenericParser::learn(&sample_lines).map(|p| Arc::new(p) as Arc<dyn LogParser>)
 }
 
 /// Fallback parser that tries all parsers in order
@@ -113,16 +140,19 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
 
         // Try to parse as a new entry
         if let Some((level, timestamp)) = parser.parse_line(line) {
+            let clean = parser.clean_line(line);
+            let msg_off = parser.message_start(&clean);
             entries.push(LogEntry {
                 index,
                 level,
                 timestamp,
-                raw_line: parser.clean_line(line),
+                raw_line: clean,
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
                 pretty_continuation: None,
                 source_idx: 0,
                 source_local_idx: index,
+                message_offset: msg_off,
             });
             index += 1;
         } else if !entries.is_empty() {
@@ -154,16 +184,19 @@ pub fn parse_incremental_with_parser(
     for line in content.lines() {
         // Try to parse as a new entry
         if let Some((level, timestamp)) = parser.parse_line(line) {
+            let clean = parser.clean_line(line);
+            let msg_off = parser.message_start(&clean);
             entries.push(LogEntry {
                 index,
                 level,
                 timestamp,
-                raw_line: parser.clean_line(line),
+                raw_line: clean,
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
                 pretty_continuation: None,
                 source_idx: 0,
                 source_local_idx: index,
+                message_offset: msg_off,
             });
             index += 1;
         } else {

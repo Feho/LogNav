@@ -248,7 +248,7 @@ pub fn detect_clusters(
     let templates: Vec<String> = filtered_indices
         .iter()
         .map(|&idx| {
-            let msg = extract_message(&entries[idx].raw_line);
+            let msg = extract_message(&entries[idx].raw_line, entries[idx].message_offset);
             templatize(&msg)
         })
         .collect();
@@ -397,6 +397,7 @@ mod tests {
             pretty_continuation: None,
             source_idx: 0,
             source_local_idx: index,
+            message_offset: None,
         }
     }
 
@@ -672,6 +673,7 @@ mod gap_analysis_tests {
             pretty_continuation: None,
             source_idx: 0,
             source_local_idx: index,
+            message_offset: None,
         }
     }
 
