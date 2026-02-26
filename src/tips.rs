@@ -109,7 +109,11 @@ mod tests {
         for _ in 1..DEFAULT_TIPS.len() {
             tips.next_tip();
             let tip = tips.get_current_tip().to_string();
-            assert!(seen.insert(tip.clone()), "Tip repeated within a cycle: {}", tip);
+            assert!(
+                seen.insert(tip.clone()),
+                "Tip repeated within a cycle: {}",
+                tip
+            );
         }
     }
 

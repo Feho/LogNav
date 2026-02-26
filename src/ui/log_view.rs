@@ -173,7 +173,7 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
 fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
     let tip = app.tips_manager.get_current_tip().to_string();
 
-    let lines: Vec<Line<'_>> = vec![
+    let hints: Vec<Line<'_>> = vec![
         Line::from(vec![
             Span::styled(
                 "LogNav",
@@ -207,39 +207,51 @@ fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
             Span::styled("q       ", Style::default().fg(Color::Cyan)),
             Span::styled("Quit", Style::default().fg(Color::DarkGray)),
         ]),
-        Line::from(""),
+    ];
+
+    let tips: Vec<Line<'_>> = vec![
         Line::from(vec![
             Span::styled(
                 "Tip: ",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::DIM),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::DIM),
             ),
             Span::styled(tip, Style::default().fg(Color::Gray)),
         ]),
-        Line::from(vec![
-            Span::styled(
-                "Press Space for next tip",
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
-            ),
-        ]),
+        Line::from(vec![Span::styled(
+            "Press Space for next tip",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM),
+        )]),
     ];
 
-    let content_height = lines.len() as u16;
-    let content_width = lines
-        .iter()
-        .map(|l| l.width() as u16)
-        .max()
-        .unwrap_or(25);
-    let y = area.y + area.height.saturating_sub(content_height) / 2;
-    let x = area.x + area.width.saturating_sub(content_width) / 2;
+    let hints_height = hints.len() as u16;
+    let tips_height = tips.len() as u16;
+    let gap: u16 = 1;
+    let total_height = hints_height + gap + tips_height;
 
-    let centered = Rect {
-        x,
-        y,
-        width: content_width.min(area.width),
-        height: content_height.min(area.height),
+    let hints_width = hints.iter().map(|l| l.width() as u16).max().unwrap_or(25);
+    let tips_width = tips.iter().map(|l| l.width() as u16).max().unwrap_or(25);
+
+    let top_y = area.y + area.height.saturating_sub(total_height) / 2;
+
+    let hints_rect = Rect {
+        x: area.x + area.width.saturating_sub(hints_width) / 2,
+        y: top_y,
+        width: hints_width.min(area.width),
+        height: hints_height.min(area.height),
+    };
+    let tips_rect = Rect {
+        x: area.x + area.width.saturating_sub(tips_width) / 2,
+        y: top_y + hints_height + gap,
+        width: tips_width.min(area.width),
+        height: tips_height.min(area.height),
     };
 
-    frame.render_widget(Paragraph::new(lines), centered);
+    frame.render_widget(Paragraph::new(hints), hints_rect);
+    frame.render_widget(Paragraph::new(tips), tips_rect);
 }
 
 /// Draw log view without wrapping (manual rendering for expand support)
