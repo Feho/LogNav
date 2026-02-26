@@ -13,6 +13,23 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LineHighlight {
+    Normal,
+    Cursor,
+    VisualSelect,
+}
+
+fn line_highlight(idx: usize, selected: usize, visual_range: Option<(usize, usize)>) -> LineHighlight {
+    if idx == selected {
+        LineHighlight::Cursor
+    } else if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
+        LineHighlight::VisualSelect
+    } else {
+        LineHighlight::Normal
+    }
+}
 use regex::Regex;
 
 /// Create a colored gutter span for source file indication
@@ -267,8 +284,9 @@ fn draw_log_view_nowrap(
     let is_merged = app.is_merged();
     let cg_width = cluster_gutter_width(app);
 
-    // Build visual lines: (line, is_selected, level)
-    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
+    // Build visual lines: (line, highlight, level)
+    let mut visual_lines: Vec<(Line<'_>, LineHighlight, LogLevel)> = Vec::with_capacity(viewport_height);
+    let visual_range = app.visual_range();
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
 
@@ -287,10 +305,10 @@ fn draw_log_view_nowrap(
         if let Some((cluster_id, 0, group_len)) = cluster_info
             && is_folded
         {
-            let is_selected = current_entry_idx == app.selected_index;
+            let highlight = line_highlight(current_entry_idx, app.selected_index, visual_range);
             visual_lines.push((
                 cluster_fold_line(app, cluster_id, group_len),
-                is_selected,
+                highlight,
                 LogLevel::Info,
             ));
             terminal_row += 1;
@@ -300,7 +318,8 @@ fn draw_log_view_nowrap(
 
         let entry_idx = app.filtered_indices[current_entry_idx];
         let entry = &app.entries[entry_idx];
-        let is_selected = current_entry_idx == app.selected_index;
+        let highlight = line_highlight(current_entry_idx, app.selected_index, visual_range);
+        let is_selected = highlight == LineHighlight::Cursor;
         let is_expanded = app.is_expanded(entry_idx);
         let is_bookmarked = app.bookmarks.contains(&entry_idx);
 
@@ -379,7 +398,7 @@ fn draw_log_view_nowrap(
             spans.push(Span::styled(indicator, style));
         }
 
-        visual_lines.push((Line::from(spans), is_selected, entry.level));
+        visual_lines.push((Line::from(spans), highlight, entry.level));
         terminal_row += 1;
 
         // Add continuation lines if expanded
@@ -411,7 +430,7 @@ fn draw_log_view_nowrap(
                     &display, hl_regex, cont_style, syntax_on, ul_range,
                 ));
                 let line = Line::from(cont_spans);
-                visual_lines.push((line, false, entry.level));
+                visual_lines.push((line, highlight, entry.level));
                 terminal_row += 1;
             }
         }
@@ -420,7 +439,7 @@ fn draw_log_view_nowrap(
     }
 
     // Render each visual line
-    for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {
+    for (i, (line, highlight, level)) in visual_lines.into_iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
             break;
@@ -433,13 +452,15 @@ fn draw_log_view_nowrap(
             height: 1,
         };
 
-        let style = if is_selected {
-            Style::default()
+        let style = match highlight {
+            LineHighlight::Cursor => Style::default()
                 .bg(level_color(level))
                 .fg(Color::Black)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
+                .add_modifier(Modifier::BOLD),
+            LineHighlight::VisualSelect => Style::default()
+                .bg(Color::Indexed(238))
+                .fg(Color::White),
+            LineHighlight::Normal => Style::default(),
         };
 
         let paragraph = Paragraph::new(line).style(style);
@@ -475,8 +496,9 @@ fn draw_log_view_wrapped(
     app.ensure_selected_visible_with_height(viewport_height, viewport_width);
     let syntax_on = app.syntax_highlight;
 
-    // Build visual lines: (line, is_selected, level)
-    let mut visual_lines: Vec<(Line<'_>, bool, LogLevel)> = Vec::with_capacity(viewport_height);
+    // Build visual lines: (line, highlight, level)
+    let mut visual_lines: Vec<(Line<'_>, LineHighlight, LogLevel)> = Vec::with_capacity(viewport_height);
+    let visual_range = app.visual_range();
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
 
@@ -495,10 +517,10 @@ fn draw_log_view_wrapped(
         if let Some((cluster_id, 0, group_len)) = cluster_info
             && is_folded
         {
-            let is_selected = current_entry_idx == app.selected_index;
+            let highlight = line_highlight(current_entry_idx, app.selected_index, visual_range);
             visual_lines.push((
                 cluster_fold_line(app, cluster_id, group_len),
-                is_selected,
+                highlight,
                 LogLevel::Info,
             ));
             terminal_row += 1;
@@ -508,7 +530,8 @@ fn draw_log_view_wrapped(
 
         let entry_idx = app.filtered_indices[current_entry_idx];
         let entry = &app.entries[entry_idx];
-        let is_selected = current_entry_idx == app.selected_index;
+        let highlight = line_highlight(current_entry_idx, app.selected_index, visual_range);
+        let is_selected = highlight == LineHighlight::Cursor;
         let is_expanded = app.is_expanded(entry_idx);
         let is_bookmarked = app.bookmarks.contains(&entry_idx);
 
@@ -617,7 +640,7 @@ fn draw_log_view_wrapped(
                 Line::from(spans)
             };
 
-            visual_lines.push((line, is_selected, entry.level));
+            visual_lines.push((line, highlight, entry.level));
             terminal_row += 1;
         }
 
@@ -646,7 +669,7 @@ fn draw_log_view_wrapped(
                         &part, hl_regex, cont_style, syntax_on, ul_range,
                     ));
                     let line = Line::from(cont_spans);
-                    visual_lines.push((line, false, entry.level));
+                    visual_lines.push((line, highlight, entry.level));
                     terminal_row += 1;
                 }
             }
@@ -656,7 +679,7 @@ fn draw_log_view_wrapped(
     }
 
     // Render each visual line
-    for (i, (line, is_selected, level)) in visual_lines.into_iter().enumerate() {
+    for (i, (line, highlight, level)) in visual_lines.into_iter().enumerate() {
         let y = area.y + i as u16;
         if y >= area.y + area.height {
             break;
@@ -669,13 +692,15 @@ fn draw_log_view_wrapped(
             height: 1,
         };
 
-        let style = if is_selected {
-            Style::default()
+        let style = match highlight {
+            LineHighlight::Cursor => Style::default()
                 .bg(level_color(level))
                 .fg(Color::Black)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
+                .add_modifier(Modifier::BOLD),
+            LineHighlight::VisualSelect => Style::default()
+                .bg(Color::Indexed(238))
+                .fg(Color::White),
+            LineHighlight::Normal => Style::default(),
         };
 
         let paragraph = Paragraph::new(line).style(style);

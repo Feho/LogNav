@@ -9,9 +9,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.should_quit = true;
         }
 
-        // Esc: close search panel if open
+        // Esc: cancel visual mode, or close search panel
         (_, KeyCode::Esc) => {
-            if app.search_panel_open {
+            if app.visual_anchor.is_some() {
+                app.visual_anchor = None;
+            } else if app.search_panel_open {
                 app.close_search_panel();
             }
         }
@@ -188,7 +190,16 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.open_detail_popup();
         }
 
-        // Copy current line
+        // Visual select mode
+        (_, KeyCode::Char('v')) => {
+            if app.visual_anchor.is_some() {
+                app.visual_anchor = None;
+            } else {
+                app.visual_anchor = Some(app.selected_index);
+            }
+        }
+
+        // Copy current line (or visual selection)
         (_, KeyCode::Char('c')) => {
             app.copy_current_line();
         }

@@ -115,6 +115,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 
         MouseEventKind::Down(MouseButton::Left) => {
             app.hover_word = None;
+            app.visual_anchor = None;
 
             if !matches!(app.focus, FocusState::Normal) {
                 return;

@@ -38,6 +38,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push("Syn:OFF".to_string());
     }
 
+    // Add visual select mode indicator
+    if let Some((lo, hi)) = app.visual_range() {
+        parts.push(format!("VISUAL:{}", hi - lo + 1));
+    }
+
     // Add tail status
     if app.tail_enabled {
         parts.push("Tail".to_string());

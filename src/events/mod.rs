@@ -40,6 +40,8 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    let was_normal = matches!(app.focus, FocusState::Normal);
+
     match &app.focus {
         FocusState::Normal => normal::handle_normal_key(app, key),
         FocusState::CommandPalette { .. } => command::handle_command_palette_key(app, key),
@@ -51,6 +53,11 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::ExcludeManager { .. } => exclude_manager::handle_exclude_manager_key(app, key),
         FocusState::ExportDialog { .. } => export::handle_export_key(app, key),
         FocusState::Clusters { .. } => clusters::handle_clusters_key(app, key),
+    }
+
+    // Clear visual selection when leaving normal mode
+    if was_normal && !matches!(app.focus, FocusState::Normal) {
+        app.visual_anchor = None;
     }
 }
 

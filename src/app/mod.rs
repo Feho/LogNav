@@ -190,6 +190,7 @@ pub struct App {
     pub horizontal_scroll: usize,
     pub expanded_entries: HashSet<usize>, // Entry indices that are expanded
     pub bookmarks: HashSet<usize>,        // Entry indices that are bookmarked
+    pub visual_anchor: Option<usize>,     // Anchor index for visual selection mode
     pub viewport_height: usize,           // Last known viewport height for mouse scroll
     pub viewport_width: usize,            // Last known viewport width for mouse scroll
 
@@ -273,6 +274,7 @@ impl App {
             horizontal_scroll: 0,
             expanded_entries: HashSet::new(),
             bookmarks: HashSet::new(),
+            visual_anchor: None,
             viewport_height: 25, // Default viewport height
             viewport_width: 80,  // Default viewport width
             file_path: String::new(),
@@ -342,6 +344,7 @@ impl App {
         }
 
         if self.tail_enabled && matches!(self.focus, FocusState::Normal) {
+            self.visual_anchor = None;
             self.scroll_to_bottom();
         }
     }
@@ -1022,7 +1025,71 @@ impl App {
     }
 
     /// Copy the current entry to clipboard (includes continuation lines)
+    /// Returns (min, max) range in filtered_indices space if visual mode is active
+    pub fn visual_range(&self) -> Option<(usize, usize)> {
+        self.visual_anchor.map(|anchor| {
+            let a = anchor.min(self.selected_index);
+            let b = anchor.max(self.selected_index);
+            (a, b)
+        })
+    }
+
+    /// Copy all entries in the visual selection range
+    pub fn copy_selection(&mut self) {
+        let Some((min, max)) = self.visual_range() else {
+            return;
+        };
+
+        let mut parts = Vec::new();
+        for pos in min..=max {
+            if let Some(&entry_idx) = self.filtered_indices.get(pos)
+                && let Some(entry) = self.entries.get(entry_idx)
+            {
+                parts.push(if entry.continuation_lines.is_empty() {
+                    entry.raw_line.clone()
+                } else {
+                    let mut text = entry.raw_line.clone();
+                    for line in &entry.continuation_lines {
+                        text.push('\n');
+                        text.push_str(line);
+                    }
+                    text
+                });
+            }
+        }
+
+        let text = parts.join("\n");
+        let count = parts.len();
+
+        let result = if let Some(ref mut clipboard) = self.clipboard {
+            clipboard.set_text(&text)
+        } else {
+            match arboard::Clipboard::new() {
+                Ok(mut clipboard) => {
+                    let result = clipboard.set_text(&text);
+                    self.clipboard = Some(clipboard);
+                    result
+                }
+                Err(_) => {
+                    self.status_message = Some("Clipboard unavailable".to_string());
+                    return;
+                }
+            }
+        };
+
+        self.visual_anchor = None;
+        if result.is_ok() {
+            self.status_message = Some(format!("Copied {} lines!", count));
+        } else {
+            self.status_message = Some("Failed to copy".to_string());
+        }
+    }
+
     pub fn copy_current_line(&mut self) {
+        if self.visual_anchor.is_some() {
+            self.copy_selection();
+            return;
+        }
         // Build full text with continuation lines
         let text_to_copy = self.selected_entry().map(|e| {
             if e.continuation_lines.is_empty() {
