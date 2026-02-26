@@ -79,9 +79,9 @@ impl App {
         true
     }
 
-    /// Reset level filters to defaults (ERR/WRN/INF/DBG on, TRC/PRF off)
+    /// Reset level filters to defaults (all levels on)
     pub fn reset_level_filters(&mut self) {
-        self.level_filters = [true, true, true, true, false, false];
+        self.level_filters = [true, true, true, true, true, true];
         self.apply_filters();
     }
 

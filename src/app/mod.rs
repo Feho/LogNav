@@ -260,7 +260,7 @@ impl App {
         Self {
             entries: Vec::new(),
             filtered_indices: Vec::new(),
-            level_filters: [true, true, true, true, false, false], // ERR, WRN, INF, DBG on by default
+             level_filters: [true, true, true, true, true, true], // All levels on by default
             date_from: None,
             date_to: None,
             exclude_patterns: Vec::new(),
