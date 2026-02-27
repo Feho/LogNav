@@ -939,21 +939,32 @@ impl App {
             self.source_entry_counts[si] += 1;
         }
 
-        // Insert each new entry in timestamp order
-        for entry in new_entries {
-            let insert_pos = if let Some(ts) = entry.timestamp {
-                self.entries
-                    .partition_point(|e| e.timestamp.map(|t| t <= ts).unwrap_or(true))
-            } else {
-                // No timestamp: insert after last entry from same source
-                self.entries
-                    .iter()
-                    .rposition(|e| e.source_idx == source_idx)
-                    .map(|p| p + 1)
-                    .unwrap_or(self.entries.len())
+        // Two-pointer merge: both vecs are already sorted by timestamp.
+        // O(n+m) instead of O(n*m) from repeated Vec::insert.
+        let existing = std::mem::take(&mut self.entries);
+        let total = existing.len() + new_entries.len();
+        let mut merged = Vec::with_capacity(total);
+        let mut e_iter = existing.into_iter().peekable();
+        let mut n_iter = new_entries.into_iter().peekable();
+        loop {
+            let take_existing = match (e_iter.peek(), n_iter.peek()) {
+                (Some(e), Some(n)) => match (e.timestamp, n.timestamp) {
+                    (Some(et), Some(nt)) => et <= nt,
+                    (Some(_), None) => true,
+                    (None, Some(_)) => false,
+                    (None, None) => true,
+                },
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (None, None) => break,
             };
-            self.entries.insert(insert_pos, entry);
+            if take_existing {
+                merged.push(e_iter.next().unwrap());
+            } else {
+                merged.push(n_iter.next().unwrap());
+            }
         }
+        self.entries = merged;
 
         // Re-index all entries
         for (i, entry) in self.entries.iter_mut().enumerate() {
