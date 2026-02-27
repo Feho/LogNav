@@ -148,7 +148,7 @@ impl Theme {
             level_info: Color::Black,
             level_debug: Color::Rgb(0, 115, 115), // teal (5.7:1)
             level_trace: Color::Rgb(100, 100, 100), // medium gray (5.9:1)
-            level_profile: Color::Rgb(140, 140, 140), // dark magenta
+            level_profile: Color::Rgb(140, 140, 140), // medium gray
             level_badge_fg: Color::White,
 
             syntax_url: Color::Rgb(0, 70, 170),       // dark blue

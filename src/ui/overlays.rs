@@ -136,7 +136,7 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
     };
 
     let regex_indicator = if regex_mode {
-        Span::styled("[.*] ", Style::default().fg(theme.level_profile))
+        Span::styled("[.*] ", Style::default().fg(theme.accent))
     } else {
         Span::raw("")
     };
@@ -741,7 +741,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
     let input_label_style = Style::default().fg(input_border_color);
 
     let regex_indicator = if regex_mode {
-        Span::styled("[.*] ", Style::default().fg(theme.level_profile))
+        Span::styled("[.*] ", Style::default().fg(theme.accent))
     } else {
         Span::raw("")
     };

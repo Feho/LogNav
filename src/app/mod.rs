@@ -267,6 +267,7 @@ pub struct App {
 
     // Theme
     pub theme: Theme,
+    pub theme_overrides: HashMap<String, String>,
 }
 
 impl Default for App {
@@ -326,6 +327,7 @@ impl App {
             clusters_loading: false,
             tips_manager: TipsManager::new(),
             theme: Theme::dark(),
+            theme_overrides: HashMap::new(),
         }
     }
 
@@ -1066,7 +1068,13 @@ impl App {
                 } else {
                     "dark"
                 };
-                self.theme = Theme::from_name(new_name);
+                let mut new_theme = Theme::from_name(new_name);
+                new_theme.apply_overrides(&self.theme_overrides);
+                self.theme = new_theme;
+                // Re-color existing sources with new theme
+                for (i, source) in self.sources.iter_mut().enumerate() {
+                    source.color = self.theme.source_color(i as u8);
+                }
                 self.status_message = Some(format!("Theme: {}", self.theme.name));
             }
             CommandAction::Quit => self.should_quit = true,
