@@ -35,11 +35,14 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
                     } else {
                         // Tilde expansion
                         let expanded = if path == "~" {
-                            std::env::var("HOME").unwrap_or_else(|_| path.to_string())
-                        } else if let Some(rest) = path.strip_prefix("~/") {
-                            match std::env::var("HOME") {
-                                Ok(home) => format!("{}/{}", home, rest),
-                                Err(_) => path.to_string(),
+                            home_dir().unwrap_or_else(|| path.to_string())
+                        } else if path.starts_with("~/") || path.starts_with("~\\") {
+                            let rest = &path[2..];
+                            match home_dir() {
+                                Some(home) => {
+                                    format!("{}{}{}", home, std::path::MAIN_SEPARATOR, rest)
+                                }
+                                None => path.to_string(),
                             }
                         } else {
                             path.to_string()
@@ -256,22 +259,53 @@ pub fn handle_file_open_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+/// Case-sensitive on Unix, case-insensitive on Windows
+fn name_matches_prefix(name: &str, prefix: &str) -> bool {
+    if cfg!(windows) {
+        name.to_lowercase().starts_with(&prefix.to_lowercase())
+    } else {
+        name.starts_with(prefix)
+    }
+}
+
+/// Check if a string ends with a path separator
+fn ends_with_sep(s: &str) -> bool {
+    s.ends_with('/') || s.ends_with('\\')
+}
+
+/// Check if a string contains a path separator
+fn contains_sep(s: &str) -> bool {
+    s.contains('/') || s.contains('\\')
+}
+
+/// Get the home directory (cross-platform)
+fn home_dir() -> Option<String> {
+    // Try HOME first (Linux/macOS), then USERPROFILE (Windows)
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+}
+
 /// Compute filesystem path completions for tab completion
 fn compute_path_completions(text: &str) -> Vec<String> {
     if text.is_empty() {
         return Vec::new();
     }
 
-    // Tilde expansion
+    // Tilde expansion: handle ~, ~/, and ~\
     let (expanded, tilde_home) = if text == "~" {
-        match std::env::var("HOME") {
-            Ok(home) => (home.clone(), Some(home)),
-            Err(_) => (text.to_string(), None),
+        match home_dir() {
+            Some(home) => (home.clone(), Some(home)),
+            None => (text.to_string(), None),
         }
-    } else if let Some(rest) = text.strip_prefix("~/") {
-        match std::env::var("HOME") {
-            Ok(home) => (format!("{}/{}", home, rest), Some(home)),
-            Err(_) => (text.to_string(), None),
+    } else if text.starts_with("~/") || text.starts_with("~\\") {
+        let rest = &text[2..];
+        match home_dir() {
+            Some(home) => {
+                let sep = std::path::MAIN_SEPARATOR;
+                (format!("{}{}{}", home, sep, rest), Some(home))
+            }
+            None => (text.to_string(), None),
         }
     } else {
         (text.to_string(), None)
@@ -280,7 +314,7 @@ fn compute_path_completions(text: &str) -> Vec<String> {
     let path = std::path::Path::new(&expanded);
 
     // Split into directory to list and prefix to filter by
-    let (dir, prefix) = if expanded.ends_with('/') {
+    let (dir, prefix) = if ends_with_sep(&expanded) {
         (expanded.as_str(), "")
     } else {
         match path.file_name().and_then(|f| f.to_str()) {
@@ -299,8 +333,9 @@ fn compute_path_completions(text: &str) -> Vec<String> {
     };
 
     // Don't prepend "./" for bare filenames (no path separator in input)
-    let no_dir_prefix = dir == "." && !expanded.contains('/');
+    let no_dir_prefix = dir == "." && !contains_sep(&expanded);
 
+    let sep = std::path::MAIN_SEPARATOR;
     let mut results: Vec<String> = Vec::new();
     for entry in entries.flatten() {
         let name = match entry.file_name().into_string() {
@@ -313,21 +348,21 @@ fn compute_path_completions(text: &str) -> Vec<String> {
             continue;
         }
 
-        if !prefix.is_empty() && !name.starts_with(prefix) {
+        if !prefix.is_empty() && !name_matches_prefix(&name, prefix) {
             continue;
         }
 
         let is_dir = entry.path().is_dir();
         let mut full = if no_dir_prefix {
             name
-        } else if dir.ends_with('/') {
+        } else if ends_with_sep(dir) {
             format!("{}{}", dir, name)
         } else {
-            format!("{}/{}", dir, name)
+            format!("{}{}{}", dir, sep, name)
         };
 
         if is_dir {
-            full.push('/');
+            full.push(sep);
         }
 
         // Re-apply tilde prefix
