@@ -189,7 +189,7 @@ impl Command {
             action: CommandAction::ExportFiltered,
         },
         Command {
-            name: "Detect clusters",
+            name: "Find repeating patterns",
             shortcut: "",
             action: CommandAction::Clusters,
         },
