@@ -37,7 +37,7 @@ pub enum CommandAction {
     ClearIncludes,
     ExportFiltered,
     Clusters,
-    ToggleTheme,
+    ThemePicker,
     Quit,
 }
 
@@ -194,9 +194,9 @@ impl Command {
             action: CommandAction::Clusters,
         },
         Command {
-            name: "Toggle theme (dark/light)",
+            name: "Theme picker...",
             shortcut: "",
-            action: CommandAction::ToggleTheme,
+            action: CommandAction::ThemePicker,
         },
         Command {
             name: "Quit",

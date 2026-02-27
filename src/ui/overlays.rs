@@ -1,4 +1,5 @@
 use crate::app::{App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, QUICK_FILTERS};
+use crate::theme::{LIGHT_START_INDEX, THEME_PRESETS};
 use crate::text_utils::wrap_text;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, render_scrollbar};
@@ -920,5 +921,145 @@ pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
         };
         let error_line = Line::from(Span::styled(err, Style::default().fg(theme.error_text)));
         frame.render_widget(Paragraph::new(error_line), error_area);
+    }
+}
+
+/// Draw theme picker overlay
+pub fn draw_theme_picker(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
+    let area = centered_rect(40, 50, frame.area());
+    frame.render_widget(Clear, area);
+
+    let (selected, original_name) = match &app.focus {
+        FocusState::ThemePicker {
+            selected,
+            original_name,
+            ..
+        } => (*selected, original_name.as_str()),
+        _ => return,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme.border_style())
+        .title(" Theme ");
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut y = inner.y;
+
+    // Dark header
+    if y < inner.y + inner.height {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  Dark",
+                Style::default()
+                    .fg(theme.muted)
+                    .add_modifier(Modifier::BOLD),
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    // Dark themes
+    for (i, (id, display_name, _)) in THEME_PRESETS.iter().enumerate().take(LIGHT_START_INDEX) {
+        if y >= inner.y + inner.height {
+            break;
+        }
+        let is_selected = i == selected;
+        let is_active = *id == original_name;
+        let marker = if is_active { " \u{2022}" } else { "" };
+        let style = if is_selected {
+            theme.selected_style()
+        } else {
+            Style::default()
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("    {}{}", display_name, marker),
+                style,
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    // Spacer
+    y += 1;
+
+    // Light header
+    if y < inner.y + inner.height {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  Light",
+                Style::default()
+                    .fg(theme.muted)
+                    .add_modifier(Modifier::BOLD),
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    // Light themes
+    for (i, (id, display_name, _)) in THEME_PRESETS.iter().enumerate().skip(LIGHT_START_INDEX) {
+        if y >= inner.y + inner.height {
+            break;
+        }
+        let is_selected = i == selected;
+        let is_active = *id == original_name;
+        let marker = if is_active { " \u{2022}" } else { "" };
+        let style = if is_selected {
+            theme.selected_style()
+        } else {
+            Style::default()
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("    {}{}", display_name, marker),
+                style,
+            ))),
+            Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    // Help text at bottom
+    let help_y = inner.y + inner.height.saturating_sub(1);
+    if help_y > y {
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "  j/k: select | Enter: confirm | Esc: cancel",
+                Style::default().fg(theme.muted),
+            ))),
+            Rect {
+                x: inner.x,
+                y: help_y,
+                width: inner.width,
+                height: 1,
+            },
+        );
     }
 }

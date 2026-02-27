@@ -14,6 +14,7 @@ mod mouse;
 mod normal;
 mod search;
 mod search_panel;
+mod theme_picker;
 
 pub use search::flush_search;
 
@@ -53,6 +54,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::FilterManager { .. } => filter_manager::handle_filter_manager_key(app, key),
         FocusState::ExportDialog { .. } => export::handle_export_key(app, key),
         FocusState::Clusters { .. } => clusters::handle_clusters_key(app, key),
+        FocusState::ThemePicker { .. } => theme_picker::handle_theme_picker_key(app, key),
     }
 
     // Clear visual selection when leaving normal mode
@@ -116,7 +118,7 @@ fn handle_paste(app: &mut App, text: String) {
             }
             *selected = 0;
         }
-        FocusState::DateFilter { .. } | FocusState::Clusters { .. } => {
+        FocusState::DateFilter { .. } | FocusState::Clusters { .. } | FocusState::ThemePicker { .. } => {
             // Not useful for these overlays
         }
         FocusState::ExportDialog { input, error, .. } => {

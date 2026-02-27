@@ -58,6 +58,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         FocusState::FilterManager { .. } => overlays::draw_filter_manager(frame, app),
         FocusState::ExportDialog { .. } => overlays::draw_export_dialog(frame, app),
         FocusState::Clusters { .. } => clusters_panel::draw_clusters(frame, app),
+        FocusState::ThemePicker { .. } => overlays::draw_theme_picker(frame, app),
     }
 }
 

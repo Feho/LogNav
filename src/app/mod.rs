@@ -122,6 +122,11 @@ pub enum FocusState {
         selected: usize,
         scroll_offset: usize,
     },
+    ThemePicker {
+        selected: usize,
+        original_theme: Theme,
+        original_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -501,6 +506,21 @@ impl App {
     /// Open help dialog
     pub fn open_help(&mut self) {
         self.focus = FocusState::Help { scroll_offset: 0 };
+    }
+
+    /// Open theme picker overlay
+    pub fn open_theme_picker(&mut self) {
+        use crate::theme::THEME_PRESETS;
+        let current_name = self.theme.name.clone();
+        let selected = THEME_PRESETS
+            .iter()
+            .position(|(id, _, _)| *id == current_name)
+            .unwrap_or(0);
+        self.focus = FocusState::ThemePicker {
+            selected,
+            original_theme: self.theme.clone(),
+            original_name: current_name,
+        };
     }
 
     /// Run cluster detection on filtered entries and open overlay.
@@ -1064,25 +1084,7 @@ impl App {
             CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::ExportFiltered => self.open_export_dialog(),
             CommandAction::Clusters => self.open_clusters(),
-            CommandAction::ToggleTheme => {
-                let new_name = if self.theme.name == "dark" {
-                    "light"
-                } else {
-                    "dark"
-                };
-                let mut new_theme = Theme::from_name(new_name);
-                let overrides = match new_name {
-                    "light" => &self.light_overrides,
-                    _ => &self.dark_overrides,
-                };
-                new_theme.apply_overrides(overrides);
-                self.theme = new_theme;
-                // Re-color existing sources with new theme
-                for (i, source) in self.sources.iter_mut().enumerate() {
-                    source.color = self.theme.source_color(i as u8);
-                }
-                self.status_message = Some(format!("Theme: {}", self.theme.name));
-            }
+            CommandAction::ThemePicker => self.open_theme_picker(),
             CommandAction::Quit => self.should_quit = true,
         }
     }
