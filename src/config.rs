@@ -18,9 +18,10 @@ pub struct Config {
     /// Theme preset name: "dark" (default), "light"
     #[serde(default = "default_theme_name")]
     pub theme: String,
-    /// Per-color overrides: key = color slot name, value = color string
     #[serde(default)]
-    pub theme_overrides: HashMap<String, String>,
+    pub dark_overrides: HashMap<String, String>,
+    #[serde(default)]
+    pub light_overrides: HashMap<String, String>,
 }
 
 fn default_theme_name() -> String {

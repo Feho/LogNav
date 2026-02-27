@@ -1,21 +1,15 @@
 use crate::log_entry::LogLevel;
 use ratatui::style::{Color, Modifier, Style};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// User-facing theme configuration (serializable)
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ThemeConfig {
     /// Theme preset name: "dark" (default), "light"
-    #[serde(default = "default_theme_name")]
     pub theme: String,
-    /// Per-color overrides: key = color slot name, value = color string
-    #[serde(default)]
-    pub theme_overrides: HashMap<String, String>,
-}
-
-fn default_theme_name() -> String {
-    "dark".to_string()
+    /// Per-theme overrides
+    pub dark_overrides: HashMap<String, String>,
+    pub light_overrides: HashMap<String, String>,
 }
 
 /// Runtime theme with resolved Color values
@@ -195,10 +189,14 @@ impl Theme {
         }
     }
 
-    /// Load theme from config: resolve preset then apply overrides
+    /// Load theme from config: resolve preset then apply per-theme overrides
     pub fn from_config(config: &ThemeConfig) -> Self {
         let mut theme = Self::from_name(&config.theme);
-        theme.apply_overrides(&config.theme_overrides);
+        let overrides = match config.theme.as_str() {
+            "light" => &config.light_overrides,
+            _ => &config.dark_overrides,
+        };
+        theme.apply_overrides(overrides);
         theme
     }
 
@@ -428,7 +426,8 @@ mod tests {
     fn test_from_config() {
         let config = ThemeConfig {
             theme: "light".to_string(),
-            theme_overrides: HashMap::new(),
+            dark_overrides: HashMap::new(),
+            light_overrides: HashMap::new(),
         };
         let t = Theme::from_config(&config);
         assert_eq!(t.name, "light");

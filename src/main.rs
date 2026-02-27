@@ -52,10 +52,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new();
     app.recent_files = config.recent_files.clone();
     app.syntax_highlight = config.syntax_highlight.unwrap_or(true);
-    app.theme_overrides = config.theme_overrides.clone();
+    app.dark_overrides = config.dark_overrides.clone();
+    app.light_overrides = config.light_overrides.clone();
     app.theme = theme::Theme::from_config(&theme::ThemeConfig {
         theme: config.theme.clone(),
-        theme_overrides: config.theme_overrides.clone(),
+        dark_overrides: config.dark_overrides.clone(),
+        light_overrides: config.light_overrides.clone(),
     });
 
     // Create tailer channel (shared across all tailers)
@@ -114,7 +116,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Save config — save per-source bookmarks
     config.syntax_highlight = Some(app.syntax_highlight);
     config.theme = app.theme.name.clone();
-    config.theme_overrides = app.theme_overrides.clone();
+    config.dark_overrides = app.dark_overrides.clone();
+    config.light_overrides = app.light_overrides.clone();
     save_bookmarks_for_sources(&app, &mut config);
     let _ = config.save();
 

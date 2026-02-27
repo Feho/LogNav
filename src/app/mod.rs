@@ -267,7 +267,8 @@ pub struct App {
 
     // Theme
     pub theme: Theme,
-    pub theme_overrides: HashMap<String, String>,
+    pub dark_overrides: HashMap<String, String>,
+    pub light_overrides: HashMap<String, String>,
 }
 
 impl Default for App {
@@ -327,7 +328,8 @@ impl App {
             clusters_loading: false,
             tips_manager: TipsManager::new(),
             theme: Theme::dark(),
-            theme_overrides: HashMap::new(),
+            dark_overrides: HashMap::new(),
+            light_overrides: HashMap::new(),
         }
     }
 
@@ -1069,7 +1071,11 @@ impl App {
                     "dark"
                 };
                 let mut new_theme = Theme::from_name(new_name);
-                new_theme.apply_overrides(&self.theme_overrides);
+                let overrides = match new_name {
+                    "light" => &self.light_overrides,
+                    _ => &self.dark_overrides,
+                };
+                new_theme.apply_overrides(overrides);
                 self.theme = new_theme;
                 // Re-color existing sources with new theme
                 for (i, source) in self.sources.iter_mut().enumerate() {
