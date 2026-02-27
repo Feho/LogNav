@@ -168,6 +168,30 @@ impl TextInput {
         self.cursor = new_pos;
     }
 
+    /// Render with optional placeholder text shown when input is empty.
+    pub fn render_with_placeholder(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        prefix: &str,
+        prefix_style: Style,
+        cursor_style: Style,
+        active: bool,
+        placeholder: &str,
+        placeholder_style: Style,
+    ) {
+        if self.text.is_empty() && !placeholder.is_empty() && active {
+            let spans = vec![
+                Span::styled(prefix, prefix_style),
+                Span::styled(" ", cursor_style),
+                Span::styled(placeholder, placeholder_style),
+            ];
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
+            return;
+        }
+        self.render(frame, area, prefix, prefix_style, cursor_style, active);
+    }
+
     /// Render the input text with block cursor into the given area.
     ///
     /// `prefix` is rendered before the text (e.g. "Path: ", "> ", " / ").

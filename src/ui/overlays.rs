@@ -392,15 +392,17 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Path input with cursor
+    // Path input with cursor and placeholder
     let input_area = Rect { height: 1, ..inner };
-    input.render(
+    input.render_with_placeholder(
         frame,
         input_area,
         "Path: ",
         Style::default().fg(theme.accent),
         theme.cursor_style(),
         true,
+        "Type a path or drag and drop a file...",
+        Style::default().fg(theme.muted),
     );
 
     // Error message
@@ -901,15 +903,17 @@ pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Path input with cursor
+    // Path input with cursor and placeholder
     let input_area = Rect { height: 1, ..inner };
-    input.render(
+    input.render_with_placeholder(
         frame,
         input_area,
         "Path: ",
         Style::default().fg(theme.accent),
         theme.cursor_style(),
         true,
+        "Type a path or drag and drop a file...",
+        Style::default().fg(theme.muted),
     );
 
     // Error message

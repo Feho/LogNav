@@ -24,6 +24,7 @@ const DEFAULT_TIPS: &[&str] = &[
     "Tab completion works in the file open dialog — press Tab to cycle matches",
     "Use the command palette to detect repeated log clusters and patterns",
     "Press Space on a cluster annotation to fold/unfold repeated entries",
+    "You can drag and drop a file onto the window to open it",
 ];
 
 #[derive(Debug, Clone)]
