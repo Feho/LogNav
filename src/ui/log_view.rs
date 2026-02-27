@@ -430,7 +430,13 @@ fn draw_log_view_nowrap(
                     &display, hl_regex, cont_style, syntax_on, ul_range,
                 ));
                 let line = Line::from(cont_spans);
-                visual_lines.push((line, highlight, entry.level));
+                // Highlight continuation lines only in visual select, not for cursor
+                let cont_highlight = if visual_range.is_some_and(|(lo, hi)| current_entry_idx >= lo && current_entry_idx <= hi) {
+                    LineHighlight::VisualSelect
+                } else {
+                    LineHighlight::Normal
+                };
+                visual_lines.push((line, cont_highlight, entry.level));
                 terminal_row += 1;
             }
         }
@@ -669,7 +675,13 @@ fn draw_log_view_wrapped(
                         &part, hl_regex, cont_style, syntax_on, ul_range,
                     ));
                     let line = Line::from(cont_spans);
-                    visual_lines.push((line, highlight, entry.level));
+                    // Highlight continuation lines only in visual select, not for cursor
+                    let cont_highlight = if visual_range.is_some_and(|(lo, hi)| current_entry_idx >= lo && current_entry_idx <= hi) {
+                        LineHighlight::VisualSelect
+                    } else {
+                        LineHighlight::Normal
+                    };
+                    visual_lines.push((line, cont_highlight, entry.level));
                     terminal_row += 1;
                 }
             }
