@@ -89,6 +89,17 @@ impl App {
         true
     }
 
+    /// Reset all filters (levels, date, search, exclude, include, search panel)
+    pub fn reset_all_filters(&mut self) {
+        self.level_filters = [true, true, true, true, true, true];
+        self.date_from = None;
+        self.date_to = None;
+        self.exclude_patterns.clear();
+        self.include_patterns.clear();
+        self.search.clear();
+        self.close_search_panel();
+    }
+
     /// Reset level filters to defaults (all levels on)
     pub fn reset_level_filters(&mut self) {
         self.level_filters = [true, true, true, true, true, true];

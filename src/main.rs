@@ -245,6 +245,7 @@ async fn run_app(
             }
             tailers.clear();
             app.remove_all_sources();
+            app.reset_all_filters();
             app.set_primary_source(&path);
 
             let mut new_tailer = LogTailer::new(&path, 0, tailer_tx.clone());
