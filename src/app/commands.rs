@@ -33,6 +33,8 @@ pub enum CommandAction {
     VisualSelect,
     ExcludeManager,
     ClearExcludes,
+    IncludeManager,
+    ClearIncludes,
     ExportFiltered,
     Clusters,
     Quit,
@@ -169,6 +171,16 @@ impl Command {
             name: "Clear exclude filters",
             shortcut: "X",
             action: CommandAction::ClearExcludes,
+        },
+        Command {
+            name: "Include filters...",
+            shortcut: "i",
+            action: CommandAction::IncludeManager,
+        },
+        Command {
+            name: "Clear include filters",
+            shortcut: "I",
+            action: CommandAction::ClearIncludes,
         },
         Command {
             name: "Export filtered results...",

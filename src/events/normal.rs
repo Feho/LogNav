@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, FilterKind};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Handle keys in normal mode
@@ -206,14 +206,26 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         // Open exclude filter manager
         (_, KeyCode::Char('x')) => {
-            app.open_exclude_manager();
+            app.open_filter_manager(FilterKind::Exclude);
         }
 
         // Clear all exclude filters
         (KeyModifiers::SHIFT, KeyCode::Char('X')) => {
             let count = app.exclude_patterns.len();
-            app.clear_excludes();
+            app.clear_filters(FilterKind::Exclude);
             app.status_message = Some(format!("Cleared {} exclude filter(s)", count));
+        }
+
+        // Open include filter manager
+        (_, KeyCode::Char('i')) => {
+            app.open_filter_manager(FilterKind::Include);
+        }
+
+        // Clear all include filters
+        (KeyModifiers::SHIFT, KeyCode::Char('I')) => {
+            let count = app.include_patterns.len();
+            app.clear_filters(FilterKind::Include);
+            app.status_message = Some(format!("Cleared {} include filter(s)", count));
         }
 
         _ => {}

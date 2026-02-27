@@ -6,9 +6,9 @@ mod clusters;
 mod command;
 mod date_filter;
 mod detail;
-mod exclude_manager;
 mod export;
 mod file_open;
+mod filter_manager;
 mod help;
 mod mouse;
 mod normal;
@@ -50,7 +50,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         FocusState::FileOpen { .. } => file_open::handle_file_open_key(app, key),
         FocusState::Detail { .. } => detail::handle_detail_key(app, key),
         FocusState::Help { .. } => help::handle_help_key(app, key),
-        FocusState::ExcludeManager { .. } => exclude_manager::handle_exclude_manager_key(app, key),
+        FocusState::FilterManager { .. } => filter_manager::handle_filter_manager_key(app, key),
         FocusState::ExportDialog { .. } => export::handle_export_key(app, key),
         FocusState::Clusters { .. } => clusters::handle_clusters_key(app, key),
     }
@@ -105,7 +105,7 @@ fn handle_paste(app: &mut App, text: String) {
             }
             app.search_dirty = Some(Instant::now());
         }
-        FocusState::ExcludeManager { input, .. } => {
+        FocusState::FilterManager { input, .. } => {
             for c in text.trim().chars() {
                 input.insert_char(c);
             }

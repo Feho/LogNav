@@ -27,10 +27,10 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     *selected_recent = selected_recent.saturating_sub(3);
                     return;
                 }
-                FocusState::ExcludeManager {
+                FocusState::FilterManager {
                     selected, focus, ..
                 } => {
-                    if *focus == crate::app::ExcludeManagerFocus::List {
+                    if *focus == crate::app::FilterManagerFocus::List {
                         *selected = selected.saturating_sub(3);
                     }
                     return;
@@ -61,7 +61,10 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 0
             };
             let recent_count = app.recent_files.len();
-            let exclude_count = app.exclude_patterns.len();
+            let filter_count = match &app.focus {
+                FocusState::FilterManager { kind, .. } => app.filter_patterns(*kind).len(),
+                _ => 0,
+            };
             let cluster_count = app.clusters.len();
             match &mut app.focus {
                 FocusState::Help { scroll_offset } => {
@@ -86,11 +89,11 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     }
                     return;
                 }
-                FocusState::ExcludeManager {
+                FocusState::FilterManager {
                     selected, focus, ..
                 } => {
-                    if *focus == crate::app::ExcludeManagerFocus::List && exclude_count > 0 {
-                        *selected = (*selected + 3).min(exclude_count - 1);
+                    if *focus == crate::app::FilterManagerFocus::List && filter_count > 0 {
+                        *selected = (*selected + 3).min(filter_count - 1);
                     }
                     return;
                 }
@@ -179,7 +182,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     word_at_click(app, entry_idx, clicked_row, visual_row, clicked_col)
                 && !word.is_empty()
             {
-                if let Some(err) = app.add_exclude(&word, false) {
+                if let Some(err) = app.add_filter(crate::app::FilterKind::Exclude, &word, false) {
                     app.status_message = Some(format!("Invalid exclude: {}", err));
                 } else {
                     app.status_message = Some(format!("Exclude filter added: '{}'", word));

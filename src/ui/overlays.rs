@@ -1,4 +1,6 @@
-use crate::app::{App, DateFilterFocus, ExcludeManagerFocus, FocusState, QUICK_FILTERS};
+use crate::app::{
+    App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, QUICK_FILTERS,
+};
 use crate::text_utils::wrap_text;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, level_color, render_scrollbar};
@@ -517,6 +519,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  0         Reset level filters to defaults"),
         Line::from("  Ctrl+D    Date range filter"),
         Line::from("  x/X       Exclude filter manager / clear all excludes"),
+        Line::from("  i/I       Include filter manager / clear all includes"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "VIEW",
@@ -661,19 +664,21 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
     render_scrollbar(frame, inner, scroll, total_lines);
 }
 
-/// Draw exclude filter manager overlay
-pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
+/// Draw filter manager overlay (shared by exclude and include)
+pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
     let area = centered_rect(50, 55, frame.area());
     frame.render_widget(Clear, area);
 
-    let (input, selected, regex_mode, regex_error, focus) = match &app.focus {
-        FocusState::ExcludeManager {
+    let (kind, input, selected, regex_mode, regex_error, focus) = match &app.focus {
+        FocusState::FilterManager {
+            kind,
             input,
             selected,
             regex_mode,
             regex_error,
             focus,
         } => (
+            *kind,
             input,
             *selected,
             *regex_mode,
@@ -683,14 +688,31 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         _ => return,
     };
 
-    let input_focused = focus == ExcludeManagerFocus::Input;
-    let list_focused = focus == ExcludeManagerFocus::List;
+    let input_focused = focus == FilterManagerFocus::Input;
+    let list_focused = focus == FilterManagerFocus::List;
 
-    let border_color = Color::Cyan;
+    // Kind-specific styling
+    let (border_color, title, prefix, help_line2) = match kind {
+        FilterKind::Exclude => (
+            Color::Cyan,
+            " Exclude Filters ",
+            "  Exclude: ",
+            "  Esc: close | Alt+Click word in log to exclude",
+        ),
+        FilterKind::Include => (
+            Color::Green,
+            " Include Filters ",
+            "  Include: ",
+            "  Esc: close | Only matching lines are shown",
+        ),
+    };
+
+    let patterns = app.filter_patterns(kind);
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
-        .title(" Exclude Filters ");
+        .title(title);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -711,8 +733,6 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         Span::raw("")
     };
 
-    // Build the input line with cursor
-    let prefix = "  Exclude: ";
     let regex_prefix_len = if regex_mode { 5 } else { 0 };
     let available = inner
         .width
@@ -758,7 +778,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    let count = app.exclude_patterns.len();
+    let count = patterns.len();
     let header_text = if count == 0 {
         "  Active filters: (none)".to_string()
     } else {
@@ -777,12 +797,12 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         y += 1;
     }
 
-    // List of exclude patterns
+    // List of patterns
     let list_area = Rect {
         x: inner.x,
         y,
         width: inner.width,
-        height: inner.height.saturating_sub(y - inner.y).saturating_sub(2), // reserve 2 for help
+        height: inner.height.saturating_sub(y - inner.y).saturating_sub(2),
     };
 
     if count > 0 {
@@ -793,19 +813,18 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
             selected.saturating_sub(visible_height.saturating_sub(1))
         };
 
-        let items: Vec<ListItem> = app
-            .exclude_patterns
+        let items: Vec<ListItem> = patterns
             .iter()
             .enumerate()
             .skip(scroll)
             .take(visible_height)
-            .map(|(i, ep)| {
+            .map(|(i, fp)| {
                 let style = if list_focused && i == selected {
-                    Style::default().bg(Color::Cyan).fg(Color::Black)
+                    Style::default().bg(border_color).fg(Color::Black)
                 } else {
                     Style::default()
                 };
-                ListItem::new(format!("    {}", ep.query)).style(style)
+                ListItem::new(format!("    {}", fp.query)).style(style)
             })
             .collect();
 
@@ -835,7 +854,7 @@ pub fn draw_exclude_manager(frame: &mut Frame, app: &App) {
         );
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "  Esc: close | Alt+Click word in log to exclude",
+                help_line2,
                 Style::default().fg(Color::DarkGray),
             ))),
             Rect {

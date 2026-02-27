@@ -77,6 +77,15 @@ impl App {
             return false;
         }
 
+        if !self.include_patterns.is_empty()
+            && !self
+                .include_patterns
+                .iter()
+                .any(|ip| ip.regex.is_match(entry.searchable_text()))
+        {
+            return false;
+        }
+
         true
     }
 

@@ -68,6 +68,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push(format!("Exclude:{}", app.exclude_patterns.len()));
     }
 
+    // Add include filter count if active
+    if !app.include_patterns.is_empty() {
+        parts.push(format!("Include:{}", app.include_patterns.len()));
+    }
+
     // If there's a status message, show it instead of normal status
     let left = if let Some(ref msg) = app.status_message {
         format!(" {} ", msg)
@@ -93,7 +98,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::FileOpen { .. } => "Tab:fill | Enter:open | Esc:cancel ",
         FocusState::Detail { .. } => "j/k:scroll | Esc:close ",
         FocusState::Help { .. } => "j/k:scroll | Esc/q:close ",
-        FocusState::ExcludeManager { .. } => "Tab:switch | Enter:add | d:remove | Esc:close ",
+        FocusState::FilterManager { .. } => "Tab:switch | Enter:add | d:remove | Esc:close ",
         FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
         FocusState::Clusters { .. } => "j/k:navigate | Enter:jump | Esc:close ",
     };

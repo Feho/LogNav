@@ -108,12 +108,13 @@ pub enum FocusState {
     Help {
         scroll_offset: usize,
     },
-    ExcludeManager {
+    FilterManager {
+        kind: FilterKind,
         input: TextInput,
         selected: usize,
         regex_mode: bool,
         regex_error: Option<String>,
-        focus: ExcludeManagerFocus,
+        focus: FilterManagerFocus,
     },
     ExportDialog {
         input: TextInput,
@@ -123,12 +124,6 @@ pub enum FocusState {
         selected: usize,
         scroll_offset: usize,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExcludeManagerFocus {
-    Input,
-    List,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,19 +149,41 @@ pub struct HoverWord {
     pub char_end: usize,   // exclusive end
 }
 
-/// An exclude filter: hides lines matching the pattern
+/// A filter pattern used by both exclude and include filters
 #[derive(Clone)]
-pub struct ExcludePattern {
+pub struct FilterPattern {
     pub query: String,
     pub regex: Regex,
 }
 
-impl fmt::Debug for ExcludePattern {
+impl fmt::Debug for FilterPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ExcludePattern")
+        f.debug_struct("FilterPattern")
             .field("query", &self.query)
             .finish()
     }
+}
+
+/// Whether a filter manager is for exclude or include patterns
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterKind {
+    Exclude,
+    Include,
+}
+
+impl FilterKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            FilterKind::Exclude => "Exclude",
+            FilterKind::Include => "Include",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterManagerFocus {
+    Input,
+    List,
 }
 
 pub struct App {
@@ -178,7 +195,8 @@ pub struct App {
     pub level_filters: [bool; 6], // ERR, WRN, INF, DBG, TRC, PRF
     pub date_from: Option<NaiveDateTime>,
     pub date_to: Option<NaiveDateTime>,
-    pub exclude_patterns: Vec<ExcludePattern>,
+    pub exclude_patterns: Vec<FilterPattern>,
+    pub include_patterns: Vec<FilterPattern>,
 
     // UI state
     pub scroll_offset: usize,
@@ -265,6 +283,7 @@ impl App {
             date_from: None,
             date_to: None,
             exclude_patterns: Vec::new(),
+            include_patterns: Vec::new(),
             scroll_offset: 0,
             selected_index: 0,
             focus: FocusState::Normal,
@@ -608,14 +627,15 @@ impl App {
         }
     }
 
-    /// Open exclude filter manager overlay
-    pub fn open_exclude_manager(&mut self) {
-        self.focus = FocusState::ExcludeManager {
+    /// Open filter manager overlay for given kind
+    pub fn open_filter_manager(&mut self, kind: FilterKind) {
+        self.focus = FocusState::FilterManager {
+            kind,
             input: TextInput::new(),
             selected: 0,
             regex_mode: false,
             regex_error: None,
-            focus: ExcludeManagerFocus::Input,
+            focus: FilterManagerFocus::Input,
         };
     }
 
@@ -690,8 +710,24 @@ impl App {
         self.search.regex = None;
     }
 
-    /// Add an exclude filter pattern. Returns error string on invalid regex.
-    pub fn add_exclude(&mut self, query: &str, regex_mode: bool) -> Option<String> {
+    /// Get mutable reference to filter patterns by kind
+    pub fn filter_patterns_mut(&mut self, kind: FilterKind) -> &mut Vec<FilterPattern> {
+        match kind {
+            FilterKind::Exclude => &mut self.exclude_patterns,
+            FilterKind::Include => &mut self.include_patterns,
+        }
+    }
+
+    /// Get reference to filter patterns by kind
+    pub fn filter_patterns(&self, kind: FilterKind) -> &[FilterPattern] {
+        match kind {
+            FilterKind::Exclude => &self.exclude_patterns,
+            FilterKind::Include => &self.include_patterns,
+        }
+    }
+
+    /// Add a filter pattern. Returns error string on invalid regex.
+    pub fn add_filter(&mut self, kind: FilterKind, query: &str, regex_mode: bool) -> Option<String> {
         if query.is_empty() {
             return None;
         }
@@ -702,7 +738,7 @@ impl App {
         };
         match Regex::new(&pattern) {
             Ok(regex) => {
-                self.exclude_patterns.push(ExcludePattern {
+                self.filter_patterns_mut(kind).push(FilterPattern {
                     query: query.to_string(),
                     regex,
                 });
@@ -713,18 +749,20 @@ impl App {
         }
     }
 
-    /// Remove a single exclude filter by index
-    pub fn remove_exclude(&mut self, index: usize) {
-        if index < self.exclude_patterns.len() {
-            self.exclude_patterns.remove(index);
+    /// Remove a single filter by index
+    pub fn remove_filter(&mut self, kind: FilterKind, index: usize) {
+        let patterns = self.filter_patterns_mut(kind);
+        if index < patterns.len() {
+            patterns.remove(index);
             self.apply_filters();
         }
     }
 
-    /// Clear all exclude filters
-    pub fn clear_excludes(&mut self) {
-        if !self.exclude_patterns.is_empty() {
-            self.exclude_patterns.clear();
+    /// Clear all filters of a given kind
+    pub fn clear_filters(&mut self, kind: FilterKind) {
+        let patterns = self.filter_patterns_mut(kind);
+        if !patterns.is_empty() {
+            patterns.clear();
             self.apply_filters();
         }
     }
@@ -987,13 +1025,19 @@ impl App {
             CommandAction::ClearBookmarks => self.clear_bookmarks(),
             CommandAction::ClearExcludes => {
                 let count = self.exclude_patterns.len();
-                self.clear_excludes();
+                self.clear_filters(FilterKind::Exclude);
                 self.status_message = Some(format!("Cleared {} exclude filter(s)", count));
             }
             CommandAction::VisualSelect => {
                 self.visual_anchor = Some(self.selected_index);
             }
-            CommandAction::ExcludeManager => self.open_exclude_manager(),
+            CommandAction::ExcludeManager => self.open_filter_manager(FilterKind::Exclude),
+            CommandAction::IncludeManager => self.open_filter_manager(FilterKind::Include),
+            CommandAction::ClearIncludes => {
+                let count = self.include_patterns.len();
+                self.clear_filters(FilterKind::Include);
+                self.status_message = Some(format!("Cleared {} include filter(s)", count));
+            }
             CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::ExportFiltered => self.open_export_dialog(),
             CommandAction::Clusters => self.open_clusters(),
