@@ -1,5 +1,5 @@
-use super::common::map_level_str;
 use super::LogParser;
+use super::common::map_level_str;
 use crate::log_entry::LogLevel;
 use chrono::NaiveDateTime;
 use directories::ProjectDirs;

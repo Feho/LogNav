@@ -1,4 +1,4 @@
-use super::{parse_timestamp, LogParser};
+use super::{LogParser, parse_timestamp};
 use crate::log_entry::LogLevel;
 use chrono::NaiveDateTime;
 use regex::Regex;

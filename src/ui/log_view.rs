@@ -1,15 +1,15 @@
-use crate::app::SOURCE_COLORS;
 use crate::app::{App, FocusState};
 use crate::clusters::display_template;
 use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
+use crate::theme::Theme;
 use crate::ui::extract_message;
 use crate::ui::syntax::styled_spans;
-use crate::ui::{LINE_PREFIX_WIDTH, level_color, level_style, render_scrollbar};
+use crate::ui::{LINE_PREFIX_WIDTH, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -21,7 +21,11 @@ enum LineHighlight {
     VisualSelect,
 }
 
-fn line_highlight(idx: usize, selected: usize, visual_range: Option<(usize, usize)>) -> LineHighlight {
+fn line_highlight(
+    idx: usize,
+    selected: usize,
+    visual_range: Option<(usize, usize)>,
+) -> LineHighlight {
     if idx == selected {
         LineHighlight::Cursor
     } else if visual_range.is_some_and(|(lo, hi)| idx >= lo && idx <= hi) {
@@ -33,8 +37,8 @@ fn line_highlight(idx: usize, selected: usize, visual_range: Option<(usize, usiz
 use regex::Regex;
 
 /// Create a colored gutter span for source file indication
-fn source_gutter_span(source_idx: u8) -> Span<'static> {
-    let color = SOURCE_COLORS[source_idx as usize % SOURCE_COLORS.len()];
+fn source_gutter_span(source_idx: u8, theme: &Theme) -> Span<'static> {
+    let color = theme.source_color(source_idx);
     Span::styled("▌", Style::default().fg(color))
 }
 
@@ -87,8 +91,9 @@ fn cluster_gutter_span(
     offset: usize,
     occ_len: usize,
     width: usize,
+    theme: &Theme,
 ) -> Span<'static> {
-    let style = Style::default().fg(Color::DarkGray);
+    let style = Style::default().fg(theme.cluster_gutter);
     if offset == 0 {
         let count = app.clusters[cluster_id].count;
         let label = format!("▼{}×", count);
@@ -110,12 +115,13 @@ fn cluster_gutter_blank(width: usize) -> Span<'static> {
 fn cluster_continuation_span(
     cluster_info: Option<(usize, usize, usize)>,
     cg_width: usize,
+    theme: &Theme,
 ) -> Span<'static> {
     let is_last = cluster_info.is_some_and(|(_, off, gl)| off == gl - 1);
     if cluster_info.is_some() && !is_last {
         Span::styled(
             format!("│{:<width$}", "", width = cg_width - 1),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.cluster_gutter),
         )
     } else {
         cluster_gutter_blank(cg_width)
@@ -135,7 +141,7 @@ fn cluster_fold_line(app: &App, cluster_id: usize, occurrence_len: usize) -> Lin
     } else {
         format!("▶ {}× {} ({} lines hidden)", cluster.count, tmpl, hidden)
     };
-    Line::from(Span::styled(text, Style::default().fg(Color::DarkGray)))
+    Line::from(Span::styled(text, Style::default().fg(app.theme.muted)))
 }
 
 /// Check if a filtered entry is a folded interior (should be skipped)
@@ -188,41 +194,40 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
 
 /// Draw start screen when no file is loaded
 fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
+    let theme = &app.theme;
     let tip = app.tips_manager.get_current_tip().to_string();
 
     let hints: Vec<Line<'_>> = vec![
         Line::from(vec![
             Span::styled(
                 "LogNav",
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" v{}", env!("CARGO_PKG_VERSION")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.muted),
             ),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("o       ", Style::default().fg(Color::Cyan)),
-            Span::styled("Open file", Style::default().fg(Color::DarkGray)),
+            Span::styled("o       ", Style::default().fg(theme.accent)),
+            Span::styled("Open file", Style::default().fg(theme.muted)),
         ]),
         Line::from(vec![
-            Span::styled("M       ", Style::default().fg(Color::Cyan)),
-            Span::styled("Merge file", Style::default().fg(Color::DarkGray)),
+            Span::styled("M       ", Style::default().fg(theme.accent)),
+            Span::styled("Merge file", Style::default().fg(theme.muted)),
         ]),
         Line::from(vec![
-            Span::styled("Ctrl+p  ", Style::default().fg(Color::Cyan)),
-            Span::styled("Command palette", Style::default().fg(Color::DarkGray)),
+            Span::styled("Ctrl+p  ", Style::default().fg(theme.accent)),
+            Span::styled("Command palette", Style::default().fg(theme.muted)),
         ]),
         Line::from(vec![
-            Span::styled("?       ", Style::default().fg(Color::Cyan)),
-            Span::styled("Help", Style::default().fg(Color::DarkGray)),
+            Span::styled("?       ", Style::default().fg(theme.accent)),
+            Span::styled("Help", Style::default().fg(theme.muted)),
         ]),
         Line::from(vec![
-            Span::styled("q       ", Style::default().fg(Color::Cyan)),
-            Span::styled("Quit", Style::default().fg(Color::DarkGray)),
+            Span::styled("q       ", Style::default().fg(theme.accent)),
+            Span::styled("Quit", Style::default().fg(theme.muted)),
         ]),
     ];
 
@@ -231,16 +236,14 @@ fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(
                 "Tip: ",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.warning_text)
                     .add_modifier(Modifier::DIM),
             ),
-            Span::styled(tip, Style::default().fg(Color::Gray)),
+            Span::styled(tip, Style::default().fg(theme.muted)),
         ]),
         Line::from(vec![Span::styled(
             "Press Space for next tip",
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::DIM),
+            Style::default().fg(theme.muted).add_modifier(Modifier::DIM),
         )]),
     ];
 
@@ -283,9 +286,11 @@ fn draw_log_view_nowrap(
     let syntax_on = app.syntax_highlight;
     let is_merged = app.is_merged();
     let cg_width = cluster_gutter_width(app);
+    let theme = &app.theme;
 
     // Build visual lines: (line, highlight, level)
-    let mut visual_lines: Vec<(Line<'_>, LineHighlight, LogLevel)> = Vec::with_capacity(viewport_height);
+    let mut visual_lines: Vec<(Line<'_>, LineHighlight, LogLevel)> =
+        Vec::with_capacity(viewport_height);
     let visual_range = app.visual_range();
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
@@ -331,7 +336,7 @@ fn draw_log_view_nowrap(
 
         let level_span = Span::styled(
             format!(" {} ", entry.level.short_name()),
-            level_style(entry.level),
+            theme.level_style(entry.level),
         );
 
         let message = extract_message(&entry.raw_line, entry.message_offset);
@@ -344,7 +349,7 @@ fn draw_log_view_nowrap(
             Span::styled(
                 "●",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.bookmark)
                     .add_modifier(Modifier::BOLD),
             )
         } else {
@@ -354,18 +359,18 @@ fn draw_log_view_nowrap(
         let mut spans = Vec::new();
         // Source gutter first, then cluster gutter
         if is_merged {
-            spans.push(source_gutter_span(entry.source_idx));
+            spans.push(source_gutter_span(entry.source_idx, theme));
         }
         if cg_width > 0 {
             if let Some((cid, off, gl)) = cluster_info {
-                spans.push(cluster_gutter_span(app, cid, off, gl, cg_width));
+                spans.push(cluster_gutter_span(app, cid, off, gl, cg_width, theme));
             } else {
                 spans.push(cluster_gutter_blank(cg_width));
             }
         }
         spans.extend([
             bookmark_span,
-            Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
+            Span::styled(timestamp, Style::default().fg(theme.muted)),
             level_span,
             Span::raw(" "),
         ]);
@@ -375,6 +380,7 @@ fn draw_log_view_nowrap(
             Style::default(),
             syntax_on && !is_selected,
             ul_range,
+            theme,
         ));
 
         // Show expand indicator
@@ -388,11 +394,11 @@ fn draw_log_view_nowrap(
                 && hl_regex.is_some_and(|r| entry.continuation_lines.iter().any(|l| r.is_match(l)))
             {
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.expand_match_hint)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(theme.expand_indicator)
                     .add_modifier(Modifier::BOLD)
             };
             spans.push(Span::styled(indicator, style));
@@ -409,16 +415,16 @@ fn draw_log_view_nowrap(
                 }
                 let skip = app.horizontal_scroll.min(cont_line.len());
                 let display: String = cont_line.chars().skip(skip).collect();
-                let cont_style = Style::default().fg(Color::DarkGray);
+                let cont_style = Style::default().fg(theme.muted);
 
                 let ul_range = underline_range_for_row(app, terminal_row);
 
                 let mut cont_spans = Vec::new();
                 if is_merged {
-                    cont_spans.push(source_gutter_span(entry.source_idx));
+                    cont_spans.push(source_gutter_span(entry.source_idx, theme));
                 }
                 if cg_width > 0 {
-                    cont_spans.push(cluster_continuation_span(cluster_info, cg_width));
+                    cont_spans.push(cluster_continuation_span(cluster_info, cg_width, theme));
                 }
                 cont_spans.extend([
                     Span::raw(" "),                          // bookmark placeholder
@@ -427,11 +433,13 @@ fn draw_log_view_nowrap(
                     Span::raw(" "),
                 ]);
                 cont_spans.extend(styled_spans(
-                    &display, hl_regex, cont_style, syntax_on, ul_range,
+                    &display, hl_regex, cont_style, syntax_on, ul_range, theme,
                 ));
                 let line = Line::from(cont_spans);
                 // Highlight continuation lines only in visual select, not for cursor
-                let cont_highlight = if visual_range.is_some_and(|(lo, hi)| current_entry_idx >= lo && current_entry_idx <= hi) {
+                let cont_highlight = if visual_range
+                    .is_some_and(|(lo, hi)| current_entry_idx >= lo && current_entry_idx <= hi)
+                {
                     LineHighlight::VisualSelect
                 } else {
                     LineHighlight::Normal
@@ -459,13 +467,8 @@ fn draw_log_view_nowrap(
         };
 
         let style = match highlight {
-            LineHighlight::Cursor => Style::default()
-                .bg(level_color(level))
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-            LineHighlight::VisualSelect => Style::default()
-                .bg(Color::Indexed(238))
-                .fg(Color::White),
+            LineHighlight::Cursor => theme.cursor_line_style(level),
+            LineHighlight::VisualSelect => theme.visual_select_style(),
             LineHighlight::Normal => Style::default(),
         };
 
@@ -501,9 +504,11 @@ fn draw_log_view_wrapped(
     // This accounts for word wrapping when calculating visibility
     app.ensure_selected_visible_with_height(viewport_height, viewport_width);
     let syntax_on = app.syntax_highlight;
+    let theme = &app.theme;
 
     // Build visual lines: (line, highlight, level)
-    let mut visual_lines: Vec<(Line<'_>, LineHighlight, LogLevel)> = Vec::with_capacity(viewport_height);
+    let mut visual_lines: Vec<(Line<'_>, LineHighlight, LogLevel)> =
+        Vec::with_capacity(viewport_height);
     let visual_range = app.visual_range();
     let mut current_entry_idx = app.scroll_offset;
     let mut terminal_row = 0usize;
@@ -563,7 +568,7 @@ fn draw_log_view_wrapped(
             Span::styled(
                 "●",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme.bookmark)
                     .add_modifier(Modifier::BOLD),
             )
         } else {
@@ -585,21 +590,21 @@ fn draw_log_view_wrapped(
                 let mut spans = Vec::new();
                 // Source gutter first, then cluster gutter
                 if is_merged {
-                    spans.push(source_gutter_span(entry.source_idx));
+                    spans.push(source_gutter_span(entry.source_idx, theme));
                 }
                 if cg_width > 0 {
                     if let Some((cid, off, gl)) = cluster_info {
-                        spans.push(cluster_gutter_span(app, cid, off, gl, cg_width));
+                        spans.push(cluster_gutter_span(app, cid, off, gl, cg_width, theme));
                     } else {
                         spans.push(cluster_gutter_blank(cg_width));
                     }
                 }
                 spans.extend([
                     bookmark_span.clone(),
-                    Span::styled(timestamp.clone(), Style::default().fg(Color::DarkGray)),
+                    Span::styled(timestamp.clone(), Style::default().fg(theme.muted)),
                     Span::styled(
                         format!(" {} ", entry.level.short_name()),
-                        level_style(entry.level),
+                        theme.level_style(entry.level),
                     ),
                     Span::raw(" "),
                 ]);
@@ -609,6 +614,7 @@ fn draw_log_view_wrapped(
                     Style::default(),
                     syntax_on && !is_selected,
                     ul_range,
+                    theme,
                 ));
                 if let Some(ref ind) = indicator {
                     let style = if !is_expanded
@@ -616,11 +622,11 @@ fn draw_log_view_wrapped(
                             .is_some_and(|r| entry.continuation_lines.iter().any(|l| r.is_match(l)))
                     {
                         Style::default()
-                            .fg(Color::Yellow)
+                            .fg(theme.expand_match_hint)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
-                            .fg(Color::Cyan)
+                            .fg(theme.expand_indicator)
                             .add_modifier(Modifier::BOLD)
                     };
                     spans.push(Span::styled(ind.clone(), style));
@@ -633,7 +639,7 @@ fn draw_log_view_wrapped(
                     spans.push(Span::raw(" ")); // source gutter placeholder
                 }
                 if cg_width > 0 {
-                    spans.push(cluster_continuation_span(cluster_info, cg_width));
+                    spans.push(cluster_continuation_span(cluster_info, cg_width, theme));
                 }
                 spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                 spans.extend(styled_spans(
@@ -642,6 +648,7 @@ fn draw_log_view_wrapped(
                     Style::default(),
                     syntax_on && !is_selected,
                     ul_range,
+                    theme,
                 ));
                 Line::from(spans)
             };
@@ -661,22 +668,24 @@ fn draw_log_view_wrapped(
                     if visual_lines.len() >= viewport_height {
                         break;
                     }
-                    let cont_style = Style::default().fg(Color::DarkGray);
+                    let cont_style = Style::default().fg(theme.muted);
                     let ul_range = underline_range_for_row(app, terminal_row);
                     let mut cont_spans = Vec::new();
                     if is_merged {
                         cont_spans.push(Span::raw(" ")); // source gutter placeholder
                     }
                     if cg_width > 0 {
-                        cont_spans.push(cluster_continuation_span(cluster_info, cg_width));
+                        cont_spans.push(cluster_continuation_span(cluster_info, cg_width, theme));
                     }
                     cont_spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                     cont_spans.extend(styled_spans(
-                        &part, hl_regex, cont_style, syntax_on, ul_range,
+                        &part, hl_regex, cont_style, syntax_on, ul_range, theme,
                     ));
                     let line = Line::from(cont_spans);
                     // Highlight continuation lines only in visual select, not for cursor
-                    let cont_highlight = if visual_range.is_some_and(|(lo, hi)| current_entry_idx >= lo && current_entry_idx <= hi) {
+                    let cont_highlight = if visual_range
+                        .is_some_and(|(lo, hi)| current_entry_idx >= lo && current_entry_idx <= hi)
+                    {
                         LineHighlight::VisualSelect
                     } else {
                         LineHighlight::Normal
@@ -705,13 +714,8 @@ fn draw_log_view_wrapped(
         };
 
         let style = match highlight {
-            LineHighlight::Cursor => Style::default()
-                .bg(level_color(level))
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-            LineHighlight::VisualSelect => Style::default()
-                .bg(Color::Indexed(238))
-                .fg(Color::White),
+            LineHighlight::Cursor => theme.cursor_line_style(level),
+            LineHighlight::VisualSelect => theme.visual_select_style(),
             LineHighlight::Normal => Style::default(),
         };
 

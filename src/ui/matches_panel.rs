@@ -1,17 +1,18 @@
 use crate::app::App;
 use crate::ui::extract_message;
+use crate::ui::render_scrollbar;
 use crate::ui::syntax::styled_spans;
-use crate::ui::{level_color, level_style, render_scrollbar};
 use ratatui::{
+    Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 
 /// Draw the search matches panel (bottom split)
 pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
+    let theme = &app.theme;
     app.search_panel_height = area.height as usize;
 
     let total = app.search_panel_matches.len();
@@ -29,9 +30,9 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let border_color = if app.search_panel_focused {
-        Color::Yellow
+        theme.warning_text
     } else {
-        Color::DarkGray
+        theme.muted
     };
 
     let block = Block::default()
@@ -78,14 +79,14 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
 
         let level_span = Span::styled(
             format!(" {} ", entry.level.short_name()),
-            level_style(entry.level),
+            theme.level_style(entry.level),
         );
 
         let message = extract_message(&entry.raw_line, entry.message_offset);
         let display_msg: &str = &message;
 
         let mut spans = vec![
-            Span::styled(timestamp, Style::default().fg(Color::DarkGray)),
+            Span::styled(timestamp, Style::default().fg(theme.muted)),
             level_span,
             Span::raw(" "),
         ];
@@ -95,6 +96,7 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
             Style::default(),
             syntax_on && !is_selected,
             None,
+            theme,
         ));
 
         let line_area = Rect {
@@ -105,10 +107,7 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
         };
 
         let style = if is_selected {
-            Style::default()
-                .bg(level_color(entry.level))
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD)
+            theme.cursor_line_style(entry.level)
         } else {
             Style::default()
         };

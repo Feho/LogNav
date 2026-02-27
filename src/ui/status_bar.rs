@@ -2,13 +2,14 @@ use crate::app::{App, FocusState};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
 
 /// Draw status bar
 pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
     let total = app.entries.len();
     let shown = app.filtered_indices.len();
     let levels = app.active_levels_display();
@@ -108,18 +109,18 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let padding = (area.width as usize).saturating_sub(left_len + right_len);
 
     let left_style = if app.status_message.is_some() {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(theme.warning_text)
     } else {
-        Style::default().fg(Color::White)
+        Style::default().fg(theme.fg)
     };
 
     let line = Line::from(vec![
         Span::styled(left, left_style),
         Span::raw(" ".repeat(padding)),
-        Span::styled(right, Style::default().fg(Color::Cyan)),
+        Span::styled(right, Style::default().fg(theme.hint)),
     ]);
 
-    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Black).fg(Color::White));
+    let paragraph = Paragraph::new(line).style(theme.status_bar_style());
 
     frame.render_widget(paragraph, area);
 }

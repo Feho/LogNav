@@ -37,6 +37,7 @@ pub enum CommandAction {
     ClearIncludes,
     ExportFiltered,
     Clusters,
+    ToggleTheme,
     Quit,
 }
 
@@ -191,6 +192,11 @@ impl Command {
             name: "Detect clusters",
             shortcut: "",
             action: CommandAction::Clusters,
+        },
+        Command {
+            name: "Toggle theme (dark/light)",
+            shortcut: "",
+            action: CommandAction::ToggleTheme,
         },
         Command {
             name: "Quit",

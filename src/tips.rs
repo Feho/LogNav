@@ -7,7 +7,7 @@ const DEFAULT_TIPS: &[&str] = &[
     "Press 'o' to open a log file, or 'M' to merge multiple files together",
     "Use Ctrl+P to open the command palette — fuzzy search all commands",
     "Press '/' to search with regex, then n/N to jump between matches",
-    "Filter by level with 1-5 (Error, Warn, Info, Debug, Trace), 0 to reset",
+    "Filter by level with 1-6 (Error, Warn, Info, Debug, Trace, Profile), 0 to reset",
     "Press Ctrl+D to filter by date range — supports relative times like -1h, -30m",
     "Press 'e' to jump to next error, 'E' for previous — same with 'w'/'W' for warnings",
     "Toggle bookmarks with 'm', then jump between them with 'b' and 'B'",

@@ -1,22 +1,18 @@
-use crate::app::{
-    App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, QUICK_FILTERS,
-};
+use crate::app::{App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, QUICK_FILTERS};
 use crate::text_utils::wrap_text;
 use crate::ui::syntax::styled_spans;
-use crate::ui::{centered_rect, extract_message, level_color, render_scrollbar};
+use crate::ui::{centered_rect, extract_message, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
-/// Consistent cursor style used across all input bars
-const CURSOR_STYLE: Style = Style::new().bg(Color::White).fg(Color::Black);
-
 /// Draw command palette overlay
 pub fn draw_command_palette(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
     let area = centered_rect(50, 60, frame.area());
 
     // Clear the area behind
@@ -29,7 +25,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(theme.border_style())
         .title(" Commands ");
 
     let inner = block.inner(area);
@@ -38,8 +34,15 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     // Input line with cursor
     let input_area = Rect { height: 1, ..inner };
     let prefix = "> ";
-    let prefix_style = Style::default().fg(Color::Cyan);
-    input.render(frame, input_area, prefix, prefix_style, CURSOR_STYLE, true);
+    let prefix_style = Style::default().fg(theme.accent);
+    input.render(
+        frame,
+        input_area,
+        prefix,
+        prefix_style,
+        theme.cursor_style(),
+        true,
+    );
 
     // Command list
     let list_area = Rect {
@@ -66,7 +69,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
         .take(visible_height)
         .map(|(i, (_, cmd, _))| {
             let style = if i == selected {
-                Style::default().bg(Color::Cyan).fg(Color::Black)
+                theme.selected_style()
             } else {
                 Style::default()
             };
@@ -75,7 +78,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
                 Span::raw("  "),
                 Span::styled(cmd.name, style),
                 Span::raw(" ".repeat(30usize.saturating_sub(cmd.name.len()))),
-                Span::styled(cmd.shortcut, Style::default().fg(Color::DarkGray)),
+                Span::styled(cmd.shortcut, Style::default().fg(theme.muted)),
             ]);
 
             ListItem::new(line).style(style)
@@ -89,6 +92,7 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
 
 /// Draw search bar at top
 pub fn draw_search_bar(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
     let area = Rect {
         x: 0,
         y: 0,
@@ -126,13 +130,13 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
     };
 
     let match_info_style = if regex_error.is_some() {
-        Style::default().fg(Color::Red)
+        Style::default().fg(theme.error_text)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(theme.muted)
     };
 
     let regex_indicator = if regex_mode {
-        Span::styled("[.*] ", Style::default().fg(Color::Magenta))
+        Span::styled("[.*] ", Style::default().fg(theme.level_profile))
     } else {
         Span::raw("")
     };
@@ -145,19 +149,19 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
         .saturating_sub(prefix_width as u16 + suffix.len() as u16);
 
     let mut spans = vec![
-        Span::styled(" / ", Style::default().fg(Color::Yellow)),
+        Span::styled(" / ", Style::default().fg(theme.warning_text)),
         regex_indicator,
     ];
-    spans.extend(input.to_spans(available_for_input, CURSOR_STYLE, true));
+    spans.extend(input.to_spans(available_for_input, theme.cursor_style(), true));
     spans.push(Span::raw(" "));
     spans.push(Span::styled(&match_info, match_info_style));
     spans.push(Span::styled(
         " | Ctrl+R:regex | Enter:search | Esc:cancel",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(theme.muted),
     ));
 
     let line = Line::from(spans);
-    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Black));
+    let paragraph = Paragraph::new(line).style(Style::default().bg(theme.bg));
 
     frame.render_widget(Clear, area);
     frame.render_widget(paragraph, area);
@@ -165,6 +169,7 @@ pub fn draw_search_bar(frame: &mut Frame, app: &App) {
 
 /// Draw date filter dialog
 pub fn draw_date_filter(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
     let area = centered_rect(50, 55, frame.area());
     frame.render_widget(Clear, area);
 
@@ -181,7 +186,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(theme.border_style())
         .title(" Date Range Filter ");
 
     let inner = block.inner(area);
@@ -191,9 +196,9 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
 
     // Quick filters header
     let header_style = if focus == DateFilterFocus::QuickFilter {
-        Style::default().fg(Color::Cyan)
+        Style::default().fg(theme.accent)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(theme.muted)
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled("Quick Filters:", header_style))),
@@ -214,11 +219,11 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
 
         let is_selected = focus == DateFilterFocus::QuickFilter && i == selected_quick;
         let style = if is_selected {
-            Style::default().bg(Color::Cyan).fg(Color::Black)
+            theme.selected_style()
         } else if focus == DateFilterFocus::QuickFilter {
             Style::default()
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(theme.muted)
         };
 
         frame.render_widget(
@@ -240,9 +245,9 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
 
     // Custom range header
     let custom_style = if matches!(focus, DateFilterFocus::From | DateFilterFocus::To) {
-        Style::default().fg(Color::Cyan)
+        Style::default().fg(theme.accent)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(theme.muted)
     };
     if y < inner.y + inner.height {
         frame.render_widget(
@@ -261,9 +266,9 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
     if y < inner.y + inner.height {
         let from_active = focus == DateFilterFocus::From;
         let from_style = if from_active {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(theme.accent)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(theme.muted)
         };
         let field_area = Rect {
             x: inner.x,
@@ -276,7 +281,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
             field_area,
             "  From: ",
             from_style,
-            CURSOR_STYLE,
+            theme.cursor_style(),
             from_active,
         );
         y += 1;
@@ -286,9 +291,9 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
     if y < inner.y + inner.height {
         let to_active = focus == DateFilterFocus::To;
         let to_style = if to_active {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(theme.accent)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(theme.muted)
         };
         let field_area = Rect {
             x: inner.x,
@@ -301,7 +306,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
             field_area,
             "    To: ",
             to_style,
-            CURSOR_STYLE,
+            theme.cursor_style(),
             to_active,
         );
         y += 1;
@@ -315,7 +320,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 format!("  {}", err),
-                Style::default().fg(Color::Red),
+                Style::default().fg(theme.error_text),
             ))),
             Rect {
                 x: inner.x,
@@ -332,7 +337,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 "  Formats: MM-dd HH:mm, -2h, today, now",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.muted),
             ))),
             Rect {
                 x: inner.x,
@@ -344,7 +349,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 "  Tab: switch | Enter: apply | Esc: close",
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.muted),
             ))),
             Rect {
                 x: inner.x,
@@ -358,6 +363,7 @@ pub fn draw_date_filter(frame: &mut Frame, app: &App) {
 
 /// Draw file open dialog
 pub fn draw_file_open(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
     let area = centered_rect(60, 50, frame.area());
     frame.render_widget(Clear, area);
 
@@ -379,7 +385,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(theme.border_style())
         .title(title);
 
     let inner = block.inner(area);
@@ -391,8 +397,8 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
         frame,
         input_area,
         "Path: ",
-        Style::default().fg(Color::Cyan),
-        CURSOR_STYLE,
+        Style::default().fg(theme.accent),
+        theme.cursor_style(),
         true,
     );
 
@@ -403,7 +409,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
             height: 1,
             ..inner
         };
-        let error_line = Line::from(Span::styled(err, Style::default().fg(Color::Red)));
+        let error_line = Line::from(Span::styled(err, Style::default().fg(theme.error_text)));
         frame.render_widget(Paragraph::new(error_line), error_area);
     }
 
@@ -415,10 +421,7 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
             ..inner
         };
 
-        let header = Line::from(Span::styled(
-            "Recent:",
-            Style::default().fg(Color::DarkGray),
-        ));
+        let header = Line::from(Span::styled("Recent:", Style::default().fg(theme.muted)));
         frame.render_widget(
             Paragraph::new(header),
             Rect {
@@ -440,9 +443,9 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
             .enumerate()
             .map(|(i, file)| {
                 let style = if typing {
-                    Style::default().fg(Color::DarkGray)
+                    Style::default().fg(theme.muted)
                 } else if i == selected {
-                    Style::default().bg(Color::Cyan).fg(Color::Black)
+                    theme.selected_style()
                 } else {
                     Style::default()
                 };
@@ -465,13 +468,14 @@ pub fn draw_file_open(frame: &mut Frame, app: &App) {
     };
     let help_line = Line::from(Span::styled(
         "Esc:cancel | Enter:open | Tab:complete path | Ctrl+W:delete segment | Ctrl+U:clear",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(theme.muted),
     ));
     frame.render_widget(Paragraph::new(help_line), help_area);
 }
 
 /// Draw help dialog with virtual scroll
 pub fn draw_help(frame: &mut Frame, app: &mut App) {
+    let theme = &app.theme;
     let area = centered_rect(70, 80, frame.area());
     frame.render_widget(Clear, area);
 
@@ -482,7 +486,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(theme.border_style())
         .title(" LogNav Help ");
 
     let inner = block.inner(area);
@@ -515,7 +519,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  Enter     Open search results panel (Tab to switch focus)"),
         Line::from("  Ctrl+Click  Search word under cursor"),
         Line::from("  Alt+Click   Exclude word under cursor"),
-        Line::from("  1-5       Toggle levels: 1:ERR 2:WRN 3:INF 4:DBG 5:TRC"),
+        Line::from("  1-6       Toggle levels: 1:ERR 2:WRN 3:INF 4:DBG 5:TRC 6:PRF"),
         Line::from("  0         Reset level filters to defaults"),
         Line::from("  Ctrl+D    Date range filter"),
         Line::from("  x/X       Exclude filter manager / clear all excludes"),
@@ -569,6 +573,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
 
 /// Draw detail popup showing full entry text with wrapping
 pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
+    let theme = &app.theme;
     let area = centered_rect(80, 70, frame.area());
     frame.render_widget(Clear, area);
 
@@ -584,7 +589,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
             // No entry selected, show empty popup
             let block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
+                .border_style(theme.border_style())
                 .title(" Entry Detail ");
             frame.render_widget(block, area);
             return;
@@ -603,7 +608,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(level_color(entry.level)))
+        .border_style(Style::default().fg(theme.level_color(entry.level)))
         .title(title);
 
     let inner = block.inner(area);
@@ -616,7 +621,14 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
     // Main message
     let message = extract_message(&entry.raw_line, entry.message_offset);
     for wrapped_line in wrap_text(&message, inner.width as usize) {
-        let spans = styled_spans(&wrapped_line, None, Style::default(), syntax_on, None);
+        let spans = styled_spans(
+            &wrapped_line,
+            None,
+            Style::default(),
+            syntax_on,
+            None,
+            theme,
+        );
         lines.push(Line::from(spans));
     }
 
@@ -625,13 +637,13 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Continuation lines:",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(theme.muted),
         )));
-        let cont_style = Style::default().fg(Color::DarkGray);
+        let cont_style = Style::default().fg(theme.muted);
         let display = entry.display_continuation();
         for cont_line in display {
             for wrapped_line in wrap_text(cont_line, inner.width as usize) {
-                let spans = styled_spans(&wrapped_line, None, cont_style, syntax_on, None);
+                let spans = styled_spans(&wrapped_line, None, cont_style, syntax_on, None, theme);
                 lines.push(Line::from(spans));
             }
         }
@@ -666,6 +678,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
 
 /// Draw filter manager overlay (shared by exclude and include)
 pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
     let area = centered_rect(50, 55, frame.area());
     frame.render_widget(Clear, area);
 
@@ -694,13 +707,13 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
     // Kind-specific styling
     let (border_color, title, prefix, help_line2) = match kind {
         FilterKind::Exclude => (
-            Color::Cyan,
+            theme.border,
             " Exclude Filters ",
             "  Exclude: ",
             "  Esc: close | Alt+Click word in log to exclude",
         ),
         FilterKind::Include => (
-            Color::Green,
+            theme.level_info,
             " Include Filters ",
             "  Include: ",
             "  Esc: close | Only matching lines are shown",
@@ -721,14 +734,14 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
 
     // Input bar with cursor
     let input_border_color = if input_focused {
-        Color::Yellow
+        theme.warning_text
     } else {
-        Color::DarkGray
+        theme.muted
     };
     let input_label_style = Style::default().fg(input_border_color);
 
     let regex_indicator = if regex_mode {
-        Span::styled("[.*] ", Style::default().fg(Color::Magenta))
+        Span::styled("[.*] ", Style::default().fg(theme.level_profile))
     } else {
         Span::raw("")
     };
@@ -739,7 +752,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
         .saturating_sub(prefix.len() as u16 + regex_prefix_len + 1);
 
     let mut spans = vec![Span::styled(prefix, input_label_style), regex_indicator];
-    spans.extend(input.to_spans(available, CURSOR_STYLE, input_focused));
+    spans.extend(input.to_spans(available, theme.cursor_style(), input_focused));
 
     frame.render_widget(
         Paragraph::new(Line::from(spans)),
@@ -758,7 +771,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 format!("  Error: {}", short),
-                Style::default().fg(Color::Red),
+                Style::default().fg(theme.error_text),
             ))),
             Rect {
                 x: inner.x,
@@ -774,9 +787,9 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
 
     // List header
     let list_header_style = if list_focused {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(theme.warning_text)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(theme.muted)
     };
     let count = patterns.len();
     let header_text = if count == 0 {
@@ -820,7 +833,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
             .take(visible_height)
             .map(|(i, fp)| {
                 let style = if list_focused && i == selected {
-                    Style::default().bg(border_color).fg(Color::Black)
+                    Style::default().bg(border_color).fg(theme.level_badge_fg)
                 } else {
                     Style::default()
                 };
@@ -843,7 +856,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 help1,
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.muted),
             ))),
             Rect {
                 x: inner.x,
@@ -855,7 +868,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 help_line2,
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme.muted),
             ))),
             Rect {
                 x: inner.x,
@@ -869,6 +882,7 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
 
 /// Draw export dialog overlay
 pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
     let area = centered_rect(60, 20, frame.area());
     frame.render_widget(Clear, area);
 
@@ -880,7 +894,7 @@ pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
     let title = format!(" Export {} filtered entries ", app.filtered_indices.len());
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(theme.border_style())
         .title(title);
 
     let inner = block.inner(area);
@@ -892,8 +906,8 @@ pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
         frame,
         input_area,
         "Path: ",
-        Style::default().fg(Color::Cyan),
-        CURSOR_STYLE,
+        Style::default().fg(theme.accent),
+        theme.cursor_style(),
         true,
     );
 
@@ -904,7 +918,7 @@ pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
             height: 1,
             ..inner
         };
-        let error_line = Line::from(Span::styled(err, Style::default().fg(Color::Red)));
+        let error_line = Line::from(Span::styled(err, Style::default().fg(theme.error_text)));
         frame.render_widget(Paragraph::new(error_line), error_area);
     }
 }

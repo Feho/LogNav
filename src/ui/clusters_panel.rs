@@ -4,13 +4,14 @@ use crate::ui::{centered_rect, render_scrollbar};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
 /// Draw the clusters overlay popup
 pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
+    let theme = &app.theme;
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
 
@@ -31,7 +32,7 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(theme.border_style())
         .title(title);
 
     let inner = block.inner(area);
@@ -52,7 +53,7 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     msg,
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(theme.muted),
                 ))),
                 loading_area,
             );
@@ -103,18 +104,15 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
         };
 
         let style = if is_selected {
-            Style::default()
-                .bg(Color::Cyan)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD)
+            theme.selected_style().add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
 
         let seq_color = if cluster.sequence_len > 1 {
-            Color::Magenta
+            theme.cluster_sequence
         } else {
-            Color::Yellow
+            theme.cluster_single
         };
 
         let line = Line::from(vec![
@@ -147,8 +145,8 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
         height: 1,
     };
     let footer = Line::from(vec![Span::styled(
-        " Enter: jump │ j/k: navigate │ Esc: close",
-        Style::default().fg(Color::DarkGray),
+        " Enter: jump \u{2502} j/k: navigate \u{2502} Esc: close",
+        Style::default().fg(theme.muted),
     )]);
     frame.render_widget(Paragraph::new(footer), footer_area);
 

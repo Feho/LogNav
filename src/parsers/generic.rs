@@ -1,5 +1,5 @@
-use super::common::map_level_str;
 use super::LogParser;
+use super::common::map_level_str;
 use crate::log_entry::LogLevel;
 use chrono::NaiveDateTime;
 use regex::Regex;
@@ -188,11 +188,7 @@ impl LogParser for GenericParser {
             end = end.max(m.end());
         }
 
-        if end > 0 {
-            Some(end)
-        } else {
-            None
-        }
+        if end > 0 { Some(end) } else { None }
     }
 }
 

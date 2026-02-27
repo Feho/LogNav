@@ -1,9 +1,7 @@
 use crate::app::{App, FocusState};
-use crate::log_entry::LogLevel;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
     widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use std::borrow::Cow;
@@ -61,27 +59,6 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         FocusState::ExportDialog { .. } => overlays::draw_export_dialog(frame, app),
         FocusState::Clusters { .. } => clusters_panel::draw_clusters(frame, app),
     }
-}
-
-/// Get color for log level
-pub fn level_color(level: LogLevel) -> Color {
-    match level {
-        LogLevel::Error => Color::Red,
-        LogLevel::Warn => Color::Yellow,
-        LogLevel::Info => Color::White,
-        LogLevel::Debug => Color::Cyan,
-        LogLevel::Trace => Color::DarkGray,
-        LogLevel::Profile => Color::Magenta,
-        LogLevel::Unknown => Color::DarkGray,
-    }
-}
-
-/// Get style for level badge
-pub fn level_style(level: LogLevel) -> Style {
-    Style::default()
-        .fg(Color::Black)
-        .bg(level_color(level))
-        .add_modifier(Modifier::BOLD)
 }
 
 /// Extract message portion from raw log line, stripping outer quotes from wd.log.

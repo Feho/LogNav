@@ -1,11 +1,10 @@
+use crate::theme::Theme;
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Span,
 };
 use regex::Regex;
 use std::sync::LazyLock;
-
-const HIGHLIGHT_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
 
 static SYNTAX_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -23,36 +22,36 @@ static SYNTAX_RE: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 
-fn token_style(capture: &regex::Captures, base_style: Style) -> Style {
+fn token_style(capture: &regex::Captures, base_style: Style, theme: &Theme) -> Style {
     if capture.name("url").is_some() {
         base_style
-            .fg(Color::LightBlue)
+            .fg(theme.syntax_url)
             .add_modifier(Modifier::UNDERLINED)
     } else if capture.name("uuid").is_some() {
-        base_style.fg(Color::Gray)
+        base_style.fg(theme.syntax_uuid)
     } else if capture.name("quoted").is_some() {
-        base_style.fg(Color::Green)
+        base_style.fg(theme.syntax_string)
     } else if capture.name("kv").is_some() {
-        base_style.fg(Color::LightYellow)
+        base_style.fg(theme.syntax_key_value)
     } else if capture.name("ip").is_some() {
-        base_style.fg(Color::Gray)
+        base_style.fg(theme.syntax_ip)
     } else if capture.name("hex").is_some() {
-        base_style.fg(Color::LightCyan)
+        base_style.fg(theme.syntax_hex)
     } else if capture.name("path").is_some() {
-        base_style.fg(Color::Blue)
+        base_style.fg(theme.syntax_path)
     } else if capture.name("bool").is_some() {
-        base_style.fg(Color::LightMagenta)
+        base_style.fg(theme.syntax_boolean)
     } else if capture.name("error").is_some() {
-        base_style.fg(Color::LightRed)
+        base_style.fg(theme.syntax_error_keyword)
     } else if capture.name("number").is_some() {
-        base_style.fg(Color::LightCyan)
+        base_style.fg(theme.syntax_number)
     } else {
         base_style
     }
 }
 
 /// Tokenize text into syntax-colored spans
-fn syntax_highlight_spans(text: &str, base_style: Style) -> Vec<Span<'static>> {
+fn syntax_highlight_spans(text: &str, base_style: Style, theme: &Theme) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut last_end = 0;
 
@@ -66,7 +65,7 @@ fn syntax_highlight_spans(text: &str, base_style: Style) -> Vec<Span<'static>> {
         }
         spans.push(Span::styled(
             text[m.start()..m.end()].to_string(),
-            token_style(&cap, base_style),
+            token_style(&cap, base_style, theme),
         ));
         last_end = m.end();
     }
@@ -83,7 +82,11 @@ fn syntax_highlight_spans(text: &str, base_style: Style) -> Vec<Span<'static>> {
 }
 
 /// Overlay search highlights on pre-styled spans by splitting at match boundaries
-fn apply_search_overlay(spans: Vec<Span<'static>>, regex: &Regex) -> Vec<Span<'static>> {
+fn apply_search_overlay(
+    spans: Vec<Span<'static>>,
+    regex: &Regex,
+    hl_style: Style,
+) -> Vec<Span<'static>> {
     let mut result = Vec::new();
 
     for span in spans {
@@ -95,10 +98,7 @@ fn apply_search_overlay(spans: Vec<Span<'static>>, regex: &Regex) -> Vec<Span<'s
             if m.start() > last_end {
                 result.push(Span::styled(text[last_end..m.start()].to_string(), style));
             }
-            result.push(Span::styled(
-                text[m.start()..m.end()].to_string(),
-                HIGHLIGHT_STYLE,
-            ));
+            result.push(Span::styled(text[m.start()..m.end()].to_string(), hl_style));
             last_end = m.end();
         }
 
@@ -162,7 +162,10 @@ pub fn styled_spans(
     base_style: Style,
     syntax_enabled: bool,
     underline_range: Option<(usize, usize)>,
+    theme: &Theme,
 ) -> Vec<Span<'static>> {
+    let hl_style = theme.search_highlight_style();
+
     let mut spans = match (syntax_enabled, hl_regex) {
         (false, None) => vec![Span::styled(text.to_string(), base_style)],
         (false, Some(regex)) => {
@@ -175,10 +178,7 @@ pub fn styled_spans(
                         base_style,
                     ));
                 }
-                spans.push(Span::styled(
-                    text[m.start()..m.end()].to_string(),
-                    HIGHLIGHT_STYLE,
-                ));
+                spans.push(Span::styled(text[m.start()..m.end()].to_string(), hl_style));
                 last_end = m.end();
             }
             if last_end < text.len() {
@@ -189,10 +189,10 @@ pub fn styled_spans(
             }
             spans
         }
-        (true, None) => syntax_highlight_spans(text, base_style),
+        (true, None) => syntax_highlight_spans(text, base_style, theme),
         (true, Some(regex)) => {
-            let spans = syntax_highlight_spans(text, base_style);
-            apply_search_overlay(spans, regex)
+            let spans = syntax_highlight_spans(text, base_style, theme);
+            apply_search_overlay(spans, regex, hl_style)
         }
     };
 

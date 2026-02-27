@@ -15,6 +15,16 @@ pub struct Config {
     /// Per-file bookmarks: file path -> list of entry indices
     #[serde(default)]
     pub bookmarks: HashMap<String, Vec<usize>>,
+    /// Theme preset name: "dark" (default), "light"
+    #[serde(default = "default_theme_name")]
+    pub theme: String,
+    /// Per-color overrides: key = color slot name, value = color string
+    #[serde(default)]
+    pub theme_overrides: HashMap<String, String>,
+}
+
+fn default_theme_name() -> String {
+    "dark".to_string()
 }
 
 impl Config {

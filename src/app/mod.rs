@@ -1,6 +1,7 @@
 use crate::clusters::Cluster;
 use crate::log_entry::LogEntry;
 use crate::text_input::TextInput;
+use crate::theme::Theme;
 use crate::tips::TipsManager;
 use chrono::NaiveDateTime;
 use fuzzy_matcher::FuzzyMatcher;
@@ -12,9 +13,6 @@ use std::fmt;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-/// Colors assigned to source files in merged view
-pub const SOURCE_COLORS: [Color; 4] = [Color::Green, Color::Magenta, Color::Blue, Color::Yellow];
-
 /// A source file in a merged view
 #[derive(Debug, Clone)]
 pub struct SourceFile {
@@ -25,14 +23,14 @@ pub struct SourceFile {
 }
 
 impl SourceFile {
-    pub fn new(path: &str, idx: u8) -> Self {
+    pub fn new(path: &str, color: Color) -> Self {
         let label = std::path::Path::new(path)
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string());
         Self {
             path: path.to_string(),
-            color: SOURCE_COLORS[idx as usize % SOURCE_COLORS.len()],
+            color,
             label,
         }
     }
@@ -266,6 +264,9 @@ pub struct App {
 
     // Tips management
     pub tips_manager: TipsManager,
+
+    // Theme
+    pub theme: Theme,
 }
 
 impl Default for App {
@@ -279,7 +280,7 @@ impl App {
         Self {
             entries: Vec::new(),
             filtered_indices: Vec::new(),
-             level_filters: [true, true, true, true, true, true], // All levels on by default
+            level_filters: [true, true, true, true, true, true], // All levels on by default
             date_from: None,
             date_to: None,
             exclude_patterns: Vec::new(),
@@ -324,6 +325,7 @@ impl App {
             folded_clusters: HashSet::new(),
             clusters_loading: false,
             tips_manager: TipsManager::new(),
+            theme: Theme::dark(),
         }
     }
 
@@ -727,7 +729,12 @@ impl App {
     }
 
     /// Add a filter pattern. Returns error string on invalid regex.
-    pub fn add_filter(&mut self, kind: FilterKind, query: &str, regex_mode: bool) -> Option<String> {
+    pub fn add_filter(
+        &mut self,
+        kind: FilterKind,
+        query: &str,
+        regex_mode: bool,
+    ) -> Option<String> {
         if query.is_empty() {
             return None;
         }
@@ -877,7 +884,8 @@ impl App {
     /// Set the primary source file (single-file mode)
     pub fn set_primary_source(&mut self, path: &str) {
         self.sources.clear();
-        self.sources.push(SourceFile::new(path, 0));
+        self.sources
+            .push(SourceFile::new(path, self.theme.source_color(0)));
         self.source_entry_counts = vec![0];
         self.file_path = path.to_string();
     }
@@ -1052,6 +1060,15 @@ impl App {
             CommandAction::MergeFile => self.open_merge_file_dialog(),
             CommandAction::ExportFiltered => self.open_export_dialog(),
             CommandAction::Clusters => self.open_clusters(),
+            CommandAction::ToggleTheme => {
+                let new_name = if self.theme.name == "dark" {
+                    "light"
+                } else {
+                    "dark"
+                };
+                self.theme = Theme::from_name(new_name);
+                self.status_message = Some(format!("Theme: {}", self.theme.name));
+            }
             CommandAction::Quit => self.should_quit = true,
         }
     }

@@ -7,6 +7,7 @@ mod log_tailer;
 mod parsers;
 mod text_input;
 mod text_utils;
+mod theme;
 mod tips;
 mod ui;
 
@@ -51,6 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new();
     app.recent_files = config.recent_files.clone();
     app.syntax_highlight = config.syntax_highlight.unwrap_or(true);
+    app.theme = theme::Theme::from_config(&theme::ThemeConfig {
+        theme: config.theme.clone(),
+        theme_overrides: config.theme_overrides.clone(),
+    });
 
     // Create tailer channel (shared across all tailers)
     let (tailer_tx, mut tailer_rx) = mpsc::channel::<TailerEvent>(100);
@@ -63,7 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tailers: Vec<LogTailer> = Vec::new();
     if let Some(ref path) = initial_file {
         app.file_path = path.clone();
-        app.sources.push(SourceFile::new(path, 0));
+        app.sources
+            .push(SourceFile::new(path, app.theme.source_color(0)));
         app.source_entry_counts.push(0);
         let mut t = LogTailer::new(path, 0, tailer_tx.clone());
         if let Err(e) = t.load_initial().await {
@@ -106,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Save config — save per-source bookmarks
     config.syntax_highlight = Some(app.syntax_highlight);
+    config.theme = app.theme.name.clone();
     save_bookmarks_for_sources(&app, &mut config);
     let _ = config.save();
 
@@ -260,7 +267,10 @@ async fn run_app(
         // Handle merge file request
         if let Some(merge_path) = app.pending_merge_path.take() {
             let source_idx = app.sources.len() as u8;
-            app.sources.push(SourceFile::new(&merge_path, source_idx));
+            app.sources.push(SourceFile::new(
+                &merge_path,
+                app.theme.source_color(source_idx),
+            ));
             while app.source_entry_counts.len() <= source_idx as usize {
                 app.source_entry_counts.push(0);
             }
