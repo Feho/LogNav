@@ -194,7 +194,7 @@ impl Command {
             action: CommandAction::Clusters,
         },
         Command {
-            name: "Theme picker...",
+            name: "Change theme...",
             shortcut: "",
             action: CommandAction::ThemePicker,
         },
