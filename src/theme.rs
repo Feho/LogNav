@@ -102,7 +102,7 @@ impl Theme {
             syntax_boolean: Color::LightMagenta,
             syntax_hex: Color::LightCyan,
             syntax_uuid: Color::Gray,
-            syntax_ip: Color::Gray,
+            syntax_ip: Color::Rgb(209, 154, 102),
 
             search_match_fg: Color::Black,
             search_match_bg: Color::Yellow,
