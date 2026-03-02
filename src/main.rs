@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.is_loading = true;
 
         let t = LogTailer::new(path, 0, tailer_tx.clone());
-        t.start_loading(app.max_entries);
+        t.start_loading();
 
         config.add_recent_file(path);
         app.recent_files = config.recent_files.clone();
@@ -263,7 +263,7 @@ async fn run_app(
             app.loading_entry_count = 0;
 
             let new_tailer = LogTailer::new(&path, 0, tailer_tx.clone());
-            new_tailer.start_loading(app.max_entries);
+            new_tailer.start_loading();
 
             config.add_recent_file(&path);
             app.recent_files = config.recent_files.clone();
@@ -291,7 +291,7 @@ async fn run_app(
             app.loading_entry_count = 0;
 
             let new_tailer = LogTailer::new(&merge_path, source_idx, tailer_tx.clone());
-            new_tailer.start_loading(app.max_entries);
+            new_tailer.start_loading();
 
             // Store bookmark stable IDs for this source
             let loaded = config.load_bookmarks(&merge_path);

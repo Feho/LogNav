@@ -82,13 +82,13 @@ impl LogTailer {
 
     /// Start loading the file in the background (fire-and-forget).
     /// Entries arrive via the event channel as LoadBatch events.
-    pub fn start_loading(&self, max_entries: usize) {
+    pub fn start_loading(&self) {
         let path = self.path.clone();
         let source_idx = self.source_idx;
         let tx = self.event_tx.clone();
 
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = Self::load_initial_blocking(&path, source_idx, &tx, max_entries) {
+            if let Err(e) = Self::load_initial_blocking(&path, source_idx, &tx) {
                 let _ = tx.blocking_send(TailerEvent::Error {
                     source_idx,
                     message: e,
@@ -102,7 +102,6 @@ impl LogTailer {
         path: &Path,
         source_idx: u8,
         tx: &mpsc::Sender<TailerEvent>,
-        max_entries: usize,
     ) -> Result<(), String> {
         let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
         let metadata = file
@@ -143,7 +142,6 @@ impl LogTailer {
         let mut batch: Vec<LogEntry> = Vec::with_capacity(BATCH_SIZE);
         let mut pending: Option<LogEntry> = None;
         let mut index: usize = 0;
-        let mut total_sent: usize = 0;
         let mut in_header = true;
         let mut line_buf = String::new();
 
@@ -172,7 +170,6 @@ impl LogTailer {
 
                     // Send batch if full
                     if batch.len() >= BATCH_SIZE {
-                        total_sent += batch.len();
                         tx.blocking_send(TailerEvent::LoadBatch {
                             source_idx,
                             entries: std::mem::take(&mut batch),
@@ -181,12 +178,6 @@ impl LogTailer {
                             file_size: None,
                         })
                         .map_err(|e| format!("Failed to send batch: {}", e))?;
-
-                        // Check entry cap
-                        if total_sent >= max_entries {
-                            // Stop reading — we've sent enough
-                            break;
-                        }
                     }
                 }
 
@@ -217,8 +208,6 @@ impl LogTailer {
             batch.push(p);
         }
 
-        total_sent += batch.len();
-
         // Send final batch
         tx.blocking_send(TailerEvent::LoadBatch {
             source_idx,
@@ -229,7 +218,6 @@ impl LogTailer {
         })
         .map_err(|e| format!("Failed to send final batch: {}", e))?;
 
-        let _ = total_sent; // suppress unused warning
         Ok(())
     }
 
