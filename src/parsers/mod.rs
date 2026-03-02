@@ -126,6 +126,7 @@ pub fn fallback_parser() -> Arc<dyn LogParser> {
 }
 
 /// Parse content with a specific parser
+#[allow(dead_code)]
 pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry> {
     let mut entries: Vec<LogEntry> = Vec::new();
     let mut index = 0;

@@ -12,6 +12,19 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
+    /// Bit index for bitmask filtering (matches level_filters array order)
+    pub fn filter_bit_index(self) -> u8 {
+        match self {
+            LogLevel::Error => 0,
+            LogLevel::Warn => 1,
+            LogLevel::Info => 2,
+            LogLevel::Debug => 3,
+            LogLevel::Trace => 4,
+            LogLevel::Profile => 5,
+            LogLevel::Unknown => 6,
+        }
+    }
+
     pub fn short_name(&self) -> &'static str {
         match self {
             LogLevel::Trace => "TRC",

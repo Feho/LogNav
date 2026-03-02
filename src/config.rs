@@ -22,6 +22,8 @@ pub struct Config {
     pub dark_overrides: HashMap<String, String>,
     #[serde(default)]
     pub light_overrides: HashMap<String, String>,
+    #[serde(default)]
+    pub max_entries: Option<usize>,
 }
 
 fn default_theme_name() -> String {
@@ -29,6 +31,10 @@ fn default_theme_name() -> String {
 }
 
 impl Config {
+    pub fn max_entries(&self) -> usize {
+        self.max_entries.unwrap_or(5_000_000)
+    }
+
     /// Get the config file path
     fn config_path() -> Option<PathBuf> {
         ProjectDirs::from("", "", "lognav").map(|dirs| dirs.config_dir().join("config.json"))

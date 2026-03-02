@@ -22,10 +22,20 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use log_tailer::{LogTailer, TailerEvent};
+use parsers::LogParser;
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// Metadata returned when a streaming load completes
+struct LoadComplete {
+    source_idx: u8,
+    parser: Arc<dyn LogParser>,
+    file_size: u64,
+    entry_count: usize,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app
     let mut app = App::new();
     app.recent_files = config.recent_files.clone();
+    app.max_entries = config.max_entries();
     app.syntax_highlight = config.syntax_highlight.unwrap_or(true);
     app.dark_overrides = config.dark_overrides.clone();
     app.light_overrides = config.light_overrides.clone();
@@ -67,27 +78,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (cluster_tx, mut cluster_rx) = mpsc::channel(1);
     app.cluster_tx = Some(cluster_tx);
 
-    // Load initial file if provided
+    // Load initial file if provided (fire-and-forget streaming load)
     let mut tailers: Vec<LogTailer> = Vec::new();
     if let Some(ref path) = initial_file {
         app.file_path = path.clone();
         app.sources
             .push(SourceFile::new(path, app.theme.source_color(0)));
         app.source_entry_counts.push(0);
-        let mut t = LogTailer::new(path, 0, tailer_tx.clone());
-        if let Err(e) = t.load_initial().await {
-            app.status_message = Some(format!("Error: {}", e));
-        } else {
-            config.add_recent_file(path);
-            app.recent_files = config.recent_files.clone();
-            app.bookmarks = config.load_bookmarks(path);
-            // Populate bookmark_stable_ids from loaded bookmarks
-            // (source_idx=0, source_local_idx=entry_idx for single file)
-            app.bookmark_stable_ids = app.bookmarks.iter().map(|&idx| (0u8, idx)).collect();
-            if app.tail_enabled {
-                let _ = t.start_watching();
-            }
-        }
+        app.is_loading = true;
+
+        let t = LogTailer::new(path, 0, tailer_tx.clone());
+        t.start_loading(app.max_entries);
+
+        config.add_recent_file(path);
+        app.recent_files = config.recent_files.clone();
+        // Store bookmark stable IDs; actual bookmarks rebuilt as entries arrive
+        let loaded_bookmarks = config.load_bookmarks(path);
+        app.bookmark_stable_ids = loaded_bookmarks.iter().map(|&idx| (0u8, idx)).collect();
+
         tailers.push(t);
     }
 
@@ -179,7 +187,9 @@ async fn run_app(
         let mut pending: Vec<Event> = Vec::new();
         tokio::select! {
             Some(event) = tailer_rx.recv() => {
-                handle_tailer_event(app, event);
+                if let Some(lc) = handle_tailer_event(app, event) {
+                    finish_load(app, tailers, config, lc);
+                }
             }
             Some(clusters) = cluster_rx.recv() => {
                 app.receive_clusters(clusters);
@@ -229,7 +239,9 @@ async fn run_app(
 
         // Drain pending tailer events too
         while let Ok(event) = tailer_rx.try_recv() {
-            handle_tailer_event(app, event);
+            if let Some(lc) = handle_tailer_event(app, event) {
+                finish_load(app, tailers, config, lc);
+            }
         }
 
         // Handle file path change — "Open File" replaces everything
@@ -247,27 +259,19 @@ async fn run_app(
             app.remove_all_sources();
             app.reset_all_filters();
             app.set_primary_source(&path);
+            app.is_loading = true;
+            app.loading_entry_count = 0;
 
-            let mut new_tailer = LogTailer::new(&path, 0, tailer_tx.clone());
-            match new_tailer.load_initial().await {
-                Ok(()) => {
-                    config.add_recent_file(&path);
-                    app.recent_files = config.recent_files.clone();
-                    // Load bookmarks for this file
-                    let loaded = config.load_bookmarks(&path);
-                    app.bookmark_stable_ids = loaded.iter().map(|&idx| (0u8, idx)).collect();
-                    app.bookmarks = loaded;
-                    if app.tail_enabled {
-                        let _ = new_tailer.start_watching();
-                    }
-                    tailers.push(new_tailer);
-                }
-                Err(e) => {
-                    app.status_message = Some(format!("Error: {}", e));
-                    app.file_path = previous_path;
-                    app.sources.clear();
-                }
-            }
+            let new_tailer = LogTailer::new(&path, 0, tailer_tx.clone());
+            new_tailer.start_loading(app.max_entries);
+
+            config.add_recent_file(&path);
+            app.recent_files = config.recent_files.clone();
+            // Store bookmark stable IDs; actual bookmarks rebuilt as entries arrive
+            let loaded = config.load_bookmarks(&path);
+            app.bookmark_stable_ids = loaded.iter().map(|&idx| (0u8, idx)).collect();
+
+            tailers.push(new_tailer);
         }
 
         // Handle merge file request
@@ -283,33 +287,19 @@ async fn run_app(
 
             config.add_recent_file(&merge_path);
             app.recent_files = config.recent_files.clone();
+            app.is_loading = true;
+            app.loading_entry_count = 0;
 
-            let mut new_tailer = LogTailer::new(&merge_path, source_idx, tailer_tx.clone());
-            match new_tailer.load_initial().await {
-                Ok(()) => {
-                    // Load bookmarks for this source
-                    let loaded = config.load_bookmarks(&merge_path);
-                    for &local_idx in &loaded {
-                        app.bookmark_stable_ids.insert((source_idx, local_idx));
-                    }
-                    if app.tail_enabled {
-                        let _ = new_tailer.start_watching();
-                    }
-                    tailers.push(new_tailer);
-                    app.status_message = Some(format!(
-                        "Merged: {}",
-                        app.sources
-                            .iter()
-                            .map(|s| s.label.as_str())
-                            .collect::<Vec<_>>()
-                            .join(" + ")
-                    ));
-                }
-                Err(e) => {
-                    app.status_message = Some(format!("Error merging: {}", e));
-                    app.sources.pop();
-                }
+            let new_tailer = LogTailer::new(&merge_path, source_idx, tailer_tx.clone());
+            new_tailer.start_loading(app.max_entries);
+
+            // Store bookmark stable IDs for this source
+            let loaded = config.load_bookmarks(&merge_path);
+            for &local_idx in &loaded {
+                app.bookmark_stable_ids.insert((source_idx, local_idx));
             }
+
+            tailers.push(new_tailer);
         }
 
         // Handle tail toggle (once after all events)
@@ -325,6 +315,50 @@ async fn run_app(
     }
 
     Ok(())
+}
+
+/// Handle load completion: configure tailer for tailing, rebuild bookmarks
+fn finish_load(
+    app: &mut App,
+    tailers: &mut [LogTailer],
+    config: &mut Config,
+    lc: LoadComplete,
+) {
+    if let Some(tailer) = tailers.iter_mut().find(|t| t.source_idx() == lc.source_idx) {
+        tailer.configure_for_tailing(lc.parser, lc.file_size, lc.entry_count);
+        if app.tail_enabled {
+            let _ = tailer.start_watching();
+        }
+    }
+
+    // Rebuild bookmarks now that entries exist
+    app.rebuild_bookmarks_from_stable();
+
+    if app.sources.len() > 1 {
+        let label = app
+            .sources
+            .get(lc.source_idx as usize)
+            .map(|s| s.label.as_str())
+            .unwrap_or("?");
+
+        // Only show merge status for non-primary sources
+        if lc.source_idx > 0 {
+            app.status_message = Some(format!(
+                "Merged: {}",
+                app.sources
+                    .iter()
+                    .map(|s| s.label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            ));
+        }
+        let _ = label;
+    }
+
+    // Save bookmarks path association
+    if let Some(source) = app.sources.get(lc.source_idx as usize) {
+        let _ = config.load_bookmarks(&source.path);
+    }
 }
 
 /// A "plain" char key: printable character with no modifier, Shift, or
@@ -393,20 +427,50 @@ fn flush_char_buf(buf: &mut String, out: &mut Vec<Event>) {
     }
 }
 
-fn handle_tailer_event(app: &mut App, event: TailerEvent) {
+/// Handle a tailer event, returning LoadComplete if a streaming load finished
+fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete> {
     match event {
-        TailerEvent::InitialLoad {
+        TailerEvent::LoadBatch {
             source_idx,
             entries,
-        } => app.merge_entries_from_source(source_idx, entries),
+            done,
+            parser,
+            file_size,
+        } => {
+            let count = entries.len();
+            app.loading_entry_count += count;
+            app.merge_entries_from_source(source_idx, entries);
+            if done {
+                app.is_loading = false;
+                let entry_count = app
+                    .source_entry_counts
+                    .get(source_idx as usize)
+                    .copied()
+                    .unwrap_or(0);
+                return Some(LoadComplete {
+                    source_idx,
+                    parser: parser.expect("final LoadBatch must include parser"),
+                    file_size: file_size.expect("final LoadBatch must include file_size"),
+                    entry_count,
+                });
+            }
+            None
+        }
         TailerEvent::NewEntries {
             source_idx,
             entries,
-        } => app.merge_entries_from_source(source_idx, entries),
+        } => {
+            app.merge_entries_from_source(source_idx, entries);
+            None
+        }
         TailerEvent::Error {
             source_idx,
             message,
         } => {
+            // If error during loading, clear loading state
+            if app.is_loading {
+                app.is_loading = false;
+            }
             if app.sources.len() > 1 {
                 let label = app
                     .sources
@@ -417,10 +481,12 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) {
             } else {
                 app.status_message = Some(format!("Tail error: {}", message));
             }
+            None
         }
         TailerEvent::FileReset { source_idx } => {
             app.reset_source(source_idx);
             app.status_message = Some(format!("Source {} was reset", source_idx));
+            None
         }
     }
 }

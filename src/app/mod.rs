@@ -69,8 +69,6 @@ pub mod commands;
 pub mod filtering;
 pub mod navigation;
 
-const MAX_ENTRIES: usize = 500_000;
-
 #[derive(Debug, Clone)]
 pub enum FocusState {
     Normal,
@@ -189,9 +187,29 @@ pub enum FilterManagerFocus {
     List,
 }
 
+/// Compact per-entry metadata for fast filter passes (parallel to `entries`)
+#[derive(Clone, Copy)]
+pub(crate) struct EntryMeta {
+    pub level_bit: u8,     // 1 << LogLevel::filter_bit_index()
+    pub timestamp_ms: i64, // milliseconds since epoch; i64::MIN = no timestamp
+}
+
+impl EntryMeta {
+    pub fn from_entry(entry: &LogEntry) -> Self {
+        Self {
+            level_bit: 1u8 << entry.level.filter_bit_index(),
+            timestamp_ms: entry
+                .timestamp
+                .map(|ts| ts.and_utc().timestamp_millis())
+                .unwrap_or(i64::MIN),
+        }
+    }
+}
+
 pub struct App {
     // Log data
     pub entries: Vec<LogEntry>,
+    pub(crate) entry_meta: Vec<EntryMeta>,
     pub filtered_indices: Vec<usize>,
 
     // Filter state
@@ -226,6 +244,11 @@ pub struct App {
     pub source_entry_counts: Vec<usize>,
     /// Stable bookmark IDs: (source_idx, source_local_idx)
     pub bookmark_stable_ids: HashSet<(u8, usize)>,
+
+    // Loading state (streaming batch load)
+    pub is_loading: bool,
+    pub loading_entry_count: usize,
+    pub max_entries: usize,
 
     // Status
     pub status_message: Option<String>,
@@ -286,6 +309,7 @@ impl App {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            entry_meta: Vec::new(),
             filtered_indices: Vec::new(),
             level_filters: [true, true, true, true, true, true], // All levels on by default
             date_from: None,
@@ -310,6 +334,9 @@ impl App {
             pending_merge_path: None,
             source_entry_counts: Vec::new(),
             bookmark_stable_ids: HashSet::new(),
+            is_loading: false,
+            loading_entry_count: 0,
+            max_entries: 5_000_000,
             status_message: None,
             should_quit: false,
             fuzzy_matcher: SkimMatcherV2::default(),
@@ -342,6 +369,7 @@ impl App {
     pub fn set_entries(&mut self, entries: Vec<LogEntry>) {
         self.entries = entries;
         self.apply_entry_cap();
+        self.entry_meta = self.entries.iter().map(EntryMeta::from_entry).collect();
         self.apply_filters();
         if self.tail_enabled {
             self.scroll_to_bottom();
@@ -362,8 +390,13 @@ impl App {
 
         self.entries.append(&mut new_entries);
 
+        // Build metadata for new entries
+        for entry in &self.entries[start_idx..] {
+            self.entry_meta.push(EntryMeta::from_entry(entry));
+        }
+
         // Check if we need to cap entries
-        let needs_cap = self.entries.len() > MAX_ENTRIES;
+        let needs_cap = self.entries.len() > self.max_entries;
         if needs_cap {
             self.apply_entry_cap();
             // After capping, indices are invalidated - must refilter
@@ -381,11 +414,10 @@ impl App {
 
     /// Apply entry cap, removing oldest entries if needed
     fn apply_entry_cap(&mut self) {
-        if self.entries.len() > MAX_ENTRIES {
-            let skip = self.entries.len() - MAX_ENTRIES;
-            // Drop oldest entries (more efficient than creating new Vec)
+        if self.entries.len() > self.max_entries {
+            let skip = self.entries.len() - self.max_entries;
             self.entries.drain(..skip);
-            // Re-index
+            self.entry_meta.drain(..skip);
             for (i, entry) in self.entries.iter_mut().enumerate() {
                 entry.index = i;
             }
@@ -537,10 +569,19 @@ impl App {
             return;
         }
 
+        // Build lightweight snapshot: only raw_line + message_offset
+        let snapshots: Vec<(String, Option<usize>)> = self
+            .filtered_indices
+            .iter()
+            .map(|&idx| {
+                let e = &self.entries[idx];
+                (e.raw_line.clone(), e.message_offset)
+            })
+            .collect();
+
         let Some(tx) = self.cluster_tx.clone() else {
             // Fallback: synchronous detection (no channel wired)
-            self.clusters =
-                crate::clusters::detect_clusters(&self.entries, &self.filtered_indices, 3);
+            self.clusters = crate::clusters::detect_clusters(&snapshots, 3);
             self.clusters_dirty = false;
             self.build_cluster_map();
             if self.clusters.is_empty() {
@@ -555,10 +596,6 @@ impl App {
             return;
         };
 
-        // Clone data for async task
-        let entries = self.entries.clone();
-        let filtered = self.filtered_indices.clone();
-
         self.clusters_loading = true;
         self.status_message = Some("Detecting clusters...".to_string());
         self.focus = FocusState::Clusters {
@@ -567,7 +604,7 @@ impl App {
         };
 
         tokio::spawn(async move {
-            let result = crate::clusters::detect_clusters(&entries, &filtered, 3);
+            let result = crate::clusters::detect_clusters(&snapshots, 3);
             let _ = tx.send(result).await;
         });
     }
@@ -919,6 +956,7 @@ impl App {
         self.sources.clear();
         self.source_entry_counts.clear();
         self.entries.clear();
+        self.entry_meta.clear();
         self.filtered_indices.clear();
         self.expanded_entries.clear();
         self.bookmarks.clear();
@@ -997,6 +1035,7 @@ impl App {
             }
         }
         self.entries = merged;
+        self.entry_meta = self.entries.iter().map(EntryMeta::from_entry).collect();
 
         // Re-index all entries
         for (i, entry) in self.entries.iter_mut().enumerate() {
@@ -1015,6 +1054,7 @@ impl App {
     /// Reset entries from a specific source (file truncated/rotated)
     pub fn reset_source(&mut self, source_idx: u8) {
         self.entries.retain(|e| e.source_idx != source_idx);
+        self.entry_meta = self.entries.iter().map(EntryMeta::from_entry).collect();
         let si = source_idx as usize;
         if si < self.source_entry_counts.len() {
             self.source_entry_counts[si] = 0;
@@ -1028,7 +1068,7 @@ impl App {
     }
 
     /// Rebuild bookmarks HashSet from stable IDs by scanning entries
-    fn rebuild_bookmarks_from_stable(&mut self) {
+    pub fn rebuild_bookmarks_from_stable(&mut self) {
         self.bookmarks.clear();
         for entry in &self.entries {
             if self
