@@ -334,25 +334,15 @@ fn finish_load(
     // Rebuild bookmarks now that entries exist
     app.rebuild_bookmarks_from_stable();
 
-    if app.sources.len() > 1 {
-        let label = app
-            .sources
-            .get(lc.source_idx as usize)
-            .map(|s| s.label.as_str())
-            .unwrap_or("?");
-
-        // Only show merge status for non-primary sources
-        if lc.source_idx > 0 {
-            app.status_message = Some(format!(
-                "Merged: {}",
-                app.sources
-                    .iter()
-                    .map(|s| s.label.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" + ")
-            ));
-        }
-        let _ = label;
+    if app.sources.len() > 1 && lc.source_idx > 0 {
+        app.status_message = Some(format!(
+            "Merged: {}",
+            app.sources
+                .iter()
+                .map(|s| s.label.as_str())
+                .collect::<Vec<_>>()
+                .join(" + ")
+        ));
     }
 
     // Save bookmarks path association

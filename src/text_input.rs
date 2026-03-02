@@ -169,6 +169,7 @@ impl TextInput {
     }
 
     /// Render with optional placeholder text shown when input is empty.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_with_placeholder(
         &self,
         frame: &mut Frame,
