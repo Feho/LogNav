@@ -248,7 +248,6 @@ pub struct App {
     // Loading state (streaming batch load)
     pub is_loading: bool,
     pub loading_entry_count: usize,
-    pub max_entries: usize,
 
     // Status
     pub status_message: Option<String>,
@@ -336,7 +335,6 @@ impl App {
             bookmark_stable_ids: HashSet::new(),
             is_loading: false,
             loading_entry_count: 0,
-            max_entries: 5_000_000,
             status_message: None,
             should_quit: false,
             fuzzy_matcher: SkimMatcherV2::default(),
@@ -368,7 +366,6 @@ impl App {
     /// Add entries from initial load
     pub fn set_entries(&mut self, entries: Vec<LogEntry>) {
         self.entries = entries;
-        self.apply_entry_cap();
         self.entry_meta = self.entries.iter().map(EntryMeta::from_entry).collect();
         self.apply_filters();
         if self.tail_enabled {
@@ -395,16 +392,8 @@ impl App {
             self.entry_meta.push(EntryMeta::from_entry(entry));
         }
 
-        // Check if we need to cap entries
-        let needs_cap = self.entries.len() > self.max_entries;
-        if needs_cap {
-            self.apply_entry_cap();
-            // After capping, indices are invalidated - must refilter
-            self.apply_filters();
-        } else {
-            // Incremental filter - only process new entries
-            self.apply_filters_incremental(start_idx);
-        }
+        // Incremental filter - only process new entries
+        self.apply_filters_incremental(start_idx);
 
         if self.tail_enabled && matches!(self.focus, FocusState::Normal) {
             self.visual_anchor = None;
@@ -412,17 +401,6 @@ impl App {
         }
     }
 
-    /// Apply entry cap, removing oldest entries if needed
-    fn apply_entry_cap(&mut self) {
-        if self.entries.len() > self.max_entries {
-            let skip = self.entries.len() - self.max_entries;
-            self.entries.drain(..skip);
-            self.entry_meta.drain(..skip);
-            for (i, entry) in self.entries.iter_mut().enumerate() {
-                entry.index = i;
-            }
-        }
-    }
 
     /// Get filtered commands based on fuzzy search
     pub fn get_filtered_commands(&self, query: &str) -> Vec<(usize, &commands::Command, i64)> {

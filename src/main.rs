@@ -61,7 +61,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app
     let mut app = App::new();
     app.recent_files = config.recent_files.clone();
-    app.max_entries = config.max_entries();
     app.syntax_highlight = config.syntax_highlight.unwrap_or(true);
     app.dark_overrides = config.dark_overrides.clone();
     app.light_overrides = config.light_overrides.clone();
