@@ -246,7 +246,7 @@ pub struct App {
     pub bookmark_stable_ids: HashSet<(u8, usize)>,
 
     // Loading state (streaming batch load)
-    pub is_loading: bool,
+    pub loading_sources: HashSet<u8>,
     pub loading_entry_count: usize,
 
     // Status
@@ -333,7 +333,7 @@ impl App {
             pending_merge_path: None,
             source_entry_counts: Vec::new(),
             bookmark_stable_ids: HashSet::new(),
-            is_loading: false,
+            loading_sources: HashSet::new(),
             loading_entry_count: 0,
             status_message: None,
             should_quit: false,
@@ -361,6 +361,10 @@ impl App {
             dark_overrides: HashMap::new(),
             light_overrides: HashMap::new(),
         }
+    }
+
+    pub fn is_loading(&self) -> bool {
+        !self.loading_sources.is_empty()
     }
 
     /// Add entries from initial load
@@ -609,6 +613,7 @@ impl App {
     /// grouped visually with sequential offsets so the gutter renders correctly.
     fn build_cluster_map(&mut self) {
         self.cluster_map.clear();
+        self.folded_clusters.clear();
         for (cluster_id, cluster) in self.clusters.iter().enumerate() {
             if cluster.sequence_len == 1 && cluster.occurrences.len() > 1 {
                 // Group consecutive single-entry occurrences into visual runs.

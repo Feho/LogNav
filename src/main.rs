@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.sources
             .push(SourceFile::new(path, app.theme.source_color(0)));
         app.source_entry_counts.push(0);
-        app.is_loading = true;
+        app.loading_sources.insert(0);
 
         let t = LogTailer::new(path, 0, tailer_tx.clone());
         t.start_loading();
@@ -258,7 +258,8 @@ async fn run_app(
             app.remove_all_sources();
             app.reset_all_filters();
             app.set_primary_source(&path);
-            app.is_loading = true;
+            app.loading_sources.clear();
+            app.loading_sources.insert(0);
             app.loading_entry_count = 0;
 
             let new_tailer = LogTailer::new(&path, 0, tailer_tx.clone());
@@ -286,7 +287,7 @@ async fn run_app(
 
             config.add_recent_file(&merge_path);
             app.recent_files = config.recent_files.clone();
-            app.is_loading = true;
+            app.loading_sources.insert(source_idx);
             app.loading_entry_count = 0;
 
             let new_tailer = LogTailer::new(&merge_path, source_idx, tailer_tx.clone());
@@ -440,7 +441,7 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete
             app.loading_entry_count += count;
             app.merge_entries_from_source(source_idx, entries);
             if done {
-                app.is_loading = false;
+                app.loading_sources.remove(&source_idx);
                 let entry_count = app
                     .source_entry_counts
                     .get(source_idx as usize)
@@ -466,10 +467,8 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete
             source_idx,
             message,
         } => {
-            // If error during loading, clear loading state
-            if app.is_loading {
-                app.is_loading = false;
-            }
+            // If error during loading, clear loading state for this source
+            app.loading_sources.remove(&source_idx);
             if app.sources.len() > 1 {
                 let label = app
                     .sources

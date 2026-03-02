@@ -125,8 +125,6 @@ impl App {
 
         self.visual_anchor = None;
         self.clusters_dirty = true;
-        self.cluster_map.clear();
-        self.folded_clusters.clear();
         self.clamp_scroll();
     }
 

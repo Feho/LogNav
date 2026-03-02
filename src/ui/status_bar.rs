@@ -29,7 +29,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     // Build status components
     let mut parts = vec![file_display, format!("{}/{}", shown, total), levels];
 
-    if app.is_loading {
+    if app.is_loading() {
         let count = app.loading_entry_count;
         let display = if count >= 1_000_000 {
             format!("Loading\u{2026} {:.1}M entries", count as f64 / 1_000_000.0)

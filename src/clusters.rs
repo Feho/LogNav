@@ -90,12 +90,16 @@ fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Clus
                 continue;
             }
 
+            // Sort positions so the greedy non-overlap filter works correctly
+            let mut sorted_positions = positions.clone();
+            sorted_positions.sort_unstable();
+
             // Verify actual match and collect non-overlapping positions
-            let reference = &templates[positions[0]..positions[0] + seq_len];
+            let reference = &templates[sorted_positions[0]..sorted_positions[0] + seq_len];
             let mut valid: Vec<usize> = Vec::new();
             let mut last_end: usize = 0;
 
-            for &pos in positions {
+            for &pos in &sorted_positions {
                 if pos < last_end {
                     continue;
                 }
