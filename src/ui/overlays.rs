@@ -1,14 +1,15 @@
-use crate::app::{App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, QUICK_FILTERS};
+use crate::app::{App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, StatsData, QUICK_FILTERS};
+use crate::log_entry::LogLevel;
 use crate::theme::{LIGHT_START_INDEX, THEME_PRESETS};
 use crate::text_utils::wrap_text;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, render_scrollbar};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Bar, BarChart, BarGroup, Block, Borders, Clear, List, ListItem, Paragraph, Sparkline},
 };
 
 /// Draw command palette overlay
@@ -547,6 +548,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         Line::from("  o         Open file"),
         Line::from("  M         Merge file (add to merged view)"),
         Line::from("  Ctrl+P    Command palette"),
+        Line::from("  F2        Statistics dashboard"),
         Line::from("  ? / F1    Show this help"),
         Line::from("  Esc       Close dialog"),
         Line::from("  q         Quit"),
@@ -1066,4 +1068,220 @@ pub fn draw_theme_picker(frame: &mut Frame, app: &App) {
             },
         );
     }
+}
+
+fn format_count(n: usize) -> String {
+    if n < 1_000 {
+        return n.to_string();
+    }
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
+}
+
+fn format_duration(ms: i64) -> String {
+    let secs = ms / 1_000;
+    let mins = secs / 60;
+    let hours = mins / 60;
+    let days = hours / 24;
+
+    if days > 0 {
+        format!("{}d {}h", days, hours % 24)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, mins % 60)
+    } else if mins > 0 {
+        format!("{}m {}s", mins, secs % 60)
+    } else {
+        format!("{}s", secs)
+    }
+}
+
+/// Draw statistics dashboard overlay
+pub fn draw_stats(frame: &mut Frame, app: &App) {
+    let theme = &app.theme;
+    let area = centered_rect(80, 80, frame.area());
+    frame.render_widget(Clear, area);
+
+    let data: &StatsData = match &app.focus {
+        FocusState::Stats { data } => data,
+        _ => return,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme.border_style())
+        .title(" Statistics Dashboard ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 10 || inner.width < 30 {
+        frame.render_widget(
+            Paragraph::new("Terminal too small"),
+            inner,
+        );
+        return;
+    }
+
+    // Layout: summary(4) + sparkline section(7 or less) + bar chart(rest) + help(1)
+    let sparkline_height = if data.has_timestamps { 6 } else { 1 };
+    let chunks = Layout::vertical([
+        Constraint::Length(4),                   // summary section
+        Constraint::Length(sparkline_height),     // sparkline section (header + chart)
+        Constraint::Length(1),                   // separator
+        Constraint::Min(4),                      // bar chart section
+        Constraint::Length(1),                   // help line
+    ])
+    .split(inner);
+
+    // ── SUMMARY ──
+    let section_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+
+    let mut summary_lines = vec![
+        Line::from(Span::styled("  SUMMARY", section_style)),
+        Line::from(""),
+    ];
+
+    let total_s = format_count(data.total_entries);
+    let filtered_s = format_count(data.filtered_count);
+    let error_pct = data
+        .error_rate
+        .map(|r| format!("{:.1}%", r))
+        .unwrap_or_else(|| "N/A".to_string());
+
+    summary_lines.push(Line::from(vec![
+        Span::styled("  Total: ", Style::default().fg(theme.muted)),
+        Span::styled(&total_s, Style::default().fg(theme.fg)),
+        Span::styled("    Filtered: ", Style::default().fg(theme.muted)),
+        Span::styled(&filtered_s, Style::default().fg(theme.fg)),
+        Span::styled("    Error rate: ", Style::default().fg(theme.muted)),
+        Span::styled(
+            &error_pct,
+            Style::default().fg(if data.error_rate.unwrap_or(0.0) > 5.0 {
+                theme.error_text
+            } else {
+                theme.fg
+            }),
+        ),
+    ]));
+
+    if let Some((t_min, t_max)) = data.time_range {
+        use chrono::DateTime;
+        let from = DateTime::from_timestamp_millis(t_min)
+            .map(|dt| dt.naive_local().format("%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "?".to_string());
+        let to = DateTime::from_timestamp_millis(t_max)
+            .map(|dt| dt.naive_local().format("%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "?".to_string());
+        let dur = format_duration(t_max - t_min);
+        summary_lines.push(Line::from(vec![
+            Span::styled("  Time: ", Style::default().fg(theme.muted)),
+            Span::styled(from, Style::default().fg(theme.fg)),
+            Span::styled(" → ", Style::default().fg(theme.muted)),
+            Span::styled(to, Style::default().fg(theme.fg)),
+            Span::styled(format!("  ({})", dur), Style::default().fg(theme.muted)),
+        ]));
+    } else {
+        summary_lines.push(Line::from(Span::styled(
+            "  Time: No timestamp data",
+            Style::default().fg(theme.muted),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(summary_lines), chunks[0]);
+
+    // ── EVENT RATE SPARKLINE ──
+    if data.has_timestamps && !data.sparkline_data.is_empty() {
+        let spark_chunks = Layout::vertical([
+            Constraint::Length(1), // header
+            Constraint::Min(1),   // sparkline
+        ])
+        .split(chunks[1]);
+
+        let header = Line::from(Span::styled(
+            format!("  EVENT RATE  ({} buckets)", data.bucket_label),
+            section_style,
+        ));
+        frame.render_widget(Paragraph::new(header), spark_chunks[0]);
+
+        let spark_area = Rect {
+            x: spark_chunks[1].x + 2,
+            width: spark_chunks[1].width.saturating_sub(4),
+            ..spark_chunks[1]
+        };
+
+        let sparkline = Sparkline::default()
+            .style(Style::default().fg(theme.accent))
+            .data(&data.sparkline_data);
+        frame.render_widget(sparkline, spark_area);
+    } else {
+        let no_ts = Line::from(Span::styled(
+            "  EVENT RATE  (no timestamp data)",
+            Style::default().fg(theme.muted),
+        ));
+        frame.render_widget(Paragraph::new(no_ts), chunks[1]);
+    }
+
+    // ── LEVEL DISTRIBUTION BAR CHART ──
+    let bar_chunks = Layout::vertical([
+        Constraint::Length(1), // header
+        Constraint::Min(3),   // chart
+    ])
+    .split(chunks[3]);
+
+    let bar_header = Line::from(Span::styled("  LEVEL DISTRIBUTION", section_style));
+    frame.render_widget(Paragraph::new(bar_header), bar_chunks[0]);
+
+    const DISPLAY_LEVELS: &[(LogLevel, usize, &str)] = &[
+        (LogLevel::Error, 0, "ERR"),
+        (LogLevel::Warn, 1, "WRN"),
+        (LogLevel::Info, 2, "INF"),
+        (LogLevel::Debug, 3, "DBG"),
+        (LogLevel::Trace, 4, "TRC"),
+        (LogLevel::Profile, 5, "PRF"),
+    ];
+
+    let bars: Vec<Bar> = DISPLAY_LEVELS
+        .iter()
+        .map(|(level, bit_idx, label)| {
+            let count = data.level_counts[*bit_idx];
+            let color = theme.level_color(*level);
+            Bar::default()
+                .value(count)
+                .label(Line::from(*label))
+                .style(Style::default().fg(color))
+                .value_style(Style::default().fg(color).add_modifier(Modifier::BOLD))
+        })
+        .collect();
+
+    let bar_max = data.level_counts[..6].iter().copied().max().unwrap_or(1).max(1);
+
+    let bar_chart = BarChart::default()
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(7)
+        .bar_gap(2)
+        .max(bar_max);
+
+    let chart_area = Rect {
+        x: bar_chunks[1].x + 2,
+        width: bar_chunks[1].width.saturating_sub(4),
+        ..bar_chunks[1]
+    };
+    frame.render_widget(bar_chart, chart_area);
+
+    // ── HELP LINE ──
+    let help_text = "Esc/q: close | F2: toggle";
+    let padding = (chunks[4].width as usize).saturating_sub(help_text.len() + 2);
+    let help_line = Line::from(vec![
+        Span::raw(" ".repeat(padding)),
+        Span::styled(help_text, Style::default().fg(theme.muted)),
+    ]);
+    frame.render_widget(Paragraph::new(help_line), chunks[4]);
 }

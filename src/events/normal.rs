@@ -23,6 +23,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.open_help();
         }
 
+        // Statistics dashboard
+        (_, KeyCode::F(2)) => {
+            app.open_stats();
+        }
+
         // Command palette
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
             app.open_command_palette();

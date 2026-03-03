@@ -38,6 +38,7 @@ pub enum CommandAction {
     ExportFiltered,
     Clusters,
     ThemePicker,
+    Stats,
     Quit,
 }
 
@@ -197,6 +198,11 @@ impl Command {
             name: "Change theme...",
             shortcut: "",
             action: CommandAction::ThemePicker,
+        },
+        Command {
+            name: "Statistics dashboard",
+            shortcut: "F2",
+            action: CommandAction::Stats,
         },
         Command {
             name: "Quit",

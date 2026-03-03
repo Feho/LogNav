@@ -136,6 +136,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
         FocusState::Clusters { .. } => "Enter:jump | Esc:close ",
         FocusState::ThemePicker { .. } => "Enter:confirm | Esc:cancel ",
+        FocusState::Stats { .. } => "Esc/q:close | F2:toggle ",
     };
 
     let left_len = left.len();

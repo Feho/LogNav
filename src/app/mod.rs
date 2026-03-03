@@ -125,6 +125,28 @@ pub enum FocusState {
         original_theme: Theme,
         original_name: String,
     },
+    Stats {
+        data: Box<StatsData>,
+    },
+}
+
+/// Pre-computed statistics for the stats dashboard overlay.
+#[derive(Debug, Clone)]
+pub struct StatsData {
+    pub total_entries: usize,
+    pub filtered_count: usize,
+    /// Per-level count indexed by LogLevel::filter_bit_index() (0=ERR…5=PRF, 6=Unknown)
+    pub level_counts: [u64; 7],
+    /// (min_ms, max_ms) over filtered entries that have timestamps
+    pub time_range: Option<(i64, i64)>,
+    /// Error rate as percentage; None if no entries
+    pub error_rate: Option<f64>,
+    /// Event counts per time bucket (oldest to newest)
+    pub sparkline_data: Vec<u64>,
+    /// Human-readable bucket size label
+    pub bucket_label: &'static str,
+    /// True if any filtered entry had a timestamp
+    pub has_timestamps: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -524,6 +546,81 @@ impl App {
     /// Open help dialog
     pub fn open_help(&mut self) {
         self.focus = FocusState::Help { scroll_offset: 0 };
+    }
+
+    pub fn open_stats(&mut self) {
+        let total_entries = self.entries.len();
+        let filtered_count = self.filtered_indices.len();
+
+        let mut level_counts = [0u64; 7];
+        let mut min_ms = i64::MAX;
+        let mut max_ms = i64::MIN;
+
+        for &idx in &self.filtered_indices {
+            let meta = &self.entry_meta[idx];
+            let bit_idx = meta.level_bit.trailing_zeros() as usize;
+            if bit_idx < 7 {
+                level_counts[bit_idx] += 1;
+            }
+            if meta.timestamp_ms != i64::MIN {
+                min_ms = min_ms.min(meta.timestamp_ms);
+                max_ms = max_ms.max(meta.timestamp_ms);
+            }
+        }
+
+        let has_timestamps = min_ms != i64::MAX;
+        let time_range = if has_timestamps {
+            Some((min_ms, max_ms))
+        } else {
+            None
+        };
+
+        let error_rate = if filtered_count > 0 {
+            Some(level_counts[0] as f64 / filtered_count as f64 * 100.0)
+        } else {
+            None
+        };
+
+        let (sparkline_data, bucket_label) = if let Some((t_min, t_max)) = time_range {
+            let span_ms = (t_max - t_min).max(1);
+            let (bucket_ms, label): (i64, &'static str) = if span_ms <= 60 * 60_000 {
+                (60_000, "1 min")
+            } else if span_ms <= 12 * 3_600_000 {
+                (5 * 60_000, "5 min")
+            } else if span_ms <= 7 * 86_400_000 {
+                (3_600_000, "1 hr")
+            } else {
+                (86_400_000, "1 day")
+            };
+
+            let n_buckets = (((span_ms + bucket_ms - 1) / bucket_ms) as usize).clamp(1, 200);
+            let mut buckets = vec![0u64; n_buckets];
+
+            for &idx in &self.filtered_indices {
+                let ts = self.entry_meta[idx].timestamp_ms;
+                if ts != i64::MIN {
+                    let bi = ((ts - t_min) / bucket_ms) as usize;
+                    buckets[bi.min(n_buckets - 1)] += 1;
+                }
+            }
+
+            (buckets, label)
+        } else {
+            (Vec::new(), "N/A")
+        };
+
+        self.focus = FocusState::Stats {
+            data: Box::new(StatsData {
+                total_entries,
+                filtered_count,
+                level_counts,
+                time_range,
+                error_rate,
+                sparkline_data,
+                bucket_label,
+                has_timestamps,
+            }),
+        };
     }
 
     /// Open theme picker overlay
@@ -1113,6 +1210,7 @@ impl App {
             CommandAction::ExportFiltered => self.open_export_dialog(),
             CommandAction::Clusters => self.open_clusters(),
             CommandAction::ThemePicker => self.open_theme_picker(),
+            CommandAction::Stats => self.open_stats(),
             CommandAction::Quit => self.should_quit = true,
         }
     }
