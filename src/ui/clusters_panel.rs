@@ -145,7 +145,7 @@ pub fn draw_clusters(frame: &mut Frame, app: &mut App) {
         height: 1,
     };
     let footer = Line::from(vec![Span::styled(
-        " Enter: jump \u{2502} j/k: navigate \u{2502} Esc: close",
+        " Enter: jump \u{2502} Esc: close",
         Style::default().fg(theme.muted),
     )]);
     frame.render_widget(Paragraph::new(footer), footer_area);

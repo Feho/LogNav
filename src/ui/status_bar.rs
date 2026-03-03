@@ -93,28 +93,49 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         format!(" {} ", parts.join(" | "))
     };
 
+    // Check if the currently selected entry is expandable (has continuation lines)
+    let current_expandable = matches!(app.focus, FocusState::Normal)
+        && app
+            .filtered_indices
+            .get(app.selected_index)
+            .map_or(false, |&idx| {
+                !app.entries[idx].continuation_lines.is_empty()
+            });
+
     // Right side: context-aware hints
+    let normal_hints: String;
     let right = match app.focus {
         FocusState::Normal if app.search_panel_open && app.search_panel_focused => {
-            "j/k:move | n/N:next/previous match | Tab:main | Esc:close | /:search"
+            "n/N:next/previous match | Tab:main | Esc:close | /:search"
         }
         FocusState::Normal if app.search_panel_open => {
             "n/N:next/previous match | Tab:panel | Esc:close | /:search"
         }
         FocusState::Normal if app.search.regex.is_some() => {
-            "n/N:next/previous match | j/k:move | /:search | ?:help | q:quit"
+            "n/N:next/previous match | /:search | ?:help | q:quit"
         }
-        FocusState::Normal => "j/k:move | /:search | Enter:expand | o:open file | ?:help | q:quit",
+        FocusState::Normal => {
+            let expand_hint = if current_expandable {
+                " | Enter:expand"
+            } else {
+                ""
+            };
+            normal_hints = format!(
+                "Ctrl+P:commands | /:search{} | o:open file | ?:help | q:quit",
+                expand_hint
+            );
+            &normal_hints
+        }
         FocusState::Search { .. } => "Ctrl+r:regex | Enter:search | Esc:cancel ",
         FocusState::CommandPalette { .. } => "Esc:close | Enter:run ",
         FocusState::DateFilter { .. } => "Tab:switch | Enter:apply | Esc:close ",
         FocusState::FileOpen { .. } => "Tab:fill | Enter:open | Esc:cancel ",
-        FocusState::Detail { .. } => "j/k:scroll | Esc:close ",
+        FocusState::Detail { .. } => "Esc:close ",
         FocusState::Help { .. } => "j/k:scroll | Esc/q:close ",
         FocusState::FilterManager { .. } => "Tab:switch | Enter:add | d:remove | Esc:close ",
         FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
-        FocusState::Clusters { .. } => "j/k:navigate | Enter:jump | Esc:close ",
-        FocusState::ThemePicker { .. } => "j/k:select | Enter:confirm | Esc:cancel ",
+        FocusState::Clusters { .. } => "Enter:jump | Esc:close ",
+        FocusState::ThemePicker { .. } => "Enter:confirm | Esc:cancel ",
     };
 
     let left_len = left.len();

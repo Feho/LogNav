@@ -1055,7 +1055,7 @@ pub fn draw_theme_picker(frame: &mut Frame, app: &App) {
     if help_y > y {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "  j/k: select | Enter: confirm | Esc: cancel",
+                "  Enter: confirm | Esc: cancel",
                 Style::default().fg(theme.muted),
             ))),
             Rect {
