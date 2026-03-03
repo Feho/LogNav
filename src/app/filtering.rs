@@ -1,15 +1,116 @@
+use rayon::prelude::*;
+
 use super::App;
-use crate::log_entry::LogLevel;
 
 impl App {
-    /// Apply all filters and update filtered_indices
-    pub fn apply_filters(&mut self) {
-        self.filtered_indices.clear();
-
-        for (idx, entry) in self.entries.iter().enumerate() {
-            if self.passes_all_filters(entry) {
-                self.filtered_indices.push(idx);
+    /// Compute a u8 bitmask from level_filters[0..6].
+    /// Unknown (bit 6) always passes.
+    fn level_filters_as_mask(&self) -> u8 {
+        let mut mask = 0u8;
+        for (i, &enabled) in self.level_filters.iter().enumerate() {
+            if enabled {
+                mask |= 1 << i;
             }
+        }
+        // Unknown level (bit 6) always passes
+        mask |= 1 << 6;
+        mask
+    }
+
+    /// Apply all filters and update filtered_indices.
+    ///
+    /// Uses a tiered approach:
+    /// - Fast path (no regex): scan only entry_meta with bitmask + integer compare
+    /// - Full path (regex active): metadata pre-check then regex on candidates,
+    ///   parallelized with rayon when candidates > 50K
+    pub fn apply_filters(&mut self) {
+        let level_mask = self.level_filters_as_mask();
+        let has_regex = !self.exclude_patterns.is_empty() || !self.include_patterns.is_empty();
+
+        // Convert date bounds to millis for fast integer comparison
+        let from_ms = self.date_from.map(|d| d.and_utc().timestamp_millis());
+        let to_ms = self.date_to.map(|d| d.and_utc().timestamp_millis());
+
+        // Fast metadata scan — touches only entry_meta, not entries
+        let candidates: Vec<usize> = self
+            .entry_meta
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                // Level check via bitmask
+                if m.level_bit & level_mask == 0 {
+                    return false;
+                }
+                // Date range check (entries without timestamps always pass)
+                if let Some(from) = from_ms
+                    && m.timestamp_ms != i64::MIN
+                    && m.timestamp_ms < from
+                {
+                    return false;
+                }
+                if let Some(to) = to_ms
+                    && m.timestamp_ms != i64::MIN
+                    && m.timestamp_ms > to
+                {
+                    return false;
+                }
+                true
+            })
+            .map(|(i, _)| i)
+            .collect();
+
+        if has_regex {
+            if candidates.len() > 50_000 {
+                // Parallel regex check
+                let exclude_refs: Vec<&regex::Regex> =
+                    self.exclude_patterns.iter().map(|p| &p.regex).collect();
+                let include_refs: Vec<&regex::Regex> =
+                    self.include_patterns.iter().map(|p| &p.regex).collect();
+                let entries = &self.entries;
+
+                self.filtered_indices = candidates
+                    .into_par_iter()
+                    .filter(|&idx| {
+                        let text = entries[idx].searchable_text();
+                        if exclude_refs.iter().any(|r| r.is_match(text)) {
+                            return false;
+                        }
+                        if !include_refs.is_empty()
+                            && !include_refs.iter().any(|r| r.is_match(text))
+                        {
+                            return false;
+                        }
+                        true
+                    })
+                    .collect();
+            } else {
+                // Sequential regex check
+                self.filtered_indices = candidates
+                    .into_iter()
+                    .filter(|&idx| {
+                        let text = self.entries[idx].searchable_text();
+                        if self
+                            .exclude_patterns
+                            .iter()
+                            .any(|p| p.regex.is_match(text))
+                        {
+                            return false;
+                        }
+                        if !self.include_patterns.is_empty()
+                            && !self
+                                .include_patterns
+                                .iter()
+                                .any(|p| p.regex.is_match(text))
+                        {
+                            return false;
+                        }
+                        true
+                    })
+                    .collect();
+            }
+        } else {
+            // Fast path: no regex, candidates are the final result
+            self.filtered_indices = candidates;
         }
 
         // Clamp selection to valid range
@@ -23,70 +124,55 @@ impl App {
 
         self.visual_anchor = None;
         self.clusters_dirty = true;
-        self.cluster_map.clear();
-        self.folded_clusters.clear();
         self.clamp_scroll();
     }
 
-    /// Apply filters only to newly appended entries (starting from start_idx)
+    /// Apply filters only to newly appended entries (starting from start_idx).
+    /// Uses the same bitmask + millis path as apply_filters.
     pub fn apply_filters_incremental(&mut self, start_idx: usize) {
+        let level_mask = self.level_filters_as_mask();
+        let from_ms = self.date_from.map(|d| d.and_utc().timestamp_millis());
+        let to_ms = self.date_to.map(|d| d.and_utc().timestamp_millis());
+        let has_regex = !self.exclude_patterns.is_empty() || !self.include_patterns.is_empty();
+
         for idx in start_idx..self.entries.len() {
-            let entry = &self.entries[idx];
-            if self.passes_all_filters(entry) {
-                self.filtered_indices.push(idx);
+            let m = &self.entry_meta[idx];
+            if m.level_bit & level_mask == 0 {
+                continue;
             }
+            if let Some(from) = from_ms
+                && m.timestamp_ms != i64::MIN
+                && m.timestamp_ms < from
+            {
+                continue;
+            }
+            if let Some(to) = to_ms
+                && m.timestamp_ms != i64::MIN
+                && m.timestamp_ms > to
+            {
+                continue;
+            }
+            if has_regex {
+                let text = self.entries[idx].searchable_text();
+                if self
+                    .exclude_patterns
+                    .iter()
+                    .any(|p| p.regex.is_match(text))
+                {
+                    continue;
+                }
+                if !self.include_patterns.is_empty()
+                    && !self
+                        .include_patterns
+                        .iter()
+                        .any(|p| p.regex.is_match(text))
+                {
+                    continue;
+                }
+            }
+            self.filtered_indices.push(idx);
         }
         self.clusters_dirty = true;
-    }
-
-    fn passes_level_filter(&self, level: LogLevel) -> bool {
-        match level {
-            LogLevel::Error => self.level_filters[0],
-            LogLevel::Warn => self.level_filters[1],
-            LogLevel::Info => self.level_filters[2],
-            LogLevel::Debug => self.level_filters[3],
-            LogLevel::Trace => self.level_filters[4],
-            LogLevel::Profile => self.level_filters[5],
-            LogLevel::Unknown => true, // Always show unknown
-        }
-    }
-
-    fn passes_all_filters(&self, entry: &crate::log_entry::LogEntry) -> bool {
-        if !self.passes_level_filter(entry.level) {
-            return false;
-        }
-
-        if let Some(from) = self.date_from
-            && let Some(ts) = entry.timestamp
-            && ts < from
-        {
-            return false;
-        }
-        if let Some(to) = self.date_to
-            && let Some(ts) = entry.timestamp
-            && ts > to
-        {
-            return false;
-        }
-
-        if self
-            .exclude_patterns
-            .iter()
-            .any(|ep| ep.regex.is_match(entry.searchable_text()))
-        {
-            return false;
-        }
-
-        if !self.include_patterns.is_empty()
-            && !self
-                .include_patterns
-                .iter()
-                .any(|ip| ip.regex.is_match(entry.searchable_text()))
-        {
-            return false;
-        }
-
-        true
     }
 
     /// Reset all filters (levels, date, search, exclude, include, search panel)
@@ -116,6 +202,7 @@ impl App {
 
     /// Commit search to the results panel (split-screen mode).
     /// Stores search state, computes match indices, opens panel.
+    /// Parallelized with rayon when filtered_indices > 50K.
     pub fn commit_search_to_panel(&mut self, query: &str, regex_mode: bool) {
         if query.is_empty() {
             self.close_search_panel();
@@ -132,13 +219,26 @@ impl App {
         };
 
         // Scan filtered_indices for matches
-        self.search_panel_matches = self
-            .filtered_indices
-            .iter()
-            .enumerate()
-            .filter(|&(_, &entry_idx)| regex.is_match(self.entries[entry_idx].searchable_text()))
-            .map(|(pos, _)| pos)
-            .collect();
+        if self.filtered_indices.len() > 50_000 {
+            let entries = &self.entries;
+            self.search_panel_matches = self
+                .filtered_indices
+                .par_iter()
+                .enumerate()
+                .filter(|&(_, &entry_idx)| regex.is_match(entries[entry_idx].searchable_text()))
+                .map(|(pos, _)| pos)
+                .collect();
+        } else {
+            self.search_panel_matches = self
+                .filtered_indices
+                .iter()
+                .enumerate()
+                .filter(|&(_, &entry_idx)| {
+                    regex.is_match(self.entries[entry_idx].searchable_text())
+                })
+                .map(|(pos, _)| pos)
+                .collect();
+        }
 
         self.search_panel_open = true;
         self.search_panel_focused = false;

@@ -68,6 +68,28 @@ static TS_PATTERNS: LazyLock<Vec<TsPattern>> = LazyLock::new(|| {
     ]
 });
 
+/// Cached today's date string (YYYY-MM-DD) to avoid repeated formatting
+fn current_today_str() -> String {
+    use chrono::Datelike;
+    thread_local! {
+        static CACHED: std::cell::Cell<(u32, [u8; 10])> = const { std::cell::Cell::new((0, [0; 10])) };
+    }
+    let now = chrono::Local::now();
+    let ordinal = now.year() as u32 * 1000 + now.ordinal();
+    CACHED.with(|c| {
+        let (cached_ord, cached_bytes) = c.get();
+        if cached_ord == ordinal {
+            unsafe { String::from_utf8_unchecked(cached_bytes[..10].to_vec()) }
+        } else {
+            let s = now.format("%Y-%m-%d").to_string();
+            let mut bytes = [0u8; 10];
+            bytes.copy_from_slice(s.as_bytes());
+            c.set((ordinal, bytes));
+            s
+        }
+    })
+}
+
 /// Generic parser that auto-detects timestamp/level patterns from sample lines
 #[derive(Debug)]
 pub struct GenericParser {
@@ -117,13 +139,13 @@ impl GenericParser {
         let ts = ts.replace(',', ".");
 
         if needs_year {
-            let year = chrono::Local::now().format("%Y").to_string();
+            let year = super::current_year_str();
             let full = format!("{}-{}", year, ts);
             let full_fmt = format!("%Y-{}", chrono_fmt);
             NaiveDateTime::parse_from_str(&full, &full_fmt).ok()
         } else if chrono_fmt == "%H:%M:%S%.f" {
             // Time-only: use today's date
-            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let today = current_today_str();
             let full = format!("{} {}", today, ts);
             NaiveDateTime::parse_from_str(&full, "%Y-%m-%d %H:%M:%S%.f").ok()
         } else {

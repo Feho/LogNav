@@ -2,20 +2,23 @@ use crate::log_entry::LogEntry;
 use crate::parsers::{self, LogParser};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-const MAX_ENTRIES: usize = 500_000;
+const BATCH_SIZE: usize = 10_000;
 
-#[derive(Debug)]
 pub enum TailerEvent {
-    /// Initial load complete with entries
-    InitialLoad {
+    /// A batch of entries from initial load (may be partial)
+    LoadBatch {
         source_idx: u8,
         entries: Vec<LogEntry>,
+        done: bool,
+        /// Sent with final batch so caller can configure tailer for tailing
+        parser: Option<Arc<dyn LogParser>>,
+        file_size: Option<u64>,
     },
     /// New entries detected during tailing
     NewEntries {
@@ -60,63 +63,160 @@ impl LogTailer {
         }
     }
 
-    /// Load the initial file contents
-    pub async fn load_initial(&mut self) -> Result<(), String> {
+    pub fn source_idx(&self) -> u8 {
+        self.source_idx
+    }
+
+    /// Configure tailer state after streaming load completes
+    pub fn configure_for_tailing(
+        &mut self,
+        parser: Arc<dyn LogParser>,
+        file_size: u64,
+        entry_count: usize,
+    ) {
+        self.parser = parser;
+        self.last_position = file_size;
+        self.last_size = file_size;
+        self.entry_count = entry_count;
+    }
+
+    /// Start loading the file in the background (fire-and-forget).
+    /// Entries arrive via the event channel as LoadBatch events.
+    pub fn start_loading(&self) {
         let path = self.path.clone();
+        let source_idx = self.source_idx;
         let tx = self.event_tx.clone();
 
-        // Read file in blocking task
-        let result = tokio::task::spawn_blocking(move || {
-            let file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
-            let metadata = file
-                .metadata()
-                .map_err(|e| format!("Failed to get metadata: {}", e))?;
-            let size = metadata.len();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = Self::load_initial_blocking(&path, source_idx, &tx) {
+                let _ = tx.blocking_send(TailerEvent::Error {
+                    source_idx,
+                    message: e,
+                });
+            }
+        });
+    }
 
-            let mut reader = BufReader::new(file);
-            let mut content = String::new();
-            reader
-                .read_to_string(&mut content)
-                .map_err(|e| format!("Failed to read file: {}", e))?;
+    /// Blocking implementation of streaming batch load
+    fn load_initial_blocking(
+        path: &Path,
+        source_idx: u8,
+        tx: &mpsc::Sender<TailerEvent>,
+    ) -> Result<(), String> {
+        let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+        let metadata = file
+            .metadata()
+            .map_err(|e| format!("Failed to get metadata: {}", e))?;
+        let file_size = metadata.len();
 
-            let parser = parsers::detect_parser(&content).unwrap_or_else(parsers::fallback_parser);
-            let entries = parsers::parse_with_parser(&content, &*parser);
+        let mut reader = BufReader::with_capacity(1 << 20, file);
 
-            Ok::<_, String>((entries, parser, size))
-        })
-        .await
-        .map_err(|e| format!("Task failed: {}", e))?;
-
-        let (mut entries, parser, size) = result?;
-
-        // Apply entry cap
-        if entries.len() > MAX_ENTRIES {
-            let skip = entries.len() - MAX_ENTRIES;
-            entries = entries.into_iter().skip(skip).collect();
-            // Re-index
-            for (i, entry) in entries.iter_mut().enumerate() {
-                entry.index = i;
-                entry.source_local_idx = i;
+        // Read sample lines for parser detection
+        let mut sample = String::new();
+        let mut sample_count = 0;
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                        sample.push_str(&line);
+                        sample_count += 1;
+                        if sample_count >= 20 {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => return Err(format!("Failed to read file: {}", e)),
             }
         }
 
-        // Tag entries with source index
-        let source_idx = self.source_idx;
-        for entry in &mut entries {
-            entry.source_idx = source_idx;
+        let parser = parsers::detect_parser(&sample).unwrap_or_else(parsers::fallback_parser);
+
+        // Seek back to start for full parse
+        reader
+            .seek(SeekFrom::Start(0))
+            .map_err(|e| format!("Failed to seek: {}", e))?;
+
+        let mut batch: Vec<LogEntry> = Vec::with_capacity(BATCH_SIZE);
+        let mut pending: Option<LogEntry> = None;
+        let mut index: usize = 0;
+        let mut in_header = true;
+        let mut line_buf = String::new();
+
+        loop {
+            line_buf.clear();
+            match reader.read_line(&mut line_buf) {
+                Ok(0) => break, // EOF
+                Ok(_) => {}
+                Err(e) => return Err(format!("Failed to read: {}", e)),
+            }
+
+            let line = line_buf.trim_end_matches(['\n', '\r']);
+
+            // Skip header comment lines
+            if in_header && line.starts_with('#') {
+                continue;
+            }
+            in_header = false;
+
+            if let Some((level, timestamp)) = parser.parse_line(line) {
+                // New entry detected — flush pending into batch
+                if let Some(mut p) = pending.take() {
+                    p.ensure_search_cache();
+                    p.source_idx = source_idx;
+                    batch.push(p);
+
+                    // Send batch if full
+                    if batch.len() >= BATCH_SIZE {
+                        tx.blocking_send(TailerEvent::LoadBatch {
+                            source_idx,
+                            entries: std::mem::take(&mut batch),
+                            done: false,
+                            parser: None,
+                            file_size: None,
+                        })
+                        .map_err(|e| format!("Failed to send batch: {}", e))?;
+                    }
+                }
+
+                let clean = parser.clean_line(line);
+                let msg_off = parser.message_start(&clean);
+                pending = Some(LogEntry {
+                    index,
+                    level,
+                    timestamp,
+                    raw_line: clean.into_owned(),
+                    continuation_lines: Vec::new(),
+                    cached_full_text: None,
+                    pretty_continuation: None,
+                    source_idx: 0,
+                    source_local_idx: index,
+                    message_offset: msg_off,
+                });
+                index += 1;
+            } else if let Some(ref mut p) = pending {
+                p.add_continuation(parser.clean_line(line).into_owned());
+            }
         }
 
-        self.parser = parser;
-        self.last_position = size;
-        self.last_size = size;
-        self.entry_count = entries.len();
+        // Flush pending entry
+        if let Some(mut p) = pending.take() {
+            p.ensure_search_cache();
+            p.source_idx = source_idx;
+            batch.push(p);
+        }
 
-        tx.send(TailerEvent::InitialLoad {
+        // Send final batch
+        tx.blocking_send(TailerEvent::LoadBatch {
             source_idx,
-            entries,
+            entries: batch,
+            done: true,
+            parser: Some(parser),
+            file_size: Some(file_size),
         })
-        .await
-        .map_err(|e| format!("Failed to send event: {}", e))?;
+        .map_err(|e| format!("Failed to send final batch: {}", e))?;
 
         Ok(())
     }

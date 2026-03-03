@@ -1,4 +1,3 @@
-use crate::log_entry::LogEntry;
 use crate::ui::extract_message;
 use regex::Regex;
 use std::collections::HashMap;
@@ -91,12 +90,16 @@ fn detect_sequence_clusters(templates: &[String], used: &mut [bool]) -> Vec<Clus
                 continue;
             }
 
+            // Sort positions so the greedy non-overlap filter works correctly
+            let mut sorted_positions = positions.clone();
+            sorted_positions.sort_unstable();
+
             // Verify actual match and collect non-overlapping positions
-            let reference = &templates[positions[0]..positions[0] + seq_len];
+            let reference = &templates[sorted_positions[0]..sorted_positions[0] + seq_len];
             let mut valid: Vec<usize> = Vec::new();
             let mut last_end: usize = 0;
 
-            for &pos in positions {
+            for &pos in &sorted_positions {
                 if pos < last_end {
                     continue;
                 }
@@ -236,19 +239,18 @@ fn detect_single_clusters(templates: &[String], used: &[bool]) -> Vec<Cluster> {
 /// Sequence detection runs first (greedy, longest first), then single-line on remainder.
 /// Results sorted by position.
 pub fn detect_clusters(
-    entries: &[LogEntry],
-    filtered_indices: &[usize],
+    snapshots: &[(String, Option<usize>)],
     _min_size: usize,
 ) -> Vec<Cluster> {
-    if filtered_indices.is_empty() {
+    if snapshots.is_empty() {
         return Vec::new();
     }
 
     // Templatize all filtered entries
-    let templates: Vec<String> = filtered_indices
+    let templates: Vec<String> = snapshots
         .iter()
-        .map(|&idx| {
-            let msg = extract_message(&entries[idx].raw_line, entries[idx].message_offset);
+        .map(|(raw_line, message_offset)| {
+            let msg = extract_message(raw_line, *message_offset);
             templatize(&msg)
         })
         .collect();
@@ -346,6 +348,15 @@ fn merge_duplicate_clusters(clusters: Vec<Cluster>) -> Vec<Cluster> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::log_entry::LogEntry;
+
+    /// Build lightweight snapshots from entries + filtered_indices (mirrors production code)
+    fn to_snapshots(entries: &[LogEntry], filtered: &[usize]) -> Vec<(String, Option<usize>)> {
+        filtered
+            .iter()
+            .map(|&idx| (entries[idx].raw_line.clone(), entries[idx].message_offset))
+            .collect()
+    }
 
     #[test]
     fn test_templatize_uuid() {
@@ -381,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_detect_clusters_empty() {
-        let clusters = detect_clusters(&[], &[], 3);
+        let clusters = detect_clusters(&[], 3);
         assert!(clusters.is_empty());
     }
 
@@ -415,7 +426,7 @@ mod tests {
             .collect();
 
         let filtered: Vec<usize> = (0..4).collect();
-        let clusters = detect_clusters(&entries, &filtered, 3);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 3);
 
         // All 4 entries templatize to same template → sequence detector sees them as
         // a 1-line sequence repeated, but single-line runs catch them since sequence
@@ -433,7 +444,7 @@ mod tests {
             .collect();
 
         let filtered: Vec<usize> = (0..2).collect();
-        let clusters = detect_clusters(&entries, &filtered, 3);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 3);
         assert!(clusters.is_empty());
     }
 
@@ -455,7 +466,7 @@ mod tests {
         }
 
         let filtered: Vec<usize> = (0..6).collect();
-        let clusters = detect_clusters(&entries, &filtered, 2);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 2);
 
         // Should detect 1 sequence cluster of length 3, repeated 2x
         assert_eq!(clusters.len(), 1);
@@ -495,7 +506,7 @@ mod tests {
         }
 
         let filtered: Vec<usize> = (0..6).collect();
-        let clusters = detect_clusters(&entries, &filtered, 2);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 2);
 
         // Templates won't match because user names aren't quoted/numeric
         // "olive" and "admin" won't be templatized to same placeholder
@@ -536,7 +547,7 @@ mod tests {
         }
 
         let filtered: Vec<usize> = (0..9).collect();
-        let clusters = detect_clusters(&entries, &filtered, 2);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 2);
 
         // All 3 repetitions should templatize identically → 1 sequence cluster
         let seq_clusters: Vec<_> = clusters.iter().filter(|c| c.sequence_len > 1).collect();
@@ -565,7 +576,7 @@ mod tests {
         }
 
         let filtered: Vec<usize> = (0..10).collect();
-        let clusters = detect_clusters(&entries, &filtered, 2);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 2);
 
         // Should have: 1 sequence cluster (3 lines × 2) + 1 single-line cluster (4x)
         assert_eq!(clusters.len(), 2);
@@ -608,7 +619,7 @@ mod tests {
         }
 
         let filtered: Vec<usize> = (0..9).collect();
-        let clusters = detect_clusters(&entries, &filtered, 3);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 3);
 
         // Both runs share same template → merged into 1 cluster
         let matching: Vec<_> = clusters
@@ -660,6 +671,14 @@ mod tests {
 #[cfg(test)]
 mod gap_analysis_tests {
     use super::*;
+    use crate::log_entry::LogEntry;
+
+    fn to_snapshots(entries: &[LogEntry], filtered: &[usize]) -> Vec<(String, Option<usize>)> {
+        filtered
+            .iter()
+            .map(|&idx| (entries[idx].raw_line.clone(), entries[idx].message_offset))
+            .collect()
+    }
 
     fn make_entry(index: usize, raw_line: &str) -> LogEntry {
         use crate::log_entry::LogLevel;
@@ -692,7 +711,7 @@ mod gap_analysis_tests {
         ];
 
         let filtered: Vec<usize> = (0..5).collect();
-        let clusters = detect_clusters(&entries, &filtered, 3);
+        let clusters = detect_clusters(&to_snapshots(&entries, &filtered), 3);
 
         println!("Clusters:");
         for (i, c) in clusters.iter().enumerate() {

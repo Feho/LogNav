@@ -1,5 +1,6 @@
 use crate::log_entry::{LogEntry, LogLevel};
 use chrono::NaiveDateTime;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 mod common;
@@ -31,17 +32,37 @@ pub trait LogParser: Send + Sync {
     }
 
     /// Clean a line by stripping format-specific artifacts (e.g. color codes)
-    fn clean_line(&self, line: &str) -> String {
-        line.to_string()
+    fn clean_line<'a>(&self, line: &'a str) -> Cow<'a, str> {
+        Cow::Borrowed(line)
     }
 }
 
 /// Parse timestamp string into NaiveDateTime (assumes current year)
 pub fn parse_timestamp(ts: &str) -> Option<NaiveDateTime> {
-    const TIMESTAMP_FORMAT: &str = "%m-%d %H:%M:%S%.3f";
-    let current_year = chrono::Local::now().format("%Y").to_string();
-    let full_ts = format!("{}-{}", current_year, ts);
-    NaiveDateTime::parse_from_str(&full_ts, &format!("%Y-{}", TIMESTAMP_FORMAT)).ok()
+    const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.3f";
+    let full_ts = format!("{}-{}", current_year_str(), ts);
+    NaiveDateTime::parse_from_str(&full_ts, TIMESTAMP_FORMAT).ok()
+}
+
+/// Cached current year string to avoid repeated formatting
+fn current_year_str() -> String {
+    use chrono::Datelike;
+    thread_local! {
+        static CACHED: std::cell::Cell<(i32, [u8; 4])> = const { std::cell::Cell::new((0, [0; 4])) };
+    }
+    let year = chrono::Local::now().year();
+    CACHED.with(|c| {
+        let (cached_year, cached_bytes) = c.get();
+        if cached_year == year {
+            unsafe { String::from_utf8_unchecked(cached_bytes[..4].to_vec()) }
+        } else {
+            let s = year.to_string();
+            let mut bytes = [0u8; 4];
+            bytes.copy_from_slice(s.as_bytes());
+            c.set((year, bytes));
+            s
+        }
+    })
 }
 
 /// Get all registered parsers (built-in + custom)
@@ -125,7 +146,8 @@ pub fn fallback_parser() -> Arc<dyn LogParser> {
     Arc::new(FallbackParser)
 }
 
-/// Parse content with a specific parser
+/// Parse content with a specific parser (used by tests)
+#[cfg(test)]
 pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry> {
     let mut entries: Vec<LogEntry> = Vec::new();
     let mut index = 0;
@@ -146,7 +168,7 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
                 index,
                 level,
                 timestamp,
-                raw_line: clean,
+                raw_line: clean.into_owned(),
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
                 pretty_continuation: None,
@@ -158,7 +180,7 @@ pub fn parse_with_parser(content: &str, parser: &dyn LogParser) -> Vec<LogEntry>
         } else if !entries.is_empty() {
             // This is a continuation line
             if let Some(last) = entries.last_mut() {
-                last.add_continuation(parser.clean_line(line));
+                last.add_continuation(parser.clean_line(line).into_owned());
             }
         }
     }
@@ -190,7 +212,7 @@ pub fn parse_incremental_with_parser(
                 index,
                 level,
                 timestamp,
-                raw_line: clean,
+                raw_line: clean.into_owned(),
                 continuation_lines: Vec::new(),
                 cached_full_text: None,
                 pretty_continuation: None,
@@ -202,9 +224,9 @@ pub fn parse_incremental_with_parser(
         } else {
             // This is a continuation line
             if let Some(last) = entries.last_mut() {
-                last.add_continuation(parser.clean_line(line));
+                last.add_continuation(parser.clean_line(line).into_owned());
             } else if let Some(pending) = pending_continuation.as_deref_mut() {
-                pending.add_continuation(parser.clean_line(line));
+                pending.add_continuation(parser.clean_line(line).into_owned());
             }
         }
     }

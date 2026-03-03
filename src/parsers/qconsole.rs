@@ -2,6 +2,7 @@ use super::LogParser;
 use crate::log_entry::LogLevel;
 use chrono::NaiveDateTime;
 use regex::Regex;
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 /// Parser for qconsole.log format (OpenMoHAA game server console)
@@ -53,8 +54,8 @@ impl LogParser for QConsoleParser {
             .map(|m| m.start())
     }
 
-    fn clean_line(&self, line: &str) -> String {
-        COLOR_CODE_PATTERN.replace_all(line, "").into_owned()
+    fn clean_line<'a>(&self, line: &'a str) -> Cow<'a, str> {
+        COLOR_CODE_PATTERN.replace_all(line, "")
     }
 }
 
