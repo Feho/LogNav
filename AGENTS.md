@@ -1,6 +1,6 @@
-# AGENTS.md - LogNav
+# LogNav
 
-TUI log viewer for proprietary log formats (wd.log, wpc.log). Rust + ratatui + tokio.
+TUI log viewer for proprietary log formats. Rust + ratatui + tokio.
 
 ## Build & Run
 
@@ -14,13 +14,13 @@ cargo run -- /path/log   # Run with file
 ## Test Commands
 
 ```bash
-cargo test                           # All tests
+cargo test                           # All tests (~76)
 cargo test <pattern>                 # Tests matching pattern
 cargo test test_detect               # Tests containing "test_detect"
 cargo test log_entry::tests::test_parse_wd_log -- --exact  # Single exact test
 ```
 
-Tests are inline in `src/log_entry.rs`. 12 tests total covering log format detection and parsing.
+Tests are spread across modules: `log_entry.rs`, `parsers/`, `clusters.rs`, `text_utils.rs`, `tips.rs`, etc.
 
 ## Lint & Format
 
@@ -39,8 +39,21 @@ No custom rustfmt.toml or clippy.toml - use defaults.
 src/
   main.rs              # Entry point, async event loop
   config.rs            # Config persistence (~/.config/lognav/)
-  log_entry.rs         # Log parsing, format detection, tests
+  log_entry.rs         # LogEntry struct, format detection, tests
   log_tailer.rs        # File watching for live tail
+  clusters.rs          # Repeating pattern detection
+  text_input.rs        # Reusable text input widget
+  text_utils.rs        # Unicode-aware text processing
+  theme.rs             # Theme system (colors, styles, TOML themes)
+  tips.rs              # Rotating tips display
+  parsers/
+    mod.rs             # LogParser trait, detect_parser(), all_parsers()
+    wd.rs              # WdParser — wd.log format
+    wpc.rs             # WpcParser — wpc.log format
+    qconsole.rs        # QConsoleParser — quake console logs
+    generic.rs         # GenericParser — fallback, learns from sample lines
+    custom.rs          # CustomParser — loaded from ~/.config/lognav/formats/*.toml
+    common.rs          # Shared parser utilities
   app/
     mod.rs             # App struct definition, core state, Default impl
     commands.rs        # Command struct, CommandAction enum
@@ -51,141 +64,60 @@ src/
     normal.rs          # Normal mode key handling
     command.rs         # Command palette key handling
     search.rs          # Search mode key handling
+    search_panel.rs    # Search results panel keys
     date_filter.rs     # Date filter dialog keys, parse_date_input()
     file_open.rs       # File open dialog keys
+    filter_manager.rs  # Filter manager dialog keys
+    detail.rs          # Detail view keys
+    export.rs          # Export dialog keys
+    clusters.rs        # Cluster view keys
+    help.rs            # Help overlay keys
+    theme_picker.rs    # Theme picker keys
     mouse.rs           # Mouse event handling
   ui/
     mod.rs             # draw(), level_color(), level_style(), helpers
     log_view.rs        # Log view rendering (wrap/nowrap modes)
     status_bar.rs      # Status bar rendering
     overlays.rs        # Command palette, search bar, dialogs
+    clusters_panel.rs  # Cluster results rendering
+    matches_panel.rs   # Search matches panel rendering
+    syntax.rs          # Syntax highlighting
 ```
+
+## Parser Architecture
+
+Pluggable parser system via `LogParser` trait (`src/parsers/mod.rs`):
+- `detect(first_line) -> f64` — confidence score 0.0–1.0
+- `parse_line(line) -> Option<(LogLevel, Option<NaiveDateTime>)>`
+- `message_start(line) -> Option<usize>` — message byte offset
+- `clean_line(line) -> String` — optional stripping (e.g., color codes)
+
+**Detection pipeline** (`detect_parser`): try all parsers on first line → scan 20 sample lines if no confident match → fall back to GenericParser.
+
+**Custom formats**: TOML files in `~/.config/lognav/formats/*.toml` with regex named groups (`(?P<level>...)`, `(?P<timestamp>...)`), custom level mappings, chrono timestamp formats. Loaded automatically via `load_custom_parsers()`.
 
 ## Code Style
 
 ### Imports
 
-Group imports in order:
-1. `crate::` (local modules)
-2. External crates (alphabetical)
-3. `std::`
-
-```rust
-use crate::app::{App, FocusState};
-use chrono::NaiveDateTime;
-use regex::Regex;
-use std::sync::LazyLock;
-```
-
-### Naming
-
-- Types: `PascalCase` (e.g., `LogEntry`, `FocusState`)
-- Functions/methods: `snake_case` (e.g., `parse_log`, `scroll_to_bottom`)
-- Constants: `SCREAMING_SNAKE_CASE` (e.g., `MAX_ENTRIES`, `TIMESTAMP_FORMAT`)
-- Enums: `PascalCase` variants (e.g., `LogLevel::Error`, `FocusState::Normal`)
-
-### Types
-
-- Use `Option<T>` for nullable fields (e.g., `timestamp: Option<NaiveDateTime>`)
-- Use `Result<T, E>` for fallible operations, `Box<dyn std::error::Error>` for main
-- Prefer concrete types over trait objects when possible
-- Use `&str` for params, return `String` when ownership needed
-
-### Structs
-
-- Derive common traits: `#[derive(Debug, Clone)]` minimum
-- Add `Copy` for small types (enums, simple structs)
-- Add `PartialEq, Eq` for comparisons
-- Add `Default` via `impl Default` or derive when sensible
-
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogLevel { ... }
-
-#[derive(Debug, Clone)]
-pub struct LogEntry { ... }
-```
-
-### Error Handling
-
-- Use `?` for propagation in functions returning Result
-- Use `.ok()` to convert Result to Option when error is ignorable
-- Use `unwrap_or_default()` for safe fallbacks
-- Log errors to `status_message` field for user visibility
-
-```rust
-// Propagate
-let content = fs::read_to_string(&path)?;
-
-// Ignore error, use default
-let config = serde_json::from_str(&content).unwrap_or_default();
-
-// Show error to user
-if let Err(e) = operation() {
-    app.status_message = Some(format!("Error: {}", e));
-}
-```
-
-### Pattern Matching
-
-- Exhaustive match on enums
-- Use `_` for catch-all only when appropriate
-- Prefer `if let` for single-variant checks
-
-```rust
-match level {
-    LogLevel::Error => ...,
-    LogLevel::Warn => ...,
-    // all variants
-}
-
-if let FocusState::Search { query, .. } = &app.focus {
-    // handle search state
-}
-```
-
-### Async
-
-- Use `tokio::select!` for concurrent event handling
-- Use `mpsc` channels for communication between tasks
-- Mark async functions with `async fn`
-
-### Documentation
-
-- Use `///` doc comments for public items
-- Keep comments brief, focus on "why" not "what"
-- No need to document obvious methods
-
-```rust
-/// Parse log content into entries
-pub fn parse_log(content: &str) -> Vec<LogEntry> { ... }
-```
-
-### Constants
-
-- Define at module level with `const` for simple values
-- Use `LazyLock` for complex initialization (e.g., compiled regex)
-
-```rust
-const MAX_ENTRIES: usize = 500_000;
-
-static WD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"...").unwrap()
-});
-```
-
-### UI Patterns (ratatui)
-
-- Main `draw` function dispatches to sub-functions
-- Use `Layout` for splitting areas
-- Use `Clear` widget before rendering overlays
-- Render overlays last (on top)
+Group in order: `crate::` → external crates (alphabetical) → `std::`
 
 ### Key Event Handling
 
 - Match on `(KeyModifiers, KeyCode)` tuple
-- Handle Ctrl+key as `(KeyModifiers::CONTROL, KeyCode::Char('x'))`
-- Fall through with `_ => {}` for unhandled keys
+- Ctrl+key: `(KeyModifiers::CONTROL, KeyCode::Char('x'))`
+- Fall through with `_ => {}`
+
+### UI Patterns (ratatui)
+
+- `draw()` dispatches to sub-functions
+- `Clear` widget before overlays; overlays render last
+- `Layout` for splitting areas
+
+### Error Handling
+
+- `?` for propagation; `.ok()` to discard errors; `unwrap_or_default()` for fallbacks
+- Show errors to user via `app.status_message`
 
 ## Dependencies
 
@@ -193,13 +125,14 @@ static WD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 |-------|---------|
 | ratatui | TUI framework |
 | crossterm | Terminal backend |
-| tokio | Async runtime |
+| tokio / tokio-util | Async runtime |
 | notify | File watching |
 | regex | Search filtering |
 | chrono | Timestamp parsing |
-| serde/serde_json | Config persistence |
+| serde / serde_json / toml | Config & format persistence |
 | fuzzy-matcher | Command palette fuzzy search |
 | directories | XDG config paths |
+| arboard | Clipboard access |
 
 ## Edition
 
