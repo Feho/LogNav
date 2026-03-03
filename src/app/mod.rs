@@ -354,6 +354,8 @@ impl App {
             return;
         }
 
+        let was_at_bottom = self.is_bottom_visible();
+
         // Re-index new entries
         let start_idx = self.entries.len();
         for (i, entry) in new_entries.iter_mut().enumerate() {
@@ -373,7 +375,10 @@ impl App {
             self.apply_filters_incremental(start_idx);
         }
 
-        if self.tail_enabled && matches!(self.focus, FocusState::Normal) {
+        if self.tail_enabled
+            && matches!(self.focus, FocusState::Normal)
+            && was_at_bottom
+        {
             self.visual_anchor = None;
             self.scroll_to_bottom();
         }
@@ -1006,8 +1011,9 @@ impl App {
         // Rebuild bookmarks from stable IDs
         self.rebuild_bookmarks_from_stable();
 
+        let was_at_bottom = self.is_bottom_visible();
         self.apply_filters();
-        if self.tail_enabled {
+        if self.tail_enabled && was_at_bottom {
             self.scroll_to_bottom();
         }
     }

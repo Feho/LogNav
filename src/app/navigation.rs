@@ -114,11 +114,45 @@ impl App {
         self.scroll_offset = 0;
     }
 
-    pub fn scroll_to_bottom(&mut self) {
-        if !self.filtered_indices.is_empty() {
-            self.selected_index = self.filtered_indices.len() - 1;
+    /// True if the last filtered entry is currently visible on screen
+    pub fn is_bottom_visible(&self) -> bool {
+        if self.filtered_indices.is_empty() || self.viewport_height == 0 {
+            return true;
         }
-        self.ensure_selected_visible();
+        let last = self.filtered_indices.len() - 1;
+        // Check if cursor is already at or near the bottom of the visible area
+        last < self.scroll_offset + self.viewport_height
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        let last = self.filtered_indices.len() - 1;
+        self.selected_index = last;
+
+        // Walk backward from the end to find scroll_offset so the renderer
+        // doesn't have to iterate from offset 0 through the entire file.
+        if self.viewport_height > 0 && self.viewport_width > 0 {
+            let mut visual_lines = 0;
+            let mut offset = last;
+            loop {
+                let lines = self.visual_lines_for_entry(offset, self.viewport_width);
+                if visual_lines + lines > self.viewport_height {
+                    // This entry would push us over; start from the next one
+                    offset += 1;
+                    break;
+                }
+                visual_lines += lines;
+                if offset == 0 {
+                    break;
+                }
+                offset -= 1;
+            }
+            self.scroll_offset = offset.min(last);
+        } else {
+            self.ensure_selected_visible();
+        }
     }
 
     pub fn scroll_left(&mut self, amount: usize) {
@@ -158,6 +192,29 @@ impl App {
         // Selected is above viewport - scroll up
         if self.selected_index < self.scroll_offset {
             self.scroll_offset = self.selected_index;
+            return;
+        }
+
+        // When the gap between scroll_offset and selected_index is large,
+        // walk backward from selected_index to find the right scroll_offset
+        // in O(viewport) instead of O(gap).
+        let gap = self.selected_index - self.scroll_offset;
+        if gap > viewport_height * 2 {
+            let mut visual_lines = 0;
+            let mut new_offset = self.selected_index;
+            loop {
+                let lines = self.visual_lines_for_entry(new_offset, viewport_width);
+                if visual_lines + lines > viewport_height {
+                    new_offset += 1;
+                    break;
+                }
+                visual_lines += lines;
+                if new_offset == 0 {
+                    break;
+                }
+                new_offset -= 1;
+            }
+            self.scroll_offset = new_offset.min(self.selected_index);
             return;
         }
 

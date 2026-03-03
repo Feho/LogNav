@@ -145,9 +145,15 @@ impl App {
         self.search_panel_selected = 0;
         self.search_panel_scroll = 0;
 
-        // Jump to first match
-        if let Some(&first) = self.search_panel_matches.first() {
-            self.selected_index = first;
+        // Jump to nearest match at or after current position (stay close to where user was)
+        if !self.search_panel_matches.is_empty() {
+            let nearest = self
+                .search_panel_matches
+                .iter()
+                .position(|&m| m >= self.selected_index)
+                .unwrap_or(0);
+            self.search_panel_selected = nearest;
+            self.selected_index = self.search_panel_matches[nearest];
             self.auto_expand_for_search();
             self.center_selected();
         }
