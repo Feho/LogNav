@@ -532,7 +532,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
             "VIEW",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        Line::from("  Ctrl+W    Toggle word wrap"),
+        Line::from("  Alt+W     Toggle word wrap"),
         Line::from("  s         Toggle syntax highlighting"),
         Line::from("  t         Toggle tail mode (auto-scroll)"),
         Line::from("  d         Show entry detail popup"),

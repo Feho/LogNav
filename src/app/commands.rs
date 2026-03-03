@@ -100,7 +100,7 @@ impl Command {
         },
         Command {
             name: "Toggle word wrap",
-            shortcut: "Ctrl+W",
+            shortcut: "Alt+W",
             action: CommandAction::ToggleWrap,
         },
         Command {

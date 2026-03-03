@@ -103,8 +103,8 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             ));
         }
 
-        // Ctrl+w: toggle wrap
-        (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
+        // Alt+w: toggle wrap
+        (KeyModifiers::ALT, KeyCode::Char('w')) => {
             app.toggle_wrap();
             app.status_message = Some(format!(
                 "Word wrap {}",

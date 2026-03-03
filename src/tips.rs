@@ -14,7 +14,7 @@ const DEFAULT_TIPS: &[&str] = &[
     "Ctrl+Click a word in the log to search for it, Alt+Click to exclude it",
     "Press 't' to toggle tail mode — auto-follows new log entries in real time",
     "Press 'v' to start visual select, move to extend range, then 'c' to copy",
-    "Press Ctrl+W to toggle word wrap for long lines",
+    "Press Alt+W to toggle word wrap for long lines",
     "Press 's' to toggle syntax highlighting for better readability",
     "Press 'x' to manage exclude filters — hide lines matching patterns",
     "Press Ctrl+S to export the currently filtered log entries to a file",

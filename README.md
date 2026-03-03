@@ -54,7 +54,7 @@ Log entries are color-coded by level:
 | Trace | Gray | `5` |
 | Profile | Magenta | `6` |
 
-By default, only Error, Warn, and Info are visible. Press the number key to toggle any level on or off. Press `0` to reset to defaults.
+By default, all levels are visible. Press the number key to toggle any level on or off. Press `0` to reset all levels to visible.
 
 ### 3. Search
 
@@ -216,7 +216,7 @@ Game server console logs with bracketed timestamps:
 | `x` | Exclude filter manager |
 | `X` | Clear exclude filters |
 | `t` | Toggle tail mode |
-| `Ctrl+W` | Toggle word wrap |
+| `Alt+W` | Toggle word wrap |
 | `s` | Toggle syntax highlighting |
 | `Enter` | Expand/collapse entry |
 | `a` / `A` | Expand / collapse all |
@@ -263,6 +263,6 @@ Requires Rust 1.93+ (uses Edition 2024). Binary output: `target/release/lognav` 
 
 - **Minimal chrome**: 95% of screen shows logs
 - **Keyboard-first**: Every action has a key binding
-- **Memory efficient**: Caps at 500k entries to prevent runaway memory
+- **Memory efficient**: Streams entries in batches for fast loading
 - **Fast startup**: Async loading with immediate UI response
 - **Unix philosophy**: Does one thing well
