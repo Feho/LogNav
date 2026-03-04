@@ -114,6 +114,9 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::Normal if app.search.regex.is_some() => {
             "n/N:next/previous match | /:search | ?:help | q:quit"
         }
+        FocusState::Normal if app.visual_anchor.is_some() => {
+            "j/k:select | c:copy line(s) | Esc:cancel"
+        }
         FocusState::Normal => {
             let expand_hint = if current_expandable {
                 " | Enter:expand"
