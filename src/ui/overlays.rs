@@ -1,15 +1,15 @@
 use crate::app::{App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, StatsData, QUICK_FILTERS};
 use crate::log_entry::LogLevel;
-use crate::theme::{LIGHT_START_INDEX, THEME_PRESETS};
+use crate::theme::{LIGHT_START_INDEX, THEME_PRESETS, Theme};
 use crate::text_utils::wrap_text;
 use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, render_scrollbar};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Bar, BarChart, BarGroup, Block, Borders, Clear, List, ListItem, Paragraph, Sparkline},
+    widgets::{Bar, BarChart, BarGroup, Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
 /// Draw command palette overlay
@@ -1102,6 +1102,189 @@ fn format_duration(ms: i64) -> String {
     }
 }
 
+/// Draw stacked bar columns for the event rate chart.
+/// Each column is 1 cell wide. Colors: error at bottom, warn in middle, other on top.
+/// Uses ▄ (lower half block) for half-cell precision at the top of each color band.
+fn draw_stacked_rate_chart(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme) {
+    if area.width == 0 || area.height == 0 || data.buckets.is_empty() {
+        return;
+    }
+
+    let chart_w = area.width as usize;
+    let chart_h = area.height as usize;
+    let n_buckets = data.buckets.len();
+
+    // Resample buckets to fit chart width
+    let resampled: Vec<_> = (0..chart_w)
+        .map(|col| {
+            let start = col * n_buckets / chart_w;
+            let end = ((col + 1) * n_buckets / chart_w).max(start + 1);
+            let mut bc = crate::app::BucketCounts::default();
+            for b in &data.buckets[start..end.min(n_buckets)] {
+                bc.error += b.error;
+                bc.warn += b.warn;
+                bc.other += b.other;
+            }
+            bc
+        })
+        .collect();
+
+    let max_total = resampled.iter().map(|b| b.total()).max().unwrap_or(1).max(1);
+
+    // Each cell = 2 half-rows for ▄ precision
+    let half_rows = chart_h * 2;
+    let buf = frame.buffer_mut();
+    let err_color = theme.level_color(LogLevel::Error);
+    let warn_color = theme.level_color(LogLevel::Warn);
+    let other_color = theme.accent;
+
+    for (col, bc) in resampled.iter().enumerate() {
+        let total = bc.total();
+        if total == 0 {
+            continue;
+        }
+
+        // Total bar height in half-rows
+        let bar_halfs = ((total as f64 / max_total as f64) * half_rows as f64).round() as usize;
+        let bar_halfs = bar_halfs.min(half_rows).max(1);
+
+        // Split bar into error/warn/other half-rows (proportional).
+        // Compute error and warn first, derive other as remainder to avoid rounding overflow.
+        let err_halfs = if bc.error > 0 {
+            (((bc.error as f64 / total as f64) * bar_halfs as f64).round() as usize).min(bar_halfs)
+        } else {
+            0
+        };
+        let warn_halfs = if bc.warn > 0 {
+            (((bc.warn as f64 / total as f64) * bar_halfs as f64).round() as usize)
+                .min(bar_halfs.saturating_sub(err_halfs))
+        } else {
+            0
+        };
+
+        // Build color map from bottom (half-row 0) to top
+        // Order: error at bottom, warn, then other
+        let color_at_half = |h: usize| -> Color {
+            if h < err_halfs {
+                err_color
+            } else if h < err_halfs + warn_halfs {
+                warn_color
+            } else if h < bar_halfs {
+                other_color
+            } else {
+                theme.bg
+            }
+        };
+
+        let x = area.x + col as u16;
+        if x >= area.x + area.width {
+            break;
+        }
+
+        // Render from top row to bottom row
+        for row in 0..chart_h {
+            let y = area.y + row as u16;
+            // This row covers half-rows: bottom_half (even) and top_half (odd)
+            // Row 0 is top of chart = highest half-rows
+            let top_half = (chart_h - 1 - row) * 2 + 1; // upper half of this cell
+            let bot_half = (chart_h - 1 - row) * 2;     // lower half of this cell
+
+            let top_color = color_at_half(top_half);
+            let bot_color = color_at_half(bot_half);
+
+            let cell = &mut buf[(x, y)];
+            if top_color == theme.bg && bot_color == theme.bg {
+                // Empty cell
+                continue;
+            } else if top_color == bot_color {
+                // Full block, same color
+                cell.set_symbol("\u{2588}"); // █
+                cell.set_fg(top_color);
+            } else if top_color == theme.bg {
+                // Only bottom half filled
+                cell.set_symbol("\u{2584}"); // ▄
+                cell.set_fg(bot_color);
+            } else if bot_color == theme.bg {
+                // Only top half filled
+                cell.set_symbol("\u{2580}"); // ▀
+                cell.set_fg(top_color);
+            } else {
+                // Both halves different colors: ▄ with fg=bottom, bg=top
+                cell.set_symbol("\u{2584}"); // ▄
+                cell.set_fg(bot_color);
+                cell.set_bg(top_color);
+            }
+        }
+    }
+}
+
+/// Draw time axis labels below the stacked bar chart.
+fn draw_time_axis(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme) {
+    if area.width < 10 || data.buckets.is_empty() {
+        return;
+    }
+
+    let (t_min, _t_max) = match data.time_range {
+        Some(r) => r,
+        None => return,
+    };
+
+    let n_buckets = data.buckets.len();
+    let chart_w = area.width as usize;
+
+    // Decide how many labels to show (aim for ~1 label per 12-15 chars)
+    let max_labels = (chart_w / 12).clamp(2, 8);
+    let label_step = if max_labels >= n_buckets {
+        1
+    } else {
+        n_buckets / max_labels
+    };
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut pos = 0usize;
+
+    let mut bucket_i = 0;
+    while bucket_i < n_buckets && pos < chart_w {
+        let col = bucket_i * chart_w / n_buckets;
+        if col < pos {
+            bucket_i += label_step;
+            continue;
+        }
+
+        // Pad to reach column position
+        if col > pos {
+            spans.push(Span::raw(" ".repeat(col - pos)));
+            pos = col;
+        }
+
+        let ts_ms = t_min + (bucket_i as i64) * data.bucket_ms;
+        let label = chrono::DateTime::from_timestamp_millis(ts_ms)
+            .map(|dt| {
+                let fmt = if data.bucket_ms >= 86_400_000 {
+                    "%m-%d"
+                } else {
+                    "%H:%M"
+                };
+                dt.naive_local().format(fmt).to_string()
+            })
+            .unwrap_or_default();
+
+        let label_len = label.len();
+        if pos + label_len <= chart_w {
+            spans.push(Span::styled(
+                label,
+                Style::default().fg(theme.muted),
+            ));
+            pos += label_len;
+        }
+
+        bucket_i += label_step;
+    }
+
+    let line = Line::from(spans);
+    frame.render_widget(Paragraph::new(line), area);
+}
+
 /// Draw statistics dashboard overlay
 pub fn draw_stats(frame: &mut Frame, app: &App) {
     let theme = &app.theme;
@@ -1128,14 +1311,14 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
         return;
     }
 
-    // Layout: summary(4) + sparkline section(7 or less) + bar chart(rest) + help(1)
-    let sparkline_height = if data.has_timestamps { 6 } else { 1 };
+    // Layout: summary(4) + event rate section(8 or 1) + bar chart(rest) + help(1)
+    let rate_height: u16 = if data.has_timestamps { 8 } else { 1 }; // header + chart + axis label
     let chunks = Layout::vertical([
-        Constraint::Length(4),                   // summary section
-        Constraint::Length(sparkline_height),     // sparkline section (header + chart)
-        Constraint::Length(1),                   // separator
-        Constraint::Min(4),                      // bar chart section
-        Constraint::Length(1),                   // help line
+        Constraint::Length(4),               // summary section
+        Constraint::Length(rate_height),      // event rate section (header + stacked bars + time axis)
+        Constraint::Length(1),               // separator
+        Constraint::Min(4),                  // bar chart section
+        Constraint::Length(1),               // help line
     ])
     .split(inner);
 
@@ -1197,11 +1380,12 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Paragraph::new(summary_lines), chunks[0]);
 
-    // ── EVENT RATE SPARKLINE ──
-    if data.has_timestamps && !data.sparkline_data.is_empty() {
-        let spark_chunks = Layout::vertical([
+    // ── EVENT RATE (stacked bar chart) ──
+    if data.has_timestamps && !data.buckets.is_empty() {
+        let rate_chunks = Layout::vertical([
             Constraint::Length(1), // header
-            Constraint::Min(1),   // sparkline
+            Constraint::Min(1),   // stacked bars
+            Constraint::Length(1), // time axis labels
         ])
         .split(chunks[1]);
 
@@ -1209,18 +1393,23 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
             format!("  EVENT RATE  ({} buckets)", data.bucket_label),
             section_style,
         ));
-        frame.render_widget(Paragraph::new(header), spark_chunks[0]);
+        frame.render_widget(Paragraph::new(header), rate_chunks[0]);
 
-        let spark_area = Rect {
-            x: spark_chunks[1].x + 2,
-            width: spark_chunks[1].width.saturating_sub(4),
-            ..spark_chunks[1]
+        // Draw stacked bar columns
+        let chart_area = Rect {
+            x: rate_chunks[1].x + 2,
+            width: rate_chunks[1].width.saturating_sub(4),
+            ..rate_chunks[1]
         };
+        draw_stacked_rate_chart(frame, chart_area, data, theme);
 
-        let sparkline = Sparkline::default()
-            .style(Style::default().fg(theme.accent))
-            .data(&data.sparkline_data);
-        frame.render_widget(sparkline, spark_area);
+        // Draw time axis labels
+        let axis_area = Rect {
+            x: rate_chunks[2].x + 2,
+            width: rate_chunks[2].width.saturating_sub(4),
+            ..rate_chunks[2]
+        };
+        draw_time_axis(frame, axis_area, data, theme);
     } else {
         let no_ts = Line::from(Span::styled(
             "  EVENT RATE  (no timestamp data)",

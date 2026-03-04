@@ -130,6 +130,20 @@ pub enum FocusState {
     },
 }
 
+/// Per-bucket level breakdown for the stacked event rate chart.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BucketCounts {
+    pub error: u64,
+    pub warn: u64,
+    pub other: u64,
+}
+
+impl BucketCounts {
+    pub fn total(&self) -> u64 {
+        self.error + self.warn + self.other
+    }
+}
+
 /// Pre-computed statistics for the stats dashboard overlay.
 #[derive(Debug, Clone)]
 pub struct StatsData {
@@ -141,10 +155,12 @@ pub struct StatsData {
     pub time_range: Option<(i64, i64)>,
     /// Error rate as percentage; None if no entries
     pub error_rate: Option<f64>,
-    /// Event counts per time bucket (oldest to newest)
-    pub sparkline_data: Vec<u64>,
+    /// Per-bucket level breakdown (oldest to newest)
+    pub buckets: Vec<BucketCounts>,
     /// Human-readable bucket size label
     pub bucket_label: &'static str,
+    /// Bucket size in milliseconds (for time axis labels)
+    pub bucket_ms: i64,
     /// True if any filtered entry had a timestamp
     pub has_timestamps: bool,
 }
@@ -581,9 +597,9 @@ impl App {
             None
         };
 
-        let (sparkline_data, bucket_label) = if let Some((t_min, t_max)) = time_range {
+        let (buckets, bucket_label, bucket_ms) = if let Some((t_min, t_max)) = time_range {
             let span_ms = (t_max - t_min).max(1);
-            let (bucket_ms, label): (i64, &'static str) = if span_ms <= 60 * 60_000 {
+            let (bms, label): (i64, &'static str) = if span_ms <= 60 * 60_000 {
                 (60_000, "1 min")
             } else if span_ms <= 12 * 3_600_000 {
                 (5 * 60_000, "5 min")
@@ -593,20 +609,26 @@ impl App {
                 (86_400_000, "1 day")
             };
 
-            let n_buckets = (((span_ms + bucket_ms - 1) / bucket_ms) as usize).clamp(1, 200);
-            let mut buckets = vec![0u64; n_buckets];
+            let n_buckets = (((span_ms + bms - 1) / bms) as usize).clamp(1, 200);
+            let mut bkts = vec![BucketCounts::default(); n_buckets];
 
             for &idx in &self.filtered_indices {
-                let ts = self.entry_meta[idx].timestamp_ms;
+                let meta = &self.entry_meta[idx];
+                let ts = meta.timestamp_ms;
                 if ts != i64::MIN {
-                    let bi = ((ts - t_min) / bucket_ms) as usize;
-                    buckets[bi.min(n_buckets - 1)] += 1;
+                    let bi = (((ts - t_min) / bms) as usize).min(n_buckets - 1);
+                    // Bit indices from LogLevel::filter_bit_index()
+                    match meta.level_bit.trailing_zeros() as usize {
+                        0 => bkts[bi].error += 1,  // Error
+                        1 => bkts[bi].warn += 1,   // Warn
+                        _ => bkts[bi].other += 1,   // Info, Debug, Trace, Profile, Unknown
+                    }
                 }
             }
 
-            (buckets, label)
+            (bkts, label, bms)
         } else {
-            (Vec::new(), "N/A")
+            (Vec::new(), "N/A", 0)
         };
 
         self.focus = FocusState::Stats {
@@ -616,8 +638,9 @@ impl App {
                 level_counts,
                 time_range,
                 error_rate,
-                sparkline_data,
+                buckets,
                 bucket_label,
+                bucket_ms,
                 has_timestamps,
             }),
         };

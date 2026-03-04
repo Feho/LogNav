@@ -98,7 +98,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         && app
             .filtered_indices
             .get(app.selected_index)
-            .map_or(false, |&idx| {
+            .is_some_and(|&idx| {
                 !app.entries[idx].continuation_lines.is_empty()
             });
 
