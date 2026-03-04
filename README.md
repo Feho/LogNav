@@ -198,6 +198,37 @@ Game server console logs with bracketed timestamps:
 [2026-01-09 19:05:01 UTC+1.000] Script Error: file not found
 ```
 
+### Custom Formats
+
+Define your own log formats by adding TOML files to:
+- Linux/macOS: `~/.config/lognav/formats/`
+- Windows: `C:\Users\<user>\AppData\Roaming\lognav\config\formats\`
+
+Each file needs a regex `pattern` with named capture groups (`level`, `timestamp`, and optionally `message`), a `timestamp_format` using [chrono format strings](https://docs.rs/chrono/latest/chrono/format/strftime/), and an optional `level_map` to translate custom level tokens.
+
+Example — `~/.config/lognav/formats/myapp.toml`:
+
+```toml
+name = "myapp"
+pattern = '^(?P<level>VRB|DBG|INF|WRN|ERR|---)\s+(?P<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+\S+\s+(?P<message>.*)'
+timestamp_format = "%Y-%m-%d %H:%M:%S%.3f"
+
+[level_map]
+"VRB" = "trace"
+"DBG" = "debug"
+"INF" = "info"
+"WRN" = "warn"
+"ERR" = "error"
+"---" = "trace"
+```
+
+**Named groups:**
+- `level` — matched against `level_map` first, then standard names (`ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`)
+- `timestamp` — parsed with `timestamp_format`. Time-only formats (no date) use today's date
+- `message` — if present, used as the message start offset; otherwise message starts after the full match
+
+Custom parsers are loaded automatically on startup and detected with 0.9 confidence.
+
 ## Key Reference
 
 ### Normal Mode

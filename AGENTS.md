@@ -134,6 +134,20 @@ Group in order: `crate::` → external crates (alphabetical) → `std::`
 | directories | XDG config paths |
 | arboard | Clipboard access |
 
+## Custom Log Formats
+
+Prefer adding TOML files over creating new Rust parser modules.
+- Linux/macOS: `~/.config/lognav/formats/*.toml`
+- Windows: `C:\Users\<user>\AppData\Roaming\lognav\config\formats\*.toml`
+
+Pattern uses named regex groups: `(?P<level>...)`, `(?P<timestamp>...)`, optional `(?P<message>...)`.
+See `src/parsers/custom.rs` for implementation. Custom parsers detect at 0.9 confidence.
+
+## Testing Notes
+
+`cargo run` requires a real terminal (TTY) — fails in non-interactive contexts.
+To validate parser regex changes without launching the TUI, use `cargo test` or test regex with a script.
+
 ## Edition
 
 Rust Edition 2024, requires rustc 1.93.0+
