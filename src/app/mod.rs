@@ -401,6 +401,29 @@ impl App {
         }
     }
 
+    #[cfg(test)]
+    fn push_test_entry(&mut self, level: crate::log_entry::LogLevel, ts_ms: Option<i64>) {
+        let ts = ts_ms.and_then(chrono::DateTime::from_timestamp_millis)
+            .map(|dt| dt.naive_utc());
+        let entry = crate::log_entry::LogEntry {
+            index: self.entries.len(),
+            level,
+            timestamp: ts,
+            raw_line: String::new(),
+            continuation_lines: Vec::new(),
+            cached_full_text: None,
+            pretty_continuation: None,
+            source_idx: 0,
+            source_local_idx: self.entries.len(),
+            message_offset: None,
+        };
+        let meta = EntryMeta::from_entry(&entry);
+        let idx = self.entries.len();
+        self.entries.push(entry);
+        self.entry_meta.push(meta);
+        self.filtered_indices.push(idx);
+    }
+
     pub fn is_loading(&self) -> bool {
         !self.loading_sources.is_empty()
     }
@@ -1371,5 +1394,149 @@ impl App {
         } else {
             self.status_message = Some("No line selected".to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::log_entry::LogLevel;
+
+    #[test]
+    fn bucket_counts_total() {
+        let bc = BucketCounts { error: 3, warn: 5, other: 10 };
+        assert_eq!(bc.total(), 18);
+        assert_eq!(BucketCounts::default().total(), 0);
+    }
+
+    fn stats_data(app: &App) -> &StatsData {
+        match &app.focus {
+            FocusState::Stats { data } => data,
+            _ => panic!("expected Stats focus"),
+        }
+    }
+
+    #[test]
+    fn open_stats_empty() {
+        let mut app = App::new();
+        app.open_stats();
+        let d = stats_data(&app);
+        assert_eq!(d.total_entries, 0);
+        assert_eq!(d.filtered_count, 0);
+        assert!(d.time_range.is_none());
+        assert!(d.error_rate.is_none());
+        assert!(d.buckets.is_empty());
+        assert!(!d.has_timestamps);
+    }
+
+    #[test]
+    fn open_stats_level_counts() {
+        let mut app = App::new();
+        app.push_test_entry(LogLevel::Error, Some(1_000_000));
+        app.push_test_entry(LogLevel::Error, Some(2_000_000));
+        app.push_test_entry(LogLevel::Warn, Some(3_000_000));
+        app.push_test_entry(LogLevel::Info, Some(4_000_000));
+        app.push_test_entry(LogLevel::Info, Some(5_000_000));
+        app.push_test_entry(LogLevel::Info, Some(6_000_000));
+        app.open_stats();
+        let d = stats_data(&app);
+        assert_eq!(d.total_entries, 6);
+        assert_eq!(d.filtered_count, 6);
+        assert_eq!(d.level_counts[0], 2); // Error
+        assert_eq!(d.level_counts[1], 1); // Warn
+        assert_eq!(d.level_counts[2], 3); // Info
+        assert!(d.has_timestamps);
+    }
+
+    #[test]
+    fn open_stats_error_rate() {
+        let mut app = App::new();
+        // 1 error out of 4 entries = 25%
+        app.push_test_entry(LogLevel::Error, Some(1_000));
+        app.push_test_entry(LogLevel::Info, Some(2_000));
+        app.push_test_entry(LogLevel::Info, Some(3_000));
+        app.push_test_entry(LogLevel::Info, Some(4_000));
+        app.open_stats();
+        let d = stats_data(&app);
+        let rate = d.error_rate.unwrap();
+        assert!((rate - 25.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn open_stats_time_range() {
+        let mut app = App::new();
+        app.push_test_entry(LogLevel::Info, Some(100_000));
+        app.push_test_entry(LogLevel::Info, Some(500_000));
+        app.open_stats();
+        let d = stats_data(&app);
+        let (tmin, tmax) = d.time_range.unwrap();
+        assert_eq!(tmin, 100_000);
+        assert_eq!(tmax, 500_000);
+    }
+
+    #[test]
+    fn open_stats_no_timestamps() {
+        let mut app = App::new();
+        app.push_test_entry(LogLevel::Info, None);
+        app.push_test_entry(LogLevel::Warn, None);
+        app.open_stats();
+        let d = stats_data(&app);
+        assert!(!d.has_timestamps);
+        assert!(d.time_range.is_none());
+        assert!(d.buckets.is_empty());
+    }
+
+    #[test]
+    fn open_stats_bucket_label_selection() {
+        let mut app = App::new();
+        let base = 1_700_000_000_000i64; // ~2023
+        // Span < 1 hour → 1 min buckets
+        app.push_test_entry(LogLevel::Info, Some(base));
+        app.push_test_entry(LogLevel::Info, Some(base + 30 * 60_000));
+        app.open_stats();
+        assert_eq!(stats_data(&app).bucket_label, "1 min");
+
+        // Span ~6 hours → 5 min buckets
+        let mut app = App::new();
+        app.push_test_entry(LogLevel::Info, Some(base));
+        app.push_test_entry(LogLevel::Info, Some(base + 6 * 3_600_000));
+        app.open_stats();
+        assert_eq!(stats_data(&app).bucket_label, "5 min");
+
+        // Span ~2 days → 1 hr buckets
+        let mut app = App::new();
+        app.push_test_entry(LogLevel::Info, Some(base));
+        app.push_test_entry(LogLevel::Info, Some(base + 2 * 86_400_000));
+        app.open_stats();
+        assert_eq!(stats_data(&app).bucket_label, "1 hr");
+
+        // Span ~10 days → 1 day buckets
+        let mut app = App::new();
+        app.push_test_entry(LogLevel::Info, Some(base));
+        app.push_test_entry(LogLevel::Info, Some(base + 10 * 86_400_000));
+        app.open_stats();
+        assert_eq!(stats_data(&app).bucket_label, "1 day");
+    }
+
+    #[test]
+    fn open_stats_buckets_assign_levels_correctly() {
+        let mut app = App::new();
+        let base = 1_700_000_000_000i64;
+        // All in same bucket (span < 1 min bucket)
+        app.push_test_entry(LogLevel::Error, Some(base));
+        app.push_test_entry(LogLevel::Warn, Some(base + 1000));
+        app.push_test_entry(LogLevel::Info, Some(base + 2000));
+        app.push_test_entry(LogLevel::Debug, Some(base + 3000));
+        app.open_stats();
+        let d = stats_data(&app);
+        assert!(!d.buckets.is_empty());
+        let totals: u64 = d.buckets.iter().map(|b| b.total()).sum();
+        assert_eq!(totals, 4);
+        let errs: u64 = d.buckets.iter().map(|b| b.error).sum();
+        let warns: u64 = d.buckets.iter().map(|b| b.warn).sum();
+        let others: u64 = d.buckets.iter().map(|b| b.other).sum();
+        assert_eq!(errs, 1);
+        assert_eq!(warns, 1);
+        assert_eq!(others, 2); // Info + Debug → other
     }
 }

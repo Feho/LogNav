@@ -1114,11 +1114,14 @@ fn draw_stacked_rate_chart(frame: &mut Frame, area: Rect, data: &StatsData, them
     let chart_h = area.height as usize;
     let n_buckets = data.buckets.len();
 
-    // Resample buckets to fit chart width
-    let resampled: Vec<_> = (0..chart_w)
+    // Each bar is 1 cell wide with 1 cell gap → stride of 2
+    let bar_count = (chart_w + 1) / 2; // number of bars that fit
+
+    // Resample buckets to fit bar count
+    let resampled: Vec<_> = (0..bar_count)
         .map(|col| {
-            let start = col * n_buckets / chart_w;
-            let end = ((col + 1) * n_buckets / chart_w).max(start + 1);
+            let start = col * n_buckets / bar_count;
+            let end = ((col + 1) * n_buckets / bar_count).max(start + 1);
             let mut bc = crate::app::BucketCounts::default();
             for b in &data.buckets[start..end.min(n_buckets)] {
                 bc.error += b.error;
@@ -1176,7 +1179,7 @@ fn draw_stacked_rate_chart(frame: &mut Frame, area: Rect, data: &StatsData, them
             }
         };
 
-        let x = area.x + col as u16;
+        let x = area.x + (col * 2) as u16; // stride of 2: bar + gap
         if x >= area.x + area.width {
             break;
         }
@@ -1231,6 +1234,7 @@ fn draw_time_axis(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme
 
     let n_buckets = data.buckets.len();
     let chart_w = area.width as usize;
+    let bar_count = (chart_w + 1) / 2; // must match draw_stacked_rate_chart
 
     // Decide how many labels to show (aim for ~1 label per 12-15 chars)
     let max_labels = (chart_w / 12).clamp(2, 8);
@@ -1245,7 +1249,9 @@ fn draw_time_axis(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme
 
     let mut bucket_i = 0;
     while bucket_i < n_buckets && pos < chart_w {
-        let col = bucket_i * chart_w / n_buckets;
+        // Map bucket index to pixel column using same stride as bar chart
+        let bar_idx = bucket_i * bar_count / n_buckets;
+        let col = bar_idx * 2; // stride of 2
         if col < pos {
             bucket_i += label_step;
             continue;
@@ -1473,4 +1479,86 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
         Span::styled(help_text, Style::default().fg(theme.muted)),
     ]);
     frame.render_widget(Paragraph::new(help_line), chunks[4]);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::BucketCounts;
+
+    /// Replicate the bar-chart resampling logic to verify stride/gap behavior.
+    fn resample(_n_buckets: usize, chart_w: usize) -> (usize, Vec<usize>) {
+        let bar_count = (chart_w + 1) / 2;
+        let x_positions: Vec<usize> = (0..bar_count).map(|col| col * 2).collect();
+        (bar_count, x_positions)
+    }
+
+    #[test]
+    fn bar_stride_spacing() {
+        // 20-cell wide chart → 10 bars at x=0,2,4,...,18
+        let (count, xs) = resample(50, 20);
+        assert_eq!(count, 10);
+        assert_eq!(xs, vec![0, 2, 4, 6, 8, 10, 12, 14, 16, 18]);
+    }
+
+    #[test]
+    fn bar_stride_odd_width() {
+        // 21-cell wide → 11 bars at x=0,2,...,20
+        let (count, xs) = resample(50, 21);
+        assert_eq!(count, 11);
+        assert_eq!(*xs.last().unwrap(), 20);
+        // Each bar has a gap after it (except last may touch edge)
+        for w in xs.windows(2) {
+            assert_eq!(w[1] - w[0], 2);
+        }
+    }
+
+    #[test]
+    fn bar_stride_single_bucket() {
+        let (count, xs) = resample(1, 10);
+        assert_eq!(count, 5);
+        // Single bucket maps to first bar only; rest will be empty
+        assert_eq!(xs[0], 0);
+    }
+
+    #[test]
+    fn resampling_covers_all_buckets() {
+        let n_buckets = 100;
+        let chart_w = 40;
+        let bar_count = (chart_w + 1) / 2; // 20
+        let mut covered = vec![false; n_buckets];
+        for col in 0..bar_count {
+            let start = col * n_buckets / bar_count;
+            let end = ((col + 1) * n_buckets / bar_count).max(start + 1);
+            for i in start..end.min(n_buckets) {
+                covered[i] = true;
+            }
+        }
+        assert!(covered.iter().all(|&c| c), "all buckets must be covered");
+    }
+
+    #[test]
+    fn resampling_preserves_totals() {
+        let buckets: Vec<BucketCounts> = (0..50)
+            .map(|i| BucketCounts { error: i, warn: i * 2, other: 1 })
+            .collect();
+        let total_before: u64 = buckets.iter().map(|b| b.total()).sum();
+
+        let chart_w = 30;
+        let bar_count = (chart_w + 1) / 2;
+        let resampled: Vec<BucketCounts> = (0..bar_count)
+            .map(|col| {
+                let start = col * buckets.len() / bar_count;
+                let end = ((col + 1) * buckets.len() / bar_count).max(start + 1);
+                let mut bc = BucketCounts::default();
+                for b in &buckets[start..end.min(buckets.len())] {
+                    bc.error += b.error;
+                    bc.warn += b.warn;
+                    bc.other += b.other;
+                }
+                bc
+            })
+            .collect();
+        let total_after: u64 = resampled.iter().map(|b| b.total()).sum();
+        assert_eq!(total_before, total_after);
+    }
 }
