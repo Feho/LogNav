@@ -54,42 +54,70 @@ pub fn draw_command_palette(frame: &mut Frame, app: &App) {
     };
 
     let commands = app.get_filtered_commands(input.text());
-    let item_count = commands.len();
+    let is_filtered = !input.text().is_empty();
+
+    // Build visual rows: None = blank separator, Some(i) = command index
+    let mut visual_rows: Vec<Option<usize>> = Vec::new();
+    if is_filtered {
+        for i in 0..commands.len() {
+            visual_rows.push(Some(i));
+        }
+    } else {
+        let mut last_group = "";
+        for (i, (_, cmd, _)) in commands.iter().enumerate() {
+            if cmd.group != last_group {
+                last_group = cmd.group;
+                if !visual_rows.is_empty() {
+                    visual_rows.push(None); // blank line between groups
+                }
+            }
+            visual_rows.push(Some(i));
+        }
+    }
+
+    // Map selected command index to visual row index
+    let selected_visual = visual_rows
+        .iter()
+        .position(|r| *r == Some(selected))
+        .unwrap_or(0);
+
+    let total_visual = visual_rows.len();
     let visible_height = list_area.height as usize;
 
     // Compute scroll offset to keep selected item visible
-    let scroll = if item_count <= visible_height {
+    let scroll = if total_visual <= visible_height {
         0
     } else {
-        selected.saturating_sub(visible_height.saturating_sub(1))
+        selected_visual.saturating_sub(visible_height.saturating_sub(1))
     };
 
-    let items: Vec<ListItem> = commands
+    let items: Vec<ListItem> = visual_rows
         .iter()
-        .enumerate()
         .skip(scroll)
         .take(visible_height)
-        .map(|(i, (_, cmd, _))| {
-            let style = if i == selected {
-                theme.selected_style()
-            } else {
-                Style::default()
-            };
-
-            let line = Line::from(vec![
-                Span::raw("  "),
-                Span::styled(cmd.name, style),
-                Span::raw(" ".repeat(30usize.saturating_sub(cmd.name.len()))),
-                Span::styled(cmd.shortcut, Style::default().fg(theme.muted)),
-            ]);
-
-            ListItem::new(line).style(style)
+        .map(|row| match row {
+            None => ListItem::new(Line::raw("")),
+            Some(ci) => {
+                let cmd = commands[*ci].1;
+                let style = if *ci == selected {
+                    theme.selected_style()
+                } else {
+                    Style::default()
+                };
+                let line = Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(cmd.name, style),
+                    Span::raw(" ".repeat(30usize.saturating_sub(cmd.name.len()))),
+                    Span::styled(cmd.shortcut, Style::default().fg(theme.muted)),
+                ]);
+                ListItem::new(line).style(style)
+            }
         })
         .collect();
 
     frame.render_widget(List::new(items), list_area);
 
-    render_scrollbar(frame, list_area, scroll, item_count);
+    render_scrollbar(frame, list_area, scroll, total_visual);
 }
 
 /// Draw search bar at top
