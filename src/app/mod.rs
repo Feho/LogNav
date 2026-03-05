@@ -1031,20 +1031,34 @@ impl App {
 
     /// Open the exported file in the default browser.
     pub fn open_in_browser(path: &str) {
-        let cmd = if cfg!(target_os = "macos") {
-            "open"
-        } else if cfg!(target_os = "windows") {
-            "start"
-        } else {
-            "xdg-open"
-        };
-        // Fire and forget — don't block the TUI
-        let _ = std::process::Command::new(cmd)
-            .arg(path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+        #[cfg(target_os = "windows")]
+        {
+            // On Windows, use cmd /c start to open with default browser
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "", path])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open")
+                .arg(path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdg-open")
+                .arg(path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        }
     }
 
     /// Close any overlay and return to normal
