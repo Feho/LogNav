@@ -25,6 +25,9 @@ const DEFAULT_TIPS: &[&str] = &[
     "Use the command palette to detect repeated log clusters and patterns",
     "Press Space on a cluster annotation to fold/unfold repeated entries",
     "You can drag and drop a file onto the window to open it",
+    "Press F2 to open the statistics dashboard — see event rates and level distribution",
+    "In the stats dashboard, use +/- to zoom, h/l or arrows to pan left/right, 0 to reset",
+    "Press 'e' in stats view to export as an interactive HTML report you can open in a browser",
 ];
 
 #[derive(Debug, Clone)]
