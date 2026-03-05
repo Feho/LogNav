@@ -89,18 +89,11 @@ impl App {
                     .into_iter()
                     .filter(|&idx| {
                         let text = self.entries[idx].searchable_text();
-                        if self
-                            .exclude_patterns
-                            .iter()
-                            .any(|p| p.regex.is_match(text))
-                        {
+                        if self.exclude_patterns.iter().any(|p| p.regex.is_match(text)) {
                             return false;
                         }
                         if !self.include_patterns.is_empty()
-                            && !self
-                                .include_patterns
-                                .iter()
-                                .any(|p| p.regex.is_match(text))
+                            && !self.include_patterns.iter().any(|p| p.regex.is_match(text))
                         {
                             return false;
                         }
@@ -157,18 +150,11 @@ impl App {
             }
             if has_regex {
                 let text = self.entries[idx].searchable_text();
-                if self
-                    .exclude_patterns
-                    .iter()
-                    .any(|p| p.regex.is_match(text))
-                {
+                if self.exclude_patterns.iter().any(|p| p.regex.is_match(text)) {
                     continue;
                 }
                 if !self.include_patterns.is_empty()
-                    && !self
-                        .include_patterns
-                        .iter()
-                        .any(|p| p.regex.is_match(text))
+                    && !self.include_patterns.iter().any(|p| p.regex.is_match(text))
                 {
                     continue;
                 }

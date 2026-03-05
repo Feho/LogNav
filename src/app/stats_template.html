@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LogNav Stats – __TITLE__</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0d1017;
+  --surface: #151a23;
+  --surface2: #1c2230;
+  --border: #252b38;
+  --text: #e2e4ea;
+  --muted: #6c7186;
+  --accent: #7ec8e3;
+  --red: #ff6b6b;
+  --yellow: #ffd166;
+  --teal: #7ec8e3;
+  --green: #64b678;
+  --gray: #9a9ab0;
+  --purple: #b482dc;
+  --shadow: 0 2px 12px rgba(0,0,0,0.35);
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 40px 48px;
+  max-width: 1440px;
+  margin: 0 auto;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Header ── */
+header { margin-bottom: 32px; }
+h1 {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+h1 .filename {
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+  margin-left: 6px;
+}
+
+/* ── Summary cards ── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 14px;
+  margin-bottom: 32px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 18px 22px;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+}
+.card.accent-red    { border-left-color: var(--red); }
+.card.accent-green  { border-left-color: var(--green); }
+.card.accent-yellow { border-left-color: var(--yellow); }
+.card.accent-purple { border-left-color: var(--purple); }
+.card.accent-muted  { border-left-color: var(--muted); }
+
+.card .lbl {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.card .val {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.card .val.err-hi { color: var(--red); }
+.card .sub {
+  font-size: 0.73rem;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+/* ── Panels ── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.panel-head h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ── Period pills ── */
+.pills { display: flex; gap: 5px; flex-wrap: wrap; }
+.pill {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-family: inherit;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.pill:hover { background: var(--surface2); color: var(--text); border-color: #3a4050; }
+.pill.on {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.pill:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+.pill:disabled:hover { background: transparent; color: var(--muted); border-color: var(--border); }
+.reset-pill {
+  background: rgba(255,107,107,0.15) !important;
+  border-color: rgba(255,107,107,0.4) !important;
+  color: var(--red) !important;
+}
+.reset-pill:hover {
+  background: rgba(255,107,107,0.25) !important;
+  border-color: rgba(255,107,107,0.6) !important;
+  color: var(--red) !important;
+}
+.zoom-hint {
+  font-size: 0.65rem;
+  color: var(--muted);
+  opacity: 0.6;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ── Chart containers ── */
+.chart-wrap {
+  position: relative;
+  height: 320px;
+}
+
+/* ── No-data state ── */
+.no-data {
+  color: var(--muted);
+  font-style: italic;
+  padding: 60px 0;
+  text-align: center;
+  font-size: 0.88rem;
+}
+
+/* ── Level distribution grid ── */
+.levels {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 28px;
+  align-items: start;
+}
+.level-bar-wrap { height: 280px; }
+.level-doughnut-wrap {
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Footer ── */
+footer {
+  text-align: center;
+  padding: 20px 0 8px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+}
+
+/* ── Noscript ── */
+.no-js {
+  background: var(--surface);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  color: var(--red);
+  margin: 60px 0;
+  font-size: 0.95rem;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  body { padding: 24px 20px; }
+  .levels { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  body { padding: 16px 12px; }
+  .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .card { padding: 14px 16px; }
+  .card .val { font-size: 1.1rem; }
+  .panel { padding: 18px 16px; }
+  .chart-wrap { height: 260px; }
+  .level-bar-wrap, .level-doughnut-wrap { height: 220px; }
+  .pills { gap: 3px; }
+  .pill { padding: 4px 10px; font-size: 0.68rem; }
+}
+
+/* ── Print ── */
+@media print {
+  body { background: #fff; color: #1a1a1a; padding: 20px; }
+  .card, .panel { background: #fff; border-color: #ddd; box-shadow: none; }
+  .card .lbl, footer { color: #666; }
+  .card .val { color: #111; }
+  .pill.on { background: #ccc; color: #111; border-color: #ccc; }
+  header h1, .panel-head h2 { color: #333; }
+  h1 .filename { color: #0077aa; }
+  footer { border-top-color: #ddd; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LogNav Statistics <span class="filename">__TITLE__</span></h1>
+</header>
+
+<section class="cards" id="cards"></section>
+
+<section class="panel" id="rate-panel">
+  <div class="panel-head">
+    <h2>Event Rate <span class="zoom-hint" id="dragHint"></span></h2>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="pills" id="pills"></div>
+      <button class="pill reset-pill" id="resetZoom" style="display:none" title="Reset to full time range">&#x2715; Reset</button>
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="rateChart"></canvas>
+  </div>
+</section>
+
+<section class="panel" id="level-panel">
+  <div class="panel-head"><h2>Level Distribution</h2></div>
+  <div class="levels">
+    <div class="chart-wrap level-bar-wrap"><canvas id="levelBar"></canvas></div>
+    <div class="chart-wrap level-doughnut-wrap"><canvas id="levelDoughnut"></canvas></div>
+  </div>
+</section>
+
+<footer>Generated by LogNav &middot; <span id="gen-time"></span></footer>
+
+<noscript>
+  <div class="no-js">JavaScript is required to render the charts. Please enable JavaScript in your browser.</div>
+</noscript>
+
+<script>
+const D = __STATS_JSON__;
+
+/* ── Helpers ── */
+const fmt = n => n.toLocaleString();
+const pad = n => String(n).padStart(2, '0');
+
+function fmtDate(ms) {
+  const d = new Date(ms);
+  return d.getUTCFullYear() + '-' + pad(d.getUTCMonth()+1) + '-' + pad(d.getUTCDate()) + ' '
+       + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+}
+
+function fmtDur(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const dy = Math.floor(h / 24);
+  if (dy > 0) return dy + 'd ' + (h % 24) + 'h';
+  if (h > 0)  return h + 'h ' + (m % 60) + 'm';
+  if (m > 0)  return m + 'm ' + (s % 60) + 's';
+  return s + 's';
+}
+
+const COLORS = {
+  error: { bg: 'rgba(255,107,107,0.8)', border: 'rgba(255,107,107,1)' },
+  warn:  { bg: 'rgba(255,209,102,0.75)', border: 'rgba(255,209,102,1)' },
+  other: { bg: 'rgba(126,200,227,0.65)', border: 'rgba(126,200,227,1)' },
+};
+const LEVEL_COLORS = [
+  'rgba(255,107,107,0.85)', 'rgba(255,209,102,0.85)', 'rgba(126,200,227,0.85)',
+  'rgba(100,182,120,0.85)', 'rgba(154,154,176,0.85)', 'rgba(180,130,220,0.85)',
+];
+
+/* ── Chart.js global defaults ── */
+Chart.defaults.font.family = "'Inter', system-ui, -apple-system, sans-serif";
+Chart.defaults.font.size = 11;
+
+/* ── Summary cards ── */
+(function() {
+  const el = document.getElementById('cards');
+  const cards = [];
+
+  cards.push(mkCard('Total Entries', fmt(D.totalEntries), '', ''));
+
+  const filtSub = D.totalEntries > 0
+    ? ((D.filteredCount / D.totalEntries) * 100).toFixed(1) + '% of total'
+    : '';
+  cards.push(mkCard('Filtered', fmt(D.filteredCount), filtSub, ''));
+
+  const erVal = D.errorRate !== null ? D.errorRate.toFixed(1) + '%' : 'N/A';
+  const erCls = D.errorRate !== null && D.errorRate > 5 ? 'err-hi' : '';
+  const erAccent = D.errorRate !== null && D.errorRate > 5 ? 'accent-red' : 'accent-green';
+  cards.push(mkCard('Error Rate', erVal, '', erAccent, erCls));
+
+  if (D.timeRange) {
+    cards.push(mkCard('From', fmtDate(D.timeRange[0]), '', 'accent-muted'));
+    cards.push(mkCard('To', fmtDate(D.timeRange[1]), '', 'accent-muted'));
+    cards.push(mkCard('Duration', fmtDur(D.timeRange[1] - D.timeRange[0]), '', 'accent-purple'));
+  }
+
+  el.innerHTML = cards.join('');
+
+  function mkCard(label, value, sub, accent, valCls) {
+    return '<div class="card ' + (accent || '') + '">'
+      + '<div class="lbl">' + label + '</div>'
+      + '<div class="val ' + (valCls || '') + '">' + value + '</div>'
+      + (sub ? '<div class="sub">' + sub + '</div>' : '')
+      + '</div>';
+  }
+})();
+
+/* ── Period selector + resampling ── */
+const PERIODS = [
+  { min: 1,    label: '1 min' },
+  { min: 5,    label: '5 min' },
+  { min: 15,   label: '15 min' },
+  { min: 30,   label: '30 min' },
+  { min: 60,   label: '1 hour' },
+  { min: 360,  label: '6 hours' },
+  { min: 1440, label: '1 day' },
+];
+
+const MAX_BARS = 150;
+let zoomRange = null;   /* [startMs, endMs] or null */
+let currentBins = [];   /* bins currently rendered */
+let autoMode = true;    /* true = auto-pick period on zoom */
+let isPanning = false;
+
+function zoomedSpanMin() {
+  if (!zoomRange) return D.buckets.length;           /* total 1-min buckets */
+  return (zoomRange[1] - zoomRange[0]) / 60000;
+}
+
+function barCount(periodMin) {
+  return Math.ceil(zoomedSpanMin() / periodMin);
+}
+
+function defaultIdx() {
+  if (!D.timeRange) return 0;
+  const span = (D.timeRange[1] - D.timeRange[0]) / 60000;
+  let idx;
+  if (span <= 60)        idx = 0;
+  else if (span <= 360)  idx = 1;
+  else if (span <= 1440) idx = 2;
+  else if (span <= 4320) idx = 4;
+  else                   idx = 6;
+  while (idx < PERIODS.length - 1 && barCount(PERIODS[idx].min) > MAX_BARS) idx++;
+  return idx;
+}
+
+/* Best period for current zoom range */
+function bestPeriodIdx() {
+  for (let i = 0; i < PERIODS.length; i++) {
+    if (barCount(PERIODS[i].min) <= MAX_BARS) return i;
+  }
+  return PERIODS.length - 1;
+}
+
+function resample(periodMin) {
+  const out = [];
+  for (let i = 0; i < D.buckets.length; i += periodMin) {
+    let e = 0, w = 0, o = 0;
+    const end = Math.min(i + periodMin, D.buckets.length);
+    for (let j = i; j < end; j++) {
+      e += D.buckets[j].error;
+      w += D.buckets[j].warn;
+      o += D.buckets[j].other;
+    }
+    const ms = D.bucketBaseMs + i * 60000;
+    out.push({ error: e, warn: w, other: o, ms: ms });
+  }
+  if (zoomRange) {
+    const pm = periodMin * 60000;
+    return out.filter(function(b) { return b.ms + pm > zoomRange[0] && b.ms < zoomRange[1]; });
+  }
+  return out;
+}
+
+function tickLabel(ms, periodMin) {
+  const d = new Date(ms);
+  if (periodMin >= 1440)
+    return pad(d.getUTCMonth()+1) + '-' + pad(d.getUTCDate());
+  if (periodMin >= 60)
+    return pad(d.getUTCMonth()+1) + '-' + pad(d.getUTCDate()) + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+  return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+}
+
+function tooltipTitle(ms, periodMin) {
+  const d = new Date(ms);
+  const base = d.getUTCFullYear() + '-' + pad(d.getUTCMonth()+1) + '-' + pad(d.getUTCDate())
+             + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+  if (periodMin <= 1) return base;
+  const d2 = new Date(ms + periodMin * 60000);
+  const end2 = pad(d2.getUTCHours()) + ':' + pad(d2.getUTCMinutes());
+  if (d.getUTCFullYear() === d2.getUTCFullYear() && d.getUTCMonth() === d2.getUTCMonth() && d.getUTCDate() === d2.getUTCDate()) return base + ' \u2013 ' + end2;
+  return base + ' \u2013 ' + d2.getUTCFullYear() + '-' + pad(d2.getUTCMonth()+1) + '-' + pad(d2.getUTCDate()) + ' ' + end2;
+}
+
+/* ── Scroll-to-zoom & drag-to-pan plugin ── */
+const zoomPanPlugin = {
+  id: 'zoomPan',
+  afterInit: function(chart) {
+    const canvas = chart.canvas;
+    if (canvas._zoomPanAttached) return;
+    canvas._zoomPanAttached = true;
+
+    let pan = null; /* { startX, startRange: [ms,ms] } */
+
+    function updateCursor() {
+      canvas.style.cursor = zoomRange ? 'grab' : 'default';
+    }
+    updateCursor();
+
+    /* ── Scroll to zoom ── */
+    canvas.addEventListener('wheel', function(e) {
+      if (!rateChart) return;
+      const area = rateChart.chartArea;
+      if (!area || currentBins.length < 2) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) / rect.width * canvas.width;
+      if (cx < area.left || cx > area.right) return;
+
+      e.preventDefault();
+
+      /* Determine cursor position as fraction of chart area */
+      var frac = (cx - area.left) / (area.right - area.left);
+      frac = Math.max(0, Math.min(1, frac));
+
+      /* Current visible range in ms */
+      var fullStart = D.bucketBaseMs;
+      var fullEnd = D.bucketBaseMs + D.buckets.length * 60000;
+      var curStart = zoomRange ? zoomRange[0] : fullStart;
+      var curEnd = zoomRange ? zoomRange[1] : fullEnd;
+      var curSpan = curEnd - curStart;
+
+      /* Cursor time position */
+      var cursorMs = curStart + frac * curSpan;
+
+      /* Find current period index and step */
+      var curPIdx = autoMode ? bestPeriodIdx() : activePeriod;
+
+      if (e.deltaY < 0) {
+        /* Zoom in: step to finer period */
+        if (curPIdx <= 0) return; /* already at finest */
+        var newPIdx = curPIdx - 1;
+        var newBars = MAX_BARS;
+        var newSpan = PERIODS[newPIdx].min * newBars * 60000;
+        if (newSpan >= curSpan) newSpan = curSpan * 0.5;
+        /* Center on cursor */
+        var newStart = cursorMs - frac * newSpan;
+        var newEnd = cursorMs + (1 - frac) * newSpan;
+        /* Clamp to data bounds */
+        if (newStart < fullStart) { newEnd += fullStart - newStart; newStart = fullStart; }
+        if (newEnd > fullEnd) { newStart -= newEnd - fullEnd; newEnd = fullEnd; }
+        newStart = Math.max(newStart, fullStart);
+        newEnd = Math.min(newEnd, fullEnd);
+
+        zoomRange = [newStart, newEnd];
+        if (autoMode) activePeriod = bestPeriodIdx();
+      } else {
+        /* Zoom out: step to coarser period */
+        if (!zoomRange) return; /* already fully zoomed out */
+        if (curPIdx >= PERIODS.length - 1) {
+          /* Already at coarsest period, just reset */
+          zoomRange = null;
+          if (autoMode) activePeriod = bestPeriodIdx();
+        } else {
+          var newPIdx = curPIdx + 1;
+          var newSpan = PERIODS[newPIdx].min * MAX_BARS * 60000;
+          if (newSpan >= (fullEnd - fullStart)) {
+            zoomRange = null;
+          } else {
+            var newStart = cursorMs - frac * newSpan;
+            var newEnd = cursorMs + (1 - frac) * newSpan;
+            if (newStart < fullStart) { newEnd += fullStart - newStart; newStart = fullStart; }
+            if (newEnd > fullEnd) { newStart -= newEnd - fullEnd; newEnd = fullEnd; }
+            newStart = Math.max(newStart, fullStart);
+            newEnd = Math.min(newEnd, fullEnd);
+            zoomRange = [newStart, newEnd];
+          }
+          if (autoMode) activePeriod = bestPeriodIdx();
+        }
+      }
+
+      buildPills();
+      buildRateChart();
+      updateCursor();
+    }, { passive: false });
+
+    /* ── Drag to pan (only when zoomed) ── */
+    canvas.addEventListener('mousedown', function(e) {
+      if (!rateChart || !zoomRange) return;
+      const area = rateChart.chartArea;
+      if (!area) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = (e.clientX - rect.left) / rect.width * canvas.width;
+      const sy = (e.clientY - rect.top) / rect.height * canvas.height;
+      if (sx >= area.left && sx <= area.right && sy >= area.top && sy <= area.bottom) {
+        pan = { clientX0: e.clientX, startRange: [zoomRange[0], zoomRange[1]] };
+        canvas.style.cursor = 'grabbing';
+        isPanning = true;
+        e.preventDefault();
+      }
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+      if (!pan || !rateChart || !zoomRange) return;
+      const area = rateChart.chartArea;
+      const rect = canvas.getBoundingClientRect();
+      /* Pixels dragged in client coords */
+      var dxPx = e.clientX - pan.clientX0;
+      /* Convert to ms: chart area width in client px */
+      var areaClientW = (area.right - area.left) * rect.width / canvas.width;
+      var span = pan.startRange[1] - pan.startRange[0];
+      var dMs = -(dxPx / areaClientW) * span;
+
+      var fullStart = D.bucketBaseMs;
+      var fullEnd = D.bucketBaseMs + D.buckets.length * 60000;
+
+      var newStart = pan.startRange[0] + dMs;
+      var newEnd = pan.startRange[1] + dMs;
+      /* Clamp */
+      if (newStart < fullStart) { newEnd += fullStart - newStart; newStart = fullStart; }
+      if (newEnd > fullEnd) { newStart -= newEnd - fullEnd; newEnd = fullEnd; }
+
+      zoomRange = [Math.max(newStart, fullStart), Math.min(newEnd, fullEnd)];
+
+      /* Update chart in-place for smooth panning (avoid destroy/recreate) */
+      var pm = PERIODS[activePeriod].min;
+      var bins = resample(pm);
+      currentBins = bins;
+      rateChart.data.labels = bins.map(function(b) { return tickLabel(b.ms, pm); });
+      rateChart.data.datasets[0].data = bins.map(function(b) { return b.error; });
+      rateChart.data.datasets[1].data = bins.map(function(b) { return b.warn; });
+      rateChart.data.datasets[2].data = bins.map(function(b) { return b.other; });
+      rateChart.update('none');
+
+      /* Update hint text */
+      var hint = document.getElementById('dragHint');
+      if (hint) hint.textContent = fmtDate(zoomRange[0]) + '  \u2013  ' + fmtDate(zoomRange[1]);
+    });
+
+    function endPan() {
+      if (!pan) return;
+      pan = null;
+      isPanning = false;
+      updateCursor();
+      /* Full rebuild to refresh tooltip callbacks with current bins */
+      buildRateChart();
+    }
+
+    canvas.addEventListener('mouseup', endPan);
+    canvas.addEventListener('mouseleave', endPan);
+  }
+};
+
+/* ── Event Rate Chart (stacked bar) ── */
+let rateChart = null, activePeriod = defaultIdx();
+
+function buildRateChart() {
+  const pm = PERIODS[activePeriod].min;
+  const bins = resample(pm);
+  currentBins = bins;
+  const labels = bins.map(function(b) { return tickLabel(b.ms, pm); });
+
+  /* Show/hide reset button and drag hint */
+  var resetBtn = document.getElementById('resetZoom');
+  var hint = document.getElementById('dragHint');
+  if (zoomRange) {
+    resetBtn.style.display = '';
+    if (hint) hint.textContent = fmtDate(zoomRange[0]) + '  \u2013  ' + fmtDate(zoomRange[1]);
+  } else {
+    resetBtn.style.display = 'none';
+    if (hint) hint.textContent = bins.length > 1 ? '\u00b7 scroll to zoom' : '';
+  }
+
+  const cfg = {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Error',
+          data: bins.map(function(b) { return b.error; }),
+          backgroundColor: COLORS.error.bg,
+          hoverBackgroundColor: COLORS.error.border,
+          borderRadius: 1,
+        },
+        {
+          label: 'Warn',
+          data: bins.map(function(b) { return b.warn; }),
+          backgroundColor: COLORS.warn.bg,
+          hoverBackgroundColor: COLORS.warn.border,
+          borderRadius: 1,
+        },
+        {
+          label: 'Other',
+          data: bins.map(function(b) { return b.other; }),
+          backgroundColor: COLORS.other.bg,
+          hoverBackgroundColor: COLORS.other.border,
+          borderRadius: { topLeft: 2, topRight: 2 },
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400, easing: 'easeOutQuart' },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: {
+            color: '#6c7186',
+            maxRotation: 45,
+            minRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 20,
+            font: { size: 10 },
+          },
+          grid: { color: 'rgba(255,255,255,0.03)' },
+          border: { color: '#252b38' },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            color: '#6c7186',
+            callback: function(v) { return v >= 1000 ? Math.round(v/1000) + 'k' : v; },
+            font: { size: 10 },
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { color: '#252b38' },
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#9a9eb0',
+            usePointStyle: true,
+            pointStyle: 'rectRounded',
+            padding: 18,
+            font: { size: 11, weight: '500' },
+          }
+        },
+        tooltip: {
+          backgroundColor: '#151a23f2',
+          titleColor: '#e2e4ea',
+          bodyColor: '#bbb',
+          borderColor: '#252b38',
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: 12,
+          filter: function() { return !isPanning; },
+          callbacks: {
+            title: function(ctx) {
+              if (!ctx.length) return '';
+              var b = currentBins[ctx[0].dataIndex];
+              return b ? tooltipTitle(b.ms, PERIODS[activePeriod].min) : '';
+            },
+            afterBody: function(ctx) {
+              if (!ctx.length) return '';
+              var b = currentBins[ctx[0].dataIndex];
+              return b ? '\nTotal: ' + fmt(b.error + b.warn + b.other) : '';
+            }
+          }
+        },
+      },
+      interaction: { mode: 'index', intersect: false },
+    },
+    plugins: [zoomPanPlugin],
+  };
+
+  if (rateChart) rateChart.destroy();
+  rateChart = new Chart(document.getElementById('rateChart'), cfg);
+}
+
+/* ── Build / rebuild period pills ── */
+function buildPills() {
+  var el = document.getElementById('pills');
+  el.innerHTML = '';
+
+  /* Auto pill */
+  var ab = document.createElement('button');
+  ab.className = 'pill' + (autoMode ? ' on' : '');
+  ab.textContent = 'Auto';
+  ab.onclick = function() {
+    autoMode = true;
+    activePeriod = bestPeriodIdx();
+    buildPills();
+    buildRateChart();
+  };
+  el.appendChild(ab);
+
+  PERIODS.forEach(function(pr, i) {
+    var b = document.createElement('button');
+    var count = barCount(pr.min);
+    var tooMany = count > MAX_BARS;
+    b.className = 'pill' + (!autoMode && i === activePeriod ? ' on' : '');
+    b.textContent = pr.label;
+    if (tooMany) {
+      b.disabled = true;
+      b.title = count + ' bars \u2013 too dense for this time span';
+    } else {
+      b.onclick = function() {
+        autoMode = false;
+        activePeriod = i;
+        buildPills();
+        buildRateChart();
+      };
+    }
+    el.appendChild(b);
+  });
+}
+
+function resetZoom() {
+  zoomRange = null;
+  autoMode = true;
+  activePeriod = defaultIdx();
+  buildPills();
+  buildRateChart();
+}
+
+/* ── Init ── */
+if (D.hasTimestamps && D.buckets.length > 0) {
+  document.getElementById('resetZoom').onclick = resetZoom;
+  buildPills();
+  buildRateChart();
+} else {
+  document.getElementById('rate-panel').querySelector('.chart-wrap').innerHTML =
+    '<div class="no-data">No timestamp data available</div>';
+  document.getElementById('pills').style.display = 'none';
+}
+
+/* ── Level Distribution ── */
+(function() {
+  const nonZero = D.levelCounts.some(function(v) { return v > 0; });
+  if (!nonZero) {
+    document.getElementById('level-panel').querySelector('.levels').innerHTML =
+      '<div class="no-data">No level data available</div>';
+    return;
+  }
+
+  const total = D.levelCounts.reduce(function(a, b) { return a + b; }, 0);
+
+  /* Horizontal bar */
+  new Chart(document.getElementById('levelBar'), {
+    type: 'bar',
+    data: {
+      labels: D.levelLabels,
+      datasets: [{
+        data: D.levelCounts,
+        backgroundColor: LEVEL_COLORS,
+        borderRadius: 4,
+        barPercentage: 0.7,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: {
+            color: '#6c7186',
+            callback: function(v) { return v >= 1000 ? Math.round(v/1000) + 'k' : v; },
+            font: { size: 10 },
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { color: '#252b38' },
+        },
+        y: {
+          ticks: { color: '#ccc', font: { weight: 'bold', size: 11 } },
+          grid: { display: false },
+          border: { display: false },
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#151a23f2',
+          titleColor: '#e2e4ea',
+          bodyColor: '#bbb',
+          borderColor: '#252b38',
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              const pct = total ? ((ctx.raw / total) * 100).toFixed(1) + '%' : '0%';
+              return ' ' + fmt(ctx.raw) + '  (' + pct + ')';
+            }
+          }
+        }
+      }
+    }
+  });
+
+  /* Doughnut */
+  const filtered = [], filteredLabels = [], filteredColors = [];
+  D.levelCounts.forEach(function(v, i) {
+    if (v > 0) {
+      filtered.push(v);
+      filteredLabels.push(D.levelLabels[i]);
+      filteredColors.push(LEVEL_COLORS[i]);
+    }
+  });
+
+  new Chart(document.getElementById('levelDoughnut'), {
+    type: 'doughnut',
+    data: {
+      labels: filteredLabels,
+      datasets: [{
+        data: filtered,
+        backgroundColor: filteredColors,
+        borderColor: '#151a23',
+        borderWidth: 2,
+        hoverOffset: 8,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '58%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: '#ccc',
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 16,
+            font: { size: 11 },
+          }
+        },
+        tooltip: {
+          backgroundColor: '#151a23f2',
+          titleColor: '#e2e4ea',
+          bodyColor: '#bbb',
+          borderColor: '#252b38',
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: 12,
+          callbacks: {
+            label: function(ctx) {
+              const t = filtered.reduce(function(a, b) { return a + b; }, 0);
+              const pct = t ? ((ctx.raw / t) * 100).toFixed(1) + '%' : '0%';
+              return ' ' + ctx.label + ': ' + fmt(ctx.raw) + '  (' + pct + ')';
+            }
+          }
+        }
+      }
+    }
+  });
+})();
+
+/* ── Footer timestamp ── */
+document.getElementById('gen-time').textContent = new Date().toLocaleString();
+</script>
+</body>
+</html>

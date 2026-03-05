@@ -120,7 +120,10 @@ fn handle_paste(app: &mut App, text: String) {
             }
             *selected = 0;
         }
-        FocusState::DateFilter { .. } | FocusState::Clusters { .. } | FocusState::ThemePicker { .. } | FocusState::Stats { .. } => {
+        FocusState::DateFilter { .. }
+        | FocusState::Clusters { .. }
+        | FocusState::ThemePicker { .. }
+        | FocusState::Stats { .. } => {
             // Not useful for these overlays
         }
         FocusState::ExportDialog { input, error, .. } => {

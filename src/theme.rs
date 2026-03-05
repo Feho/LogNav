@@ -768,7 +768,6 @@ impl Theme {
             _ => Self::dark(),
         }
     }
-
 }
 
 /// (id, display_name, constructor)
@@ -783,7 +782,11 @@ pub const THEME_PRESETS: &[ThemePreset] = &[
     ("tokyo_night", "Tokyo Night", Theme::tokyo_night),
     ("one_dark", "One Dark", Theme::one_dark),
     ("light", "Default Light", Theme::light),
-    ("catppuccin_latte", "Catppuccin Latte", Theme::catppuccin_latte),
+    (
+        "catppuccin_latte",
+        "Catppuccin Latte",
+        Theme::catppuccin_latte,
+    ),
     ("rose_pine_dawn", "Rosé Pine Dawn", Theme::rose_pine_dawn),
     ("solarized_light", "Solarized Light", Theme::solarized_light),
     ("gruvbox_light", "Gruvbox Light", Theme::gruvbox_light),

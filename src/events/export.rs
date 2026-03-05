@@ -1,4 +1,4 @@
-use crate::app::{App, FocusState};
+use crate::app::{App, ExportKind, FocusState};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Handle keys in export dialog
@@ -9,8 +9,11 @@ pub fn handle_export_key(app: &mut App, key: KeyEvent) {
         }
 
         KeyCode::Enter => {
-            let path = match &app.focus {
-                FocusState::ExportDialog { input, .. } => input.text().to_string(),
+            let (path, is_stats) = match &app.focus {
+                FocusState::ExportDialog { input, kind, .. } => (
+                    input.text().to_string(),
+                    matches!(kind, ExportKind::StatsHtml(_)),
+                ),
                 _ => return,
             };
             if path.is_empty() {
@@ -19,14 +22,38 @@ pub fn handle_export_key(app: &mut App, key: KeyEvent) {
                 }
                 return;
             }
-            match app.export_filtered(&path) {
-                Ok(count) => {
-                    app.close_overlay();
-                    app.status_message = Some(format!("Exported {} entries to {}", count, path));
+            if is_stats {
+                // Borrow stats data directly to avoid cloning
+                let result = match &app.focus {
+                    FocusState::ExportDialog {
+                        kind: ExportKind::StatsHtml(data),
+                        ..
+                    } => App::export_stats_html(data, &path),
+                    _ => return,
+                };
+                match result {
+                    Ok(expanded) => {
+                        app.close_overlay();
+                        app.status_message = Some(format!("Stats exported to {}", expanded));
+                        App::open_in_browser(&expanded);
+                    }
+                    Err(e) => {
+                        if let FocusState::ExportDialog { error, .. } = &mut app.focus {
+                            *error = Some(e);
+                        }
+                    }
                 }
-                Err(e) => {
-                    if let FocusState::ExportDialog { error, .. } = &mut app.focus {
-                        *error = Some(e);
+            } else {
+                match app.export_filtered(&path) {
+                    Ok(count) => {
+                        app.close_overlay();
+                        app.status_message =
+                            Some(format!("Exported {} entries to {}", count, path));
+                    }
+                    Err(e) => {
+                        if let FocusState::ExportDialog { error, .. } = &mut app.focus {
+                            *error = Some(e);
+                        }
                     }
                 }
             }

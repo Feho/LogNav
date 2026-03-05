@@ -155,7 +155,28 @@ Open additional files with `M` (Shift+m). LogNav merges them into a single view:
 
 Press `Ctrl+P` to open the command palette. Type to fuzzy-search all available commands. This is the fastest way to discover features.
 
-### 12. Mouse Support
+### 12. Statistics Dashboard
+
+Press `F2` to open a statistics overlay showing:
+
+- Total / filtered entry counts and error rate
+- Level distribution bar chart
+- Event rate timeline (stacked bar chart by severity)
+
+The timeline supports zoom and pan:
+
+| Key | Action |
+|-----|--------|
+| `+` / `=` | Zoom in (finer time buckets) |
+| `-` | Zoom out (coarser time buckets) |
+| `h` / `l` or `←` / `→` | Pan left / right |
+| `Home` / `End` | Jump to start / end |
+| `0` | Reset zoom and pan |
+| `e` | Export as self-contained HTML |
+
+The HTML export includes interactive Chart.js charts with drag-to-zoom, period selection, and print-friendly styling.
+
+### 13. Mouse Support
 
 | Action | Effect |
 |--------|--------|
@@ -260,6 +281,7 @@ Custom parsers are loaded automatically on startup and detected with 0.9 confide
 | `o` or `Ctrl+O` | Open file |
 | `M` | Merge file |
 | `Ctrl+S` | Export filtered results |
+| `F2` | Statistics dashboard |
 | `Ctrl+P` | Command palette |
 | `?` or `F1` | Help |
 | `q` | Quit |

@@ -238,10 +238,7 @@ fn detect_single_clusters(templates: &[String], used: &[bool]) -> Vec<Cluster> {
 /// Detect all clusters (both multi-line sequences and single-line runs).
 /// Sequence detection runs first (greedy, longest first), then single-line on remainder.
 /// Results sorted by position.
-pub fn detect_clusters(
-    snapshots: &[(String, Option<usize>)],
-    _min_size: usize,
-) -> Vec<Cluster> {
+pub fn detect_clusters(snapshots: &[(String, Option<usize>)], _min_size: usize) -> Vec<Cluster> {
     if snapshots.is_empty() {
         return Vec::new();
     }

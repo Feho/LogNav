@@ -318,12 +318,7 @@ async fn run_app(
 }
 
 /// Handle load completion: configure tailer for tailing, rebuild bookmarks
-fn finish_load(
-    app: &mut App,
-    tailers: &mut [LogTailer],
-    config: &mut Config,
-    lc: LoadComplete,
-) {
+fn finish_load(app: &mut App, tailers: &mut [LogTailer], config: &mut Config, lc: LoadComplete) {
     if let Some(tailer) = tailers.iter_mut().find(|t| t.source_idx() == lc.source_idx) {
         tailer.configure_for_tailing(lc.parser, lc.file_size, lc.entry_count);
         if app.tail_enabled {

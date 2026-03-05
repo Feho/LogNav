@@ -1,7 +1,9 @@
-use crate::app::{App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, StatsData, QUICK_FILTERS};
+use crate::app::{
+    App, DateFilterFocus, FilterKind, FilterManagerFocus, FocusState, QUICK_FILTERS, StatsData,
+};
 use crate::log_entry::LogLevel;
-use crate::theme::{LIGHT_START_INDEX, THEME_PRESETS, Theme};
 use crate::text_utils::wrap_text;
+use crate::theme::{LIGHT_START_INDEX, THEME_PRESETS, Theme};
 use crate::ui::syntax::styled_spans;
 use crate::ui::{centered_rect, extract_message, render_scrollbar};
 use ratatui::{
@@ -919,12 +921,17 @@ pub fn draw_export_dialog(frame: &mut Frame, app: &App) {
     let area = centered_rect(60, 20, frame.area());
     frame.render_widget(Clear, area);
 
-    let (input, error) = match &app.focus {
-        FocusState::ExportDialog { input, error } => (input, error.as_deref()),
+    let (input, error, kind) = match &app.focus {
+        FocusState::ExportDialog { input, error, kind } => (input, error.as_deref(), kind),
         _ => return,
     };
 
-    let title = format!(" Export {} filtered entries ", app.filtered_indices.len());
+    let title = match kind {
+        crate::app::ExportKind::FilteredLog => {
+            format!(" Export {} filtered entries ", app.filtered_indices.len())
+        }
+        crate::app::ExportKind::StatsHtml(_) => " Export Statistics as HTML ".to_string(),
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme.border_style())
@@ -1130,37 +1137,63 @@ fn format_duration(ms: i64) -> String {
     }
 }
 
+/// Merge raw 1-min buckets into display bars based on zoom level and pan offset.
+fn zoom_buckets(
+    raw: &[crate::app::BucketCounts],
+    zoom_idx: usize,
+    pan_offset: usize,
+    bar_count: usize,
+) -> Vec<crate::app::BucketCounts> {
+    let (zoom_ms, _) = crate::app::ZOOM_LEVELS[zoom_idx];
+    let raw_per_bar = (zoom_ms / 60_000) as usize;
+    let total_raw = raw.len();
+
+    (0..bar_count)
+        .map(|col| {
+            let start = pan_offset + col * raw_per_bar;
+            let end = (start + raw_per_bar).min(total_raw);
+            let mut bc = crate::app::BucketCounts::default();
+            if start < total_raw {
+                for b in &raw[start..end] {
+                    bc.error += b.error;
+                    bc.warn += b.warn;
+                    bc.other += b.other;
+                }
+            }
+            bc
+        })
+        .collect()
+}
+
 /// Draw stacked bar columns for the event rate chart.
 /// Each column is 1 cell wide. Colors: error at bottom, warn in middle, other on top.
 /// Uses ▄ (lower half block) for half-cell precision at the top of each color band.
-fn draw_stacked_rate_chart(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme) {
+fn draw_stacked_rate_chart(
+    frame: &mut Frame,
+    area: Rect,
+    data: &StatsData,
+    theme: &Theme,
+    zoom_idx: usize,
+    pan_offset: usize,
+) {
     if area.width == 0 || area.height == 0 || data.buckets.is_empty() {
         return;
     }
 
     let chart_w = area.width as usize;
     let chart_h = area.height as usize;
-    let n_buckets = data.buckets.len();
 
     // Each bar is 1 cell wide with 1 cell gap → stride of 2
-    let bar_count = (chart_w + 1) / 2; // number of bars that fit
+    let bar_count = chart_w.div_ceil(2);
 
-    // Resample buckets to fit bar count
-    let resampled: Vec<_> = (0..bar_count)
-        .map(|col| {
-            let start = col * n_buckets / bar_count;
-            let end = ((col + 1) * n_buckets / bar_count).max(start + 1);
-            let mut bc = crate::app::BucketCounts::default();
-            for b in &data.buckets[start..end.min(n_buckets)] {
-                bc.error += b.error;
-                bc.warn += b.warn;
-                bc.other += b.other;
-            }
-            bc
-        })
-        .collect();
+    let resampled = zoom_buckets(&data.buckets, zoom_idx, pan_offset, bar_count);
 
-    let max_total = resampled.iter().map(|b| b.total()).max().unwrap_or(1).max(1);
+    let max_total = resampled
+        .iter()
+        .map(|b| b.total())
+        .max()
+        .unwrap_or(1)
+        .max(1);
 
     // Each cell = 2 half-rows for ▄ precision
     let half_rows = chart_h * 2;
@@ -1218,7 +1251,7 @@ fn draw_stacked_rate_chart(frame: &mut Frame, area: Rect, data: &StatsData, them
             // This row covers half-rows: bottom_half (even) and top_half (odd)
             // Row 0 is top of chart = highest half-rows
             let top_half = (chart_h - 1 - row) * 2 + 1; // upper half of this cell
-            let bot_half = (chart_h - 1 - row) * 2;     // lower half of this cell
+            let bot_half = (chart_h - 1 - row) * 2; // lower half of this cell
 
             let top_color = color_at_half(top_half);
             let bot_color = color_at_half(bot_half);
@@ -1250,51 +1283,57 @@ fn draw_stacked_rate_chart(frame: &mut Frame, area: Rect, data: &StatsData, them
 }
 
 /// Draw time axis labels below the stacked bar chart.
-fn draw_time_axis(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme) {
+fn draw_time_axis(
+    frame: &mut Frame,
+    area: Rect,
+    data: &StatsData,
+    theme: &Theme,
+    zoom_idx: usize,
+    pan_offset: usize,
+) {
     if area.width < 10 || data.buckets.is_empty() {
         return;
     }
 
-    let (t_min, _t_max) = match data.time_range {
-        Some(r) => r,
-        None => return,
-    };
+    if data.time_range.is_none() {
+        return;
+    }
 
-    let n_buckets = data.buckets.len();
+    let base = data.bucket_base_ms;
+    let (zoom_ms, _) = crate::app::ZOOM_LEVELS[zoom_idx];
+    let raw_per_bar = (zoom_ms / 60_000) as usize;
     let chart_w = area.width as usize;
-    let bar_count = (chart_w + 1) / 2; // must match draw_stacked_rate_chart
+    let bar_count = chart_w.div_ceil(2);
 
-    // Decide how many labels to show (aim for ~1 label per 12-15 chars)
+    // Decide how many labels to show
     let max_labels = (chart_w / 12).clamp(2, 8);
-    let label_step = if max_labels >= n_buckets {
+    let label_step = if max_labels >= bar_count {
         1
     } else {
-        n_buckets / max_labels
+        bar_count / max_labels
     };
 
     let mut spans: Vec<Span> = Vec::new();
     let mut pos = 0usize;
 
-    let mut bucket_i = 0;
-    while bucket_i < n_buckets && pos < chart_w {
-        // Map bucket index to pixel column using same stride as bar chart
-        let bar_idx = bucket_i * bar_count / n_buckets;
-        let col = bar_idx * 2; // stride of 2
+    let mut bar_i = 0;
+    while bar_i < bar_count && pos < chart_w {
+        let col = bar_i * 2; // stride of 2
         if col < pos {
-            bucket_i += label_step;
+            bar_i += label_step;
             continue;
         }
 
-        // Pad to reach column position
         if col > pos {
             spans.push(Span::raw(" ".repeat(col - pos)));
             pos = col;
         }
 
-        let ts_ms = t_min + (bucket_i as i64) * data.bucket_ms;
+        let raw_idx = pan_offset + bar_i * raw_per_bar;
+        let ts_ms = base + (raw_idx as i64) * 60_000;
         let label = chrono::DateTime::from_timestamp_millis(ts_ms)
             .map(|dt| {
-                let fmt = if data.bucket_ms >= 86_400_000 {
+                let fmt = if zoom_ms >= 86_400_000 {
                     "%m-%d"
                 } else {
                     "%H:%M"
@@ -1305,14 +1344,11 @@ fn draw_time_axis(frame: &mut Frame, area: Rect, data: &StatsData, theme: &Theme
 
         let label_len = label.len();
         if pos + label_len <= chart_w {
-            spans.push(Span::styled(
-                label,
-                Style::default().fg(theme.muted),
-            ));
+            spans.push(Span::styled(label, Style::default().fg(theme.muted)));
             pos += label_len;
         }
 
-        bucket_i += label_step;
+        bar_i += label_step;
     }
 
     let line = Line::from(spans);
@@ -1325,8 +1361,12 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
     let area = centered_rect(80, 80, frame.area());
     frame.render_widget(Clear, area);
 
-    let data: &StatsData = match &app.focus {
-        FocusState::Stats { data } => data,
+    let (data, zoom_idx, pan_offset) = match &app.focus {
+        FocusState::Stats {
+            data,
+            zoom_idx,
+            pan_offset,
+        } => (data.as_ref(), *zoom_idx, *pan_offset),
         _ => return,
     };
 
@@ -1338,21 +1378,22 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
     frame.render_widget(block, area);
 
     if inner.height < 10 || inner.width < 30 {
-        frame.render_widget(
-            Paragraph::new("Terminal too small"),
-            inner,
-        );
+        frame.render_widget(Paragraph::new("Terminal too small"), inner);
         return;
     }
 
-    // Layout: summary(4) + event rate section(8 or 1) + bar chart(rest) + help(1)
-    let rate_height: u16 = if data.has_timestamps { 8 } else { 1 }; // header + chart + axis label
+    // Layout: summary(4) + event rate(50%) + separator + level dist(50%) + help(1)
+    let rate_constraint = if data.has_timestamps {
+        Constraint::Percentage(50)
+    } else {
+        Constraint::Length(1)
+    };
     let chunks = Layout::vertical([
-        Constraint::Length(4),               // summary section
-        Constraint::Length(rate_height),      // event rate section (header + stacked bars + time axis)
-        Constraint::Length(1),               // separator
-        Constraint::Min(4),                  // bar chart section
-        Constraint::Length(1),               // help line
+        Constraint::Length(4),      // summary section
+        rate_constraint,            // event rate section
+        Constraint::Length(1),      // separator
+        Constraint::Percentage(50), // bar chart section
+        Constraint::Length(1),      // help line
     ])
     .split(inner);
 
@@ -1418,15 +1459,49 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
     if data.has_timestamps && !data.buckets.is_empty() {
         let rate_chunks = Layout::vertical([
             Constraint::Length(1), // header
-            Constraint::Min(1),   // stacked bars
+            Constraint::Min(1),    // stacked bars
             Constraint::Length(1), // time axis labels
         ])
         .split(chunks[1]);
 
-        let header = Line::from(Span::styled(
-            format!("  EVENT RATE  ({} buckets)", data.bucket_label),
-            section_style,
-        ));
+        let (zoom_ms, zoom_label) = crate::app::ZOOM_LEVELS[zoom_idx];
+        let chart_inner_w = rate_chunks[1].width.saturating_sub(4) as usize;
+        let bar_count = chart_inner_w.div_ceil(2);
+        let total_raw = data.buckets.len();
+        let raw_per_bar = (zoom_ms / 60_000) as usize;
+        let visible_raw = bar_count * raw_per_bar;
+        let showing_all = pan_offset == 0 && visible_raw >= total_raw;
+
+        let header_text = if showing_all {
+            format!("  EVENT RATE  ({} buckets)", zoom_label)
+        } else {
+            // Show time window
+            if data.time_range.is_some() {
+                let win_start_ms = data.bucket_base_ms + (pan_offset as i64) * 60_000;
+                let win_end_ms =
+                    win_start_ms + (visible_raw.min(total_raw - pan_offset) as i64) * 60_000;
+                let time_fmt = if zoom_ms >= 86_400_000 {
+                    "%m-%d"
+                } else {
+                    "%m-%d %H:%M"
+                };
+                let fmt = |ms: i64| {
+                    chrono::DateTime::from_timestamp_millis(ms)
+                        .map(|dt| dt.naive_local().format(time_fmt).to_string())
+                        .unwrap_or_default()
+                };
+                format!(
+                    "  EVENT RATE  ({} buckets, {} \u{2192} {})",
+                    zoom_label,
+                    fmt(win_start_ms),
+                    fmt(win_end_ms),
+                )
+            } else {
+                format!("  EVENT RATE  ({} buckets)", zoom_label)
+            }
+        };
+
+        let header = Line::from(Span::styled(header_text, section_style));
         frame.render_widget(Paragraph::new(header), rate_chunks[0]);
 
         // Draw stacked bar columns
@@ -1435,7 +1510,7 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
             width: rate_chunks[1].width.saturating_sub(4),
             ..rate_chunks[1]
         };
-        draw_stacked_rate_chart(frame, chart_area, data, theme);
+        draw_stacked_rate_chart(frame, chart_area, data, theme, zoom_idx, pan_offset);
 
         // Draw time axis labels
         let axis_area = Rect {
@@ -1443,7 +1518,7 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
             width: rate_chunks[2].width.saturating_sub(4),
             ..rate_chunks[2]
         };
-        draw_time_axis(frame, axis_area, data, theme);
+        draw_time_axis(frame, axis_area, data, theme, zoom_idx, pan_offset);
     } else {
         let no_ts = Line::from(Span::styled(
             "  EVENT RATE  (no timestamp data)",
@@ -1455,7 +1530,7 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
     // ── LEVEL DISTRIBUTION BAR CHART ──
     let bar_chunks = Layout::vertical([
         Constraint::Length(1), // header
-        Constraint::Min(3),   // chart
+        Constraint::Min(3),    // chart
     ])
     .split(chunks[3]);
 
@@ -1484,7 +1559,12 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
         })
         .collect();
 
-    let bar_max = data.level_counts[..6].iter().copied().max().unwrap_or(1).max(1);
+    let bar_max = data.level_counts[..6]
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1);
 
     let bar_chart = BarChart::default()
         .data(BarGroup::default().bars(&bars))
@@ -1500,7 +1580,7 @@ pub fn draw_stats(frame: &mut Frame, app: &App) {
     frame.render_widget(bar_chart, chart_area);
 
     // ── HELP LINE ──
-    let help_text = "Esc/q: close | F2: toggle";
+    let help_text = "e:export HTML | +/-:zoom | \u{2190}\u{2192}:pan | 0:reset | Esc/q:close";
     let padding = (chunks[4].width as usize).saturating_sub(help_text.len() + 2);
     let help_line = Line::from(vec![
         Span::raw(" ".repeat(padding)),
@@ -1515,7 +1595,7 @@ mod tests {
 
     /// Replicate the bar-chart resampling logic to verify stride/gap behavior.
     fn resample(_n_buckets: usize, chart_w: usize) -> (usize, Vec<usize>) {
-        let bar_count = (chart_w + 1) / 2;
+        let bar_count = chart_w.div_ceil(2);
         let x_positions: Vec<usize> = (0..bar_count).map(|col| col * 2).collect();
         (bar_count, x_positions)
     }
@@ -1550,9 +1630,9 @@ mod tests {
 
     #[test]
     fn resampling_covers_all_buckets() {
-        let n_buckets = 100;
-        let chart_w = 40;
-        let bar_count = (chart_w + 1) / 2; // 20
+        let n_buckets: usize = 100;
+        let chart_w: usize = 40;
+        let bar_count = chart_w.div_ceil(2); // 20
         let mut covered = vec![false; n_buckets];
         for col in 0..bar_count {
             let start = col * n_buckets / bar_count;
@@ -1567,12 +1647,16 @@ mod tests {
     #[test]
     fn resampling_preserves_totals() {
         let buckets: Vec<BucketCounts> = (0..50)
-            .map(|i| BucketCounts { error: i, warn: i * 2, other: 1 })
+            .map(|i| BucketCounts {
+                error: i,
+                warn: i * 2,
+                other: 1,
+            })
             .collect();
         let total_before: u64 = buckets.iter().map(|b| b.total()).sum();
 
-        let chart_w = 30;
-        let bar_count = (chart_w + 1) / 2;
+        let chart_w: usize = 30;
+        let bar_count = chart_w.div_ceil(2);
         let resampled: Vec<BucketCounts> = (0..bar_count)
             .map(|col| {
                 let start = col * buckets.len() / bar_count;

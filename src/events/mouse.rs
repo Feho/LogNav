@@ -39,6 +39,12 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                     *selected = selected.saturating_sub(3);
                     return;
                 }
+                FocusState::Stats { zoom_idx, .. } => {
+                    if *zoom_idx > 0 {
+                        *zoom_idx -= 1;
+                    }
+                    return;
+                }
                 _ => {}
             }
             if app.search_panel_open && app.search_panel_height > 0 {
@@ -100,6 +106,12 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
                 FocusState::Clusters { selected, .. } => {
                     if cluster_count > 0 {
                         *selected = (*selected + 3).min(cluster_count - 1);
+                    }
+                    return;
+                }
+                FocusState::Stats { zoom_idx, .. } => {
+                    if *zoom_idx < crate::app::ZOOM_LEVELS.len() - 1 {
+                        *zoom_idx += 1;
                     }
                     return;
                 }

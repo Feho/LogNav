@@ -69,6 +69,15 @@ pub mod commands;
 pub mod filtering;
 pub mod navigation;
 
+/// What kind of export the ExportDialog is performing.
+#[derive(Debug, Clone)]
+pub enum ExportKind {
+    /// Normal filtered-log export (Ctrl+S).
+    FilteredLog,
+    /// Stats dashboard as self-contained HTML with Chart.js.
+    StatsHtml(Box<StatsData>),
+}
+
 #[derive(Debug, Clone)]
 pub enum FocusState {
     Normal,
@@ -115,6 +124,7 @@ pub enum FocusState {
     ExportDialog {
         input: TextInput,
         error: Option<String>,
+        kind: ExportKind,
     },
     Clusters {
         selected: usize,
@@ -127,6 +137,10 @@ pub enum FocusState {
     },
     Stats {
         data: Box<StatsData>,
+        /// Index into ZOOM_LEVELS for current zoom
+        zoom_idx: usize,
+        /// Pan offset in raw (1-min) buckets from the left
+        pan_offset: usize,
     },
 }
 
@@ -144,6 +158,33 @@ impl BucketCounts {
     }
 }
 
+/// Zoom level definitions: (bucket_ms, label).
+/// Each level merges raw 1-min buckets into coarser display buckets.
+pub const ZOOM_LEVELS: &[(i64, &str)] = &[
+    (60_000, "1 min"),
+    (5 * 60_000, "5 min"),
+    (15 * 60_000, "15 min"),
+    (30 * 60_000, "30 min"),
+    (3_600_000, "1 hr"),
+    (6 * 3_600_000, "6 hr"),
+    (86_400_000, "1 day"),
+];
+
+/// Pick default zoom index based on time span.
+pub fn default_zoom_idx(span_ms: i64) -> usize {
+    if span_ms <= 60 * 60_000 {
+        0 // 1 min
+    } else if span_ms <= 6 * 3_600_000 {
+        1 // 5 min
+    } else if span_ms <= 24 * 3_600_000 {
+        2 // 15 min
+    } else if span_ms <= 3 * 86_400_000 {
+        4 // 1 hr
+    } else {
+        6 // 1 day
+    }
+}
+
 /// Pre-computed statistics for the stats dashboard overlay.
 #[derive(Debug, Clone)]
 pub struct StatsData {
@@ -155,12 +196,10 @@ pub struct StatsData {
     pub time_range: Option<(i64, i64)>,
     /// Error rate as percentage; None if no entries
     pub error_rate: Option<f64>,
-    /// Per-bucket level breakdown (oldest to newest)
+    /// Raw 1-minute buckets (oldest to newest), starting from bucket_base_ms
     pub buckets: Vec<BucketCounts>,
-    /// Human-readable bucket size label
-    pub bucket_label: &'static str,
-    /// Bucket size in milliseconds (for time axis labels)
-    pub bucket_ms: i64,
+    /// Epoch ms of raw bucket 0 (t_min floored to local midnight)
+    pub bucket_base_ms: i64,
     /// True if any filtered entry had a timestamp
     pub has_timestamps: bool,
 }
@@ -403,7 +442,8 @@ impl App {
 
     #[cfg(test)]
     fn push_test_entry(&mut self, level: crate::log_entry::LogLevel, ts_ms: Option<i64>) {
-        let ts = ts_ms.and_then(chrono::DateTime::from_timestamp_millis)
+        let ts = ts_ms
+            .and_then(chrono::DateTime::from_timestamp_millis)
             .map(|dt| dt.naive_utc());
         let entry = crate::log_entry::LogEntry {
             index: self.entries.len(),
@@ -462,10 +502,7 @@ impl App {
         // Incremental filter - only process new entries
         self.apply_filters_incremental(start_idx);
 
-        if self.tail_enabled
-            && matches!(self.focus, FocusState::Normal)
-            && was_at_bottom
-        {
+        if self.tail_enabled && matches!(self.focus, FocusState::Normal) && was_at_bottom {
             self.visual_anchor = None;
             self.scroll_to_bottom();
         }
@@ -620,38 +657,41 @@ impl App {
             None
         };
 
-        let (buckets, bucket_label, bucket_ms) = if let Some((t_min, t_max)) = time_range {
-            let span_ms = (t_max - t_min).max(1);
-            let (bms, label): (i64, &'static str) = if span_ms <= 60 * 60_000 {
-                (60_000, "1 min")
-            } else if span_ms <= 12 * 3_600_000 {
-                (5 * 60_000, "5 min")
-            } else if span_ms <= 7 * 86_400_000 {
-                (3_600_000, "1 hr")
-            } else {
-                (86_400_000, "1 day")
-            };
+        // Always compute raw 1-min buckets for zoom/pan support.
+        // Floor t_min to local midnight so day-level bars align to calendar days.
+        let (buckets, bucket_base_ms, zoom_idx) = if let Some((t_min, t_max)) = time_range {
+            use chrono::{Datelike, Local, TimeZone};
+            let base_ms = chrono::DateTime::from_timestamp_millis(t_min)
+                .and_then(|dt| {
+                    let local = dt.with_timezone(&Local);
+                    Local
+                        .with_ymd_and_hms(local.year(), local.month(), local.day(), 0, 0, 0)
+                        .single()
+                })
+                .map(|midnight| midnight.timestamp_millis())
+                .unwrap_or(t_min);
 
-            let n_buckets = (((span_ms + bms - 1) / bms) as usize).clamp(1, 200);
+            let span_ms = (t_max - base_ms).max(1);
+            let bms: i64 = 60_000; // 1-min raw buckets
+            let n_buckets = ((span_ms + bms - 1) / bms).max(1) as usize;
             let mut bkts = vec![BucketCounts::default(); n_buckets];
 
             for &idx in &self.filtered_indices {
                 let meta = &self.entry_meta[idx];
                 let ts = meta.timestamp_ms;
                 if ts != i64::MIN {
-                    let bi = (((ts - t_min) / bms) as usize).min(n_buckets - 1);
-                    // Bit indices from LogLevel::filter_bit_index()
+                    let bi = (((ts - base_ms) / bms) as usize).min(n_buckets - 1);
                     match meta.level_bit.trailing_zeros() as usize {
-                        0 => bkts[bi].error += 1,  // Error
-                        1 => bkts[bi].warn += 1,   // Warn
-                        _ => bkts[bi].other += 1,   // Info, Debug, Trace, Profile, Unknown
+                        0 => bkts[bi].error += 1,
+                        1 => bkts[bi].warn += 1,
+                        _ => bkts[bi].other += 1,
                     }
                 }
             }
 
-            (bkts, label, bms)
+            (bkts, base_ms, default_zoom_idx(t_max - t_min))
         } else {
-            (Vec::new(), "N/A", 0)
+            (Vec::new(), 0, 0)
         };
 
         self.focus = FocusState::Stats {
@@ -662,10 +702,11 @@ impl App {
                 time_range,
                 error_rate,
                 buckets,
-                bucket_label,
-                bucket_ms,
+                bucket_base_ms,
                 has_timestamps,
             }),
+            zoom_idx,
+            pan_offset: 0,
         };
     }
 
@@ -832,45 +873,61 @@ impl App {
         };
     }
 
-    /// Open export dialog with default path
-    pub fn open_export_dialog(&mut self) {
-        let default_path = if self.file_path.is_empty() {
-            "filtered.log".to_string()
+    /// Build a default export path from the current file path.
+    fn default_export_path(&self, suffix: &str, ext: &str) -> String {
+        if self.file_path.is_empty() {
+            format!("{}.{}", suffix, ext)
         } else {
             let p = std::path::Path::new(&self.file_path);
             let stem = p
                 .file_stem()
                 .map(|s| s.to_string_lossy())
                 .unwrap_or("output".into());
-            let ext = p
-                .extension()
-                .map(|s| s.to_string_lossy())
-                .unwrap_or("log".into());
             let dir = p
                 .parent()
                 .map(|d| d.to_string_lossy())
                 .unwrap_or(".".into());
-            format!("{}/{}_filtered.{}", dir, stem, ext)
+            format!("{}/{}_{}.{}", dir, stem, suffix, ext)
+        }
+    }
+
+    /// Open export dialog with default path
+    pub fn open_export_dialog(&mut self) {
+        let default_path = if self.file_path.is_empty() {
+            "filtered.log".to_string()
+        } else {
+            let p = std::path::Path::new(&self.file_path);
+            let ext = p
+                .extension()
+                .map(|s| s.to_string_lossy())
+                .unwrap_or("log".into());
+            self.default_export_path("filtered", &ext)
         };
         self.focus = FocusState::ExportDialog {
             input: TextInput::with_text(default_path),
             error: None,
+            kind: ExportKind::FilteredLog,
+        };
+    }
+
+    /// Open export dialog for stats HTML export, carrying stats data forward.
+    pub fn open_stats_export(&mut self) {
+        let data = match &self.focus {
+            FocusState::Stats { data, .. } => data.clone(),
+            _ => return,
+        };
+        let default_path = self.default_export_path("stats", "html");
+        self.focus = FocusState::ExportDialog {
+            input: TextInput::with_text(default_path),
+            error: None,
+            kind: ExportKind::StatsHtml(data),
         };
     }
 
     /// Export filtered entries to a file
     pub fn export_filtered(&mut self, path: &str) -> Result<usize, String> {
         use std::io::Write;
-        let expanded = if path == "~" {
-            std::env::var("HOME").unwrap_or_else(|_| path.to_string())
-        } else if let Some(rest) = path.strip_prefix("~/") {
-            match std::env::var("HOME") {
-                Ok(home) => format!("{}/{}", home, rest),
-                Err(_) => path.to_string(),
-            }
-        } else {
-            path.to_string()
-        };
+        let expanded = Self::expand_path(path);
 
         let file = std::fs::File::create(&expanded).map_err(|e| e.to_string())?;
         let mut writer = std::io::BufWriter::new(file);
@@ -885,6 +942,109 @@ impl App {
         }
         writer.flush().map_err(|e| e.to_string())?;
         Ok(count)
+    }
+
+    /// Expand ~ in paths to $HOME (or %USERPROFILE% on Windows).
+    fn expand_path(path: &str) -> String {
+        let home = || {
+            std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .ok()
+        };
+        if path == "~" {
+            home().unwrap_or_else(|| path.to_string())
+        } else if let Some(rest) = path.strip_prefix("~/") {
+            match home() {
+                Some(h) => format!("{}/{}", h, rest),
+                None => path.to_string(),
+            }
+        } else {
+            path.to_string()
+        }
+    }
+
+    /// Export stats dashboard as self-contained HTML with Chart.js.
+    /// Returns the expanded path on success.
+    pub fn export_stats_html(data: &StatsData, path: &str) -> Result<String, String> {
+        use std::io::Write;
+        let expanded = Self::expand_path(path);
+
+        let file_name = std::path::Path::new(&expanded)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Stats".to_string());
+
+        // Build JSON payload for the HTML template
+        let level_labels = ["Error", "Warn", "Info", "Debug", "Trace", "Profile"];
+        let level_values: Vec<u64> = data.level_counts[..6].to_vec();
+
+        let buckets_json: Vec<serde_json::Value> = data
+            .buckets
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "error": b.error,
+                    "warn": b.warn,
+                    "other": b.other
+                })
+            })
+            .collect();
+
+        let stats_json = serde_json::json!({
+            "totalEntries": data.total_entries,
+            "filteredCount": data.filtered_count,
+            "errorRate": data.error_rate,
+            "timeRange": data.time_range.map(|(a, b)| vec![a, b]),
+            "hasTimestamps": data.has_timestamps,
+            "levelLabels": level_labels,
+            "levelCounts": level_values,
+            "buckets": buckets_json,
+            "bucketBaseMs": data.bucket_base_ms,
+        });
+
+        let stats_str =
+            serde_json::to_string(&stats_json).map_err(|e| format!("JSON error: {}", e))?;
+
+        let html = Self::stats_html_template(&file_name, &stats_str);
+
+        let file = std::fs::File::create(&expanded).map_err(|e| e.to_string())?;
+        let mut writer = std::io::BufWriter::new(file);
+        writer
+            .write_all(html.as_bytes())
+            .map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
+        Ok(expanded)
+    }
+
+    /// Build the full HTML string for stats export.
+    /// Template lives in `stats_template.html`; uses `__TITLE__` / `__STATS_JSON__` placeholders.
+    fn stats_html_template(title: &str, stats_json: &str) -> String {
+        let escaped = title
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;");
+        include_str!("stats_template.html")
+            .replace("__TITLE__", &escaped)
+            .replace("__STATS_JSON__", stats_json)
+    }
+
+    /// Open the exported file in the default browser.
+    pub fn open_in_browser(path: &str) {
+        let cmd = if cfg!(target_os = "macos") {
+            "open"
+        } else if cfg!(target_os = "windows") {
+            "start"
+        } else {
+            "xdg-open"
+        };
+        // Fire and forget — don't block the TUI
+        let _ = std::process::Command::new(cmd)
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
     }
 
     /// Close any overlay and return to normal
@@ -1404,14 +1564,25 @@ mod tests {
 
     #[test]
     fn bucket_counts_total() {
-        let bc = BucketCounts { error: 3, warn: 5, other: 10 };
+        let bc = BucketCounts {
+            error: 3,
+            warn: 5,
+            other: 10,
+        };
         assert_eq!(bc.total(), 18);
         assert_eq!(BucketCounts::default().total(), 0);
     }
 
     fn stats_data(app: &App) -> &StatsData {
         match &app.focus {
-            FocusState::Stats { data } => data,
+            FocusState::Stats { data, .. } => data,
+            _ => panic!("expected Stats focus"),
+        }
+    }
+
+    fn stats_zoom_idx(app: &App) -> usize {
+        match &app.focus {
+            FocusState::Stats { zoom_idx, .. } => *zoom_idx,
             _ => panic!("expected Stats focus"),
         }
     }
@@ -1487,35 +1658,39 @@ mod tests {
     }
 
     #[test]
-    fn open_stats_bucket_label_selection() {
+    fn open_stats_default_zoom_selection() {
         let mut app = App::new();
         let base = 1_700_000_000_000i64; // ~2023
-        // Span < 1 hour → 1 min buckets
+        // Span < 1 hour → zoom idx 0 (1 min)
         app.push_test_entry(LogLevel::Info, Some(base));
         app.push_test_entry(LogLevel::Info, Some(base + 30 * 60_000));
         app.open_stats();
-        assert_eq!(stats_data(&app).bucket_label, "1 min");
+        assert_eq!(stats_zoom_idx(&app), 0);
+        assert_eq!(ZOOM_LEVELS[0].1, "1 min");
 
-        // Span ~6 hours → 5 min buckets
+        // Span ~6 hours → zoom idx 1 (5 min)
         let mut app = App::new();
         app.push_test_entry(LogLevel::Info, Some(base));
         app.push_test_entry(LogLevel::Info, Some(base + 6 * 3_600_000));
         app.open_stats();
-        assert_eq!(stats_data(&app).bucket_label, "5 min");
+        assert_eq!(stats_zoom_idx(&app), 1);
+        assert_eq!(ZOOM_LEVELS[1].1, "5 min");
 
-        // Span ~2 days → 1 hr buckets
+        // Span ~2 days → zoom idx 4 (1 hr)
         let mut app = App::new();
         app.push_test_entry(LogLevel::Info, Some(base));
         app.push_test_entry(LogLevel::Info, Some(base + 2 * 86_400_000));
         app.open_stats();
-        assert_eq!(stats_data(&app).bucket_label, "1 hr");
+        assert_eq!(stats_zoom_idx(&app), 4);
+        assert_eq!(ZOOM_LEVELS[4].1, "1 hr");
 
-        // Span ~10 days → 1 day buckets
+        // Span ~10 days → zoom idx 6 (1 day)
         let mut app = App::new();
         app.push_test_entry(LogLevel::Info, Some(base));
         app.push_test_entry(LogLevel::Info, Some(base + 10 * 86_400_000));
         app.open_stats();
-        assert_eq!(stats_data(&app).bucket_label, "1 day");
+        assert_eq!(stats_zoom_idx(&app), 6);
+        assert_eq!(ZOOM_LEVELS[6].1, "1 day");
     }
 
     #[test]

@@ -7,10 +7,7 @@ pub fn handle_theme_picker_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
             // Restore original theme
-            if let FocusState::ThemePicker {
-                original_theme, ..
-            } = &app.focus
-            {
+            if let FocusState::ThemePicker { original_theme, .. } = &app.focus {
                 app.theme = original_theme.clone();
                 recolor_sources(app);
             }

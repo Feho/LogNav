@@ -98,9 +98,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         && app
             .filtered_indices
             .get(app.selected_index)
-            .is_some_and(|&idx| {
-                !app.entries[idx].continuation_lines.is_empty()
-            });
+            .is_some_and(|&idx| !app.entries[idx].continuation_lines.is_empty());
 
     // Right side: context-aware hints
     let normal_hints: String;
@@ -139,7 +137,9 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         FocusState::ExportDialog { .. } => "Enter:export | Esc:cancel ",
         FocusState::Clusters { .. } => "Enter:jump | Esc:close ",
         FocusState::ThemePicker { .. } => "Enter:confirm | Esc:cancel ",
-        FocusState::Stats { .. } => "Esc/q:close | F2:toggle ",
+        FocusState::Stats { .. } => {
+            "e:export | +/-:zoom | \u{2190}\u{2192}:pan | 0:reset | Esc/q:close "
+        }
     };
 
     let left_len = left.len();
