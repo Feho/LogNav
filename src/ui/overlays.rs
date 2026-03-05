@@ -565,7 +565,7 @@ pub fn draw_help(frame: &mut Frame, app: &mut App) {
         )]),
         Line::from("  Alt+W     Toggle word wrap"),
         Line::from("  s         Toggle syntax highlighting"),
-        Line::from("  t         Toggle tail mode (auto-scroll)"),
+        Line::from("  t         Toggle live mode (auto-scroll)"),
         Line::from("  d         Show entry detail popup"),
         Line::from("  v         Visual select mode (then move to extend range)"),
         Line::from("  c         Copy current entry (or visual selection) to clipboard"),

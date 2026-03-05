@@ -58,7 +58,7 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // Add tail status
     if app.tail_enabled {
-        parts.push("Tail".to_string());
+        parts.push("Live".to_string());
     }
 
     // Add search/highlight info

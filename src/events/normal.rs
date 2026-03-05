@@ -103,7 +103,7 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         (KeyModifiers::CONTROL, KeyCode::Char('t')) | (_, KeyCode::Char('t')) => {
             app.toggle_tail();
             app.status_message = Some(format!(
-                "Tail mode {}",
+                "Live mode {}",
                 if app.tail_enabled { "ON" } else { "OFF" }
             ));
         }

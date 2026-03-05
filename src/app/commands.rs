@@ -213,7 +213,7 @@ impl Command {
             group: "Display",
         },
         Command {
-            name: "Toggle tail mode",
+            name: "Toggle live mode",
             shortcut: "t",
             action: CommandAction::ToggleTail,
             group: "Display",

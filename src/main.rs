@@ -460,9 +460,9 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete
                     .get(source_idx as usize)
                     .map(|s| s.label.as_str())
                     .unwrap_or("?");
-                app.status_message = Some(format!("Tail error [{}]: {}", label, message));
+                app.status_message = Some(format!("Live error [{}]: {}", label, message));
             } else {
-                app.status_message = Some(format!("Tail error: {}", message));
+                app.status_message = Some(format!("Live error: {}", message));
             }
             None
         }

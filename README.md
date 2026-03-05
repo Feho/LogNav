@@ -134,14 +134,14 @@ Quickly navigate between problems:
 | `w` | Jump to next warning |
 | `W` | Jump to previous warning |
 
-### 9. Tail Mode
+### 9. Live Mode
 
-Press `t` to toggle tail mode. When enabled:
+Press `t` to toggle live mode. When enabled:
 - New entries appear at the bottom
 - The view auto-scrolls to show them
 - Great for monitoring live applications
 
-Tail mode pauses automatically when you scroll up, and resumes when you return to the bottom.
+Live mode pauses automatically when you scroll up, and resumes when you return to the bottom.
 
 ### 10. Merge Multiple Files
 
@@ -267,7 +267,7 @@ Custom parsers are loaded automatically on startup and detected with 0.9 confide
 | `Ctrl+D` | Date filter |
 | `x` | Exclude filter manager |
 | `X` | Clear exclude filters |
-| `t` | Toggle tail mode |
+| `t` | Toggle live mode |
 | `Alt+W` | Toggle word wrap |
 | `s` | Toggle syntax highlighting |
 | `Enter` | Expand/collapse entry |

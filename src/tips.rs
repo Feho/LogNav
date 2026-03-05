@@ -12,7 +12,7 @@ const DEFAULT_TIPS: &[&str] = &[
     "Press 'e' to jump to next error, 'E' for previous — same with 'w'/'W' for warnings",
     "Toggle bookmarks with 'm', then jump between them with 'b' and 'B'",
     "Ctrl+Click a word in the log to search for it, Alt+Click to exclude it",
-    "Press 't' to toggle tail mode — auto-follows new log entries in real time",
+    "Press 't' to toggle live mode — auto-follows new log entries in real time",
     "Press 'v' to start visual select, move to extend range, then 'c' to copy",
     "Press Alt+W to toggle word wrap for long lines",
     "Press 's' to toggle syntax highlighting for better readability",
