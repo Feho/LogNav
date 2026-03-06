@@ -114,11 +114,13 @@ impl LogTailer {
         // Read sample lines for parser detection
         let mut sample = String::new();
         let mut sample_count = 0;
+        let mut raw_line: Vec<u8> = Vec::new();
         loop {
-            let mut line = String::new();
-            match reader.read_line(&mut line) {
+            raw_line.clear();
+            match reader.read_until(b'\n', &mut raw_line) {
                 Ok(0) => break,
                 Ok(_) => {
+                    let line = String::from_utf8_lossy(&raw_line);
                     let trimmed = line.trim();
                     if !trimmed.is_empty() && !trimmed.starts_with('#') {
                         sample.push_str(&line);
@@ -143,17 +145,18 @@ impl LogTailer {
         let mut pending: Option<LogEntry> = None;
         let mut index: usize = 0;
         let mut in_header = true;
-        let mut line_buf = String::new();
+        let mut line_buf: Vec<u8> = Vec::new();
 
         loop {
             line_buf.clear();
-            match reader.read_line(&mut line_buf) {
+            match reader.read_until(b'\n', &mut line_buf) {
                 Ok(0) => break, // EOF
                 Ok(_) => {}
                 Err(e) => return Err(format!("Failed to read: {}", e)),
             }
 
-            let line = line_buf.trim_end_matches(['\n', '\r']);
+            let line_cow = String::from_utf8_lossy(&line_buf);
+            let line = line_cow.trim_end_matches(['\n', '\r']);
 
             // Skip header comment lines
             if in_header && line.starts_with('#') {
@@ -352,12 +355,13 @@ impl LogTailer {
 
             let mut reader = BufReader::new(file);
             let mut new_content = String::new();
+            let mut raw_line: Vec<u8> = Vec::new();
 
             loop {
-                let mut line = String::new();
-                match reader.read_line(&mut line) {
+                raw_line.clear();
+                match reader.read_until(b'\n', &mut raw_line) {
                     Ok(0) => break,
-                    Ok(_) => new_content.push_str(&line),
+                    Ok(_) => new_content.push_str(&String::from_utf8_lossy(&raw_line)),
                     Err(e) => return Err(format!("Failed to read: {}", e)),
                 }
             }
