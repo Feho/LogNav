@@ -22,6 +22,7 @@ pub fn handle_filter_manager_key(app: &mut App, key: KeyEvent) {
     let patterns = match kind {
         FilterKind::Exclude => &app.exclude_patterns,
         FilterKind::Include => &app.include_patterns,
+        FilterKind::Alert => &app.alert_patterns,
     };
 
     match key.code {

@@ -226,6 +226,11 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             app.open_filter_manager(FilterKind::Include);
         }
 
+        // Open alert keywords manager (bell on live match)
+        (_, KeyCode::Char('!')) => {
+            app.open_alert_manager();
+        }
+
         // Clear all include filters
         (KeyModifiers::SHIFT, KeyCode::Char('I')) => {
             let count = app.include_patterns.len();

@@ -42,6 +42,30 @@ fn source_gutter_span(source_idx: u8, theme: &Theme) -> Span<'static> {
     Span::styled("▌", Style::default().fg(color))
 }
 
+/// Build a single OR-joined regex from all active alert patterns (for highlighting).
+fn compile_alert_regex(app: &App) -> Option<Regex> {
+    if app.alert_patterns.is_empty() {
+        return None;
+    }
+    let parts: Vec<String> = app
+        .alert_patterns
+        .iter()
+        .map(|p| format!("(?:{})", p.regex.as_str()))
+        .collect();
+    Regex::new(&parts.join("|")).ok()
+}
+
+/// Merge two optional regexes into one OR-alternation.
+fn merge_regexes(a: Option<Regex>, b: Option<Regex>) -> Option<Regex> {
+    match (a, b) {
+        (Some(ra), Some(rb)) => {
+            Regex::new(&format!("(?:{})|(?:{})", ra.as_str(), rb.as_str())).ok()
+        }
+        (Some(r), None) | (None, Some(r)) => Some(r),
+        (None, None) => None,
+    }
+}
+
 /// Compile regex from the live search overlay query
 fn compile_overlay_regex(app: &App) -> Option<Regex> {
     if let FocusState::Search {
@@ -162,14 +186,11 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     app.viewport_height = viewport_height;
     app.viewport_width = viewport_width;
 
-    // Compute highlight regex once: use committed search regex or live overlay query
+    // Compute highlight regex once: merge search/overlay with alert keywords
     let overlay_regex = compile_overlay_regex(app);
-    let hl_regex = app
-        .search
-        .regex
-        .as_ref()
-        .or(overlay_regex.as_ref())
-        .cloned();
+    let search_regex = app.search.regex.as_ref().or(overlay_regex.as_ref()).cloned();
+    let alert_regex = compile_alert_regex(app);
+    let hl_regex = merge_regexes(search_regex, alert_regex);
     let hl_regex_ref = hl_regex.as_ref();
 
     // Show start screen when no file loaded

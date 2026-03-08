@@ -227,11 +227,12 @@ pub struct HoverWord {
     pub char_end: usize,   // exclusive end
 }
 
-/// A filter pattern used by both exclude and include filters
+/// A filter pattern used by exclude, include, and alert filters
 #[derive(Clone)]
 pub struct FilterPattern {
     pub query: String,
     pub regex: Regex,
+    pub regex_mode: bool,
 }
 
 impl fmt::Debug for FilterPattern {
@@ -242,11 +243,12 @@ impl fmt::Debug for FilterPattern {
     }
 }
 
-/// Whether a filter manager is for exclude or include patterns
+/// Whether a filter manager is for exclude, include, or alert patterns
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterKind {
     Exclude,
     Include,
+    Alert,
 }
 
 impl FilterKind {
@@ -254,7 +256,14 @@ impl FilterKind {
         match self {
             FilterKind::Exclude => "Exclude",
             FilterKind::Include => "Include",
+            FilterKind::Alert => "Alert",
         }
+    }
+
+    /// Whether this filter kind affects the visible entry list (requires apply_filters).
+    /// Alert keywords only trigger a bell and do not filter entries.
+    pub fn affects_filtering(self) -> bool {
+        !matches!(self, FilterKind::Alert)
     }
 }
 
@@ -295,6 +304,8 @@ pub struct App {
     pub date_to: Option<NaiveDateTime>,
     pub exclude_patterns: Vec<FilterPattern>,
     pub include_patterns: Vec<FilterPattern>,
+    /// Keywords that trigger a terminal bell when matched in live entries
+    pub alert_patterns: Vec<FilterPattern>,
 
     // UI state
     pub scroll_offset: usize,
@@ -392,6 +403,7 @@ impl App {
             date_to: None,
             exclude_patterns: Vec::new(),
             include_patterns: Vec::new(),
+            alert_patterns: Vec::new(),
             scroll_offset: 0,
             selected_index: 0,
             focus: FocusState::Normal,
@@ -873,6 +885,11 @@ impl App {
         };
     }
 
+    /// Open the alert keywords manager
+    pub fn open_alert_manager(&mut self) {
+        self.open_filter_manager(FilterKind::Alert);
+    }
+
     /// Build a default export path from the current file path.
     fn default_export_path(&self, suffix: &str, ext: &str) -> String {
         if self.file_path.is_empty() {
@@ -1082,6 +1099,7 @@ impl App {
         match kind {
             FilterKind::Exclude => &mut self.exclude_patterns,
             FilterKind::Include => &mut self.include_patterns,
+            FilterKind::Alert => &mut self.alert_patterns,
         }
     }
 
@@ -1090,6 +1108,7 @@ impl App {
         match kind {
             FilterKind::Exclude => &self.exclude_patterns,
             FilterKind::Include => &self.include_patterns,
+            FilterKind::Alert => &self.alert_patterns,
         }
     }
 
@@ -1113,8 +1132,11 @@ impl App {
                 self.filter_patterns_mut(kind).push(FilterPattern {
                     query: query.to_string(),
                     regex,
+                    regex_mode,
                 });
-                self.apply_filters();
+                if kind.affects_filtering() {
+                    self.apply_filters();
+                }
                 None
             }
             Err(e) => Some(e.to_string()),
@@ -1126,7 +1148,9 @@ impl App {
         let patterns = self.filter_patterns_mut(kind);
         if index < patterns.len() {
             patterns.remove(index);
-            self.apply_filters();
+            if kind.affects_filtering() {
+                self.apply_filters();
+            }
         }
     }
 
@@ -1135,7 +1159,9 @@ impl App {
         let patterns = self.filter_patterns_mut(kind);
         if !patterns.is_empty() {
             patterns.clear();
-            self.apply_filters();
+            if kind.affects_filtering() {
+                self.apply_filters();
+            }
         }
     }
 
@@ -1421,6 +1447,12 @@ impl App {
             }
             CommandAction::ExcludeManager => self.open_filter_manager(FilterKind::Exclude),
             CommandAction::IncludeManager => self.open_filter_manager(FilterKind::Include),
+            CommandAction::AlertManager => self.open_alert_manager(),
+            CommandAction::ClearAlerts => {
+                let count = self.alert_patterns.len();
+                self.clear_filters(FilterKind::Alert);
+                self.status_message = Some(format!("Cleared {} alert keyword(s)", count));
+            }
             CommandAction::ClearIncludes => {
                 let count = self.include_patterns.len();
                 self.clear_filters(FilterKind::Include);

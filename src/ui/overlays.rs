@@ -753,6 +753,12 @@ pub fn draw_filter_manager(frame: &mut Frame, app: &App) {
             "  Include: ",
             "  Esc: close | Only matching lines are shown",
         ),
+        FilterKind::Alert => (
+            theme.level_error,
+            " Alert Keywords (terminal bell on live match) ",
+            "  Keyword: ",
+            "  Esc: close | Bell rings when keyword appears in live mode",
+        ),
     };
 
     let patterns = app.filter_patterns(kind);

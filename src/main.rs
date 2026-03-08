@@ -62,6 +62,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new();
     app.recent_files = config.recent_files.clone();
     app.syntax_highlight = config.syntax_highlight.unwrap_or(true);
+
+    // Load alert keywords from config
+    for kw in &config.alert_keywords {
+        let _ = app.add_filter(app::FilterKind::Alert, &kw.query, kw.regex_mode);
+    }
     app.dark_overrides = config.dark_overrides.clone();
     app.light_overrides = config.light_overrides.clone();
     app.theme = theme::Theme::from_config(&theme::ThemeConfig {
@@ -120,11 +125,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     terminal.show_cursor()?;
 
-    // Save config — save per-source bookmarks
+    // Save config — save per-source bookmarks and alert keywords
     config.syntax_highlight = Some(app.syntax_highlight);
     config.theme = app.theme.name.clone();
     config.dark_overrides = app.dark_overrides.clone();
     config.light_overrides = app.light_overrides.clone();
+    config.alert_keywords = app
+        .alert_patterns
+        .iter()
+        .map(|p| config::AlertKeyword {
+            query: p.query.clone(),
+            regex_mode: p.regex_mode,
+        })
+        .collect();
     save_bookmarks_for_sources(&app, &mut config);
     let _ = config.save();
 
@@ -445,6 +458,18 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete
             source_idx,
             entries,
         } => {
+            // Check alert keywords before merging (entries still have raw text)
+            if !app.alert_patterns.is_empty() {
+                let matched = entries.iter().any(|e| {
+                    app.alert_patterns
+                        .iter()
+                        .any(|p| p.regex.is_match(e.searchable_text()))
+                });
+                if matched {
+                    let _ = execute!(io::stdout(), crossterm::style::Print("\x07"));
+                    app.status_message = Some("Alert: keyword matched in new entries".to_string());
+                }
+            }
             app.merge_entries_from_source(source_idx, entries);
             None
         }

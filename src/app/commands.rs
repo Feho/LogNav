@@ -36,6 +36,8 @@ pub enum CommandAction {
     ClearExcludes,
     IncludeManager,
     ClearIncludes,
+    AlertManager,
+    ClearAlerts,
     ExportFiltered,
     Clusters,
     ThemePicker,
@@ -93,6 +95,18 @@ impl Command {
             name: "Clear include filters",
             shortcut: "I",
             action: CommandAction::ClearIncludes,
+            group: "Search & Filter",
+        },
+        Command {
+            name: "Alert keywords...",
+            shortcut: "!",
+            action: CommandAction::AlertManager,
+            group: "Search & Filter",
+        },
+        Command {
+            name: "Clear alert keywords",
+            shortcut: "",
+            action: CommandAction::ClearAlerts,
             group: "Search & Filter",
         },
         Command {

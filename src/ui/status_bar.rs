@@ -86,6 +86,11 @@ pub fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push(format!("Include:{}", app.include_patterns.len()));
     }
 
+    // Add alert keyword count if active
+    if !app.alert_patterns.is_empty() {
+        parts.push(format!("Alert:{}", app.alert_patterns.len()));
+    }
+
     // If there's a status message, show it instead of normal status
     let left = if let Some(ref msg) = app.status_message {
         format!(" {} ", msg)

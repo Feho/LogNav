@@ -7,6 +7,13 @@ use std::path::PathBuf;
 const MAX_RECENT_FILES: usize = 10;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+pub struct AlertKeyword {
+    pub query: String,
+    #[serde(default)]
+    pub regex_mode: bool,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub recent_files: Vec<String>,
@@ -15,6 +22,9 @@ pub struct Config {
     /// Per-file bookmarks: file path -> list of entry indices
     #[serde(default)]
     pub bookmarks: HashMap<String, Vec<usize>>,
+    /// Keywords that trigger a terminal bell when matched in live mode
+    #[serde(default)]
+    pub alert_keywords: Vec<AlertKeyword>,
     /// Theme preset name: "dark" (default), "light"
     #[serde(default = "default_theme_name")]
     pub theme: String,
