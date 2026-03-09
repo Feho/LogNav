@@ -4,7 +4,7 @@ use crate::log_entry::LogLevel;
 use crate::text_utils::wrap_text;
 use crate::theme::Theme;
 use crate::ui::extract_message;
-use crate::ui::syntax::styled_spans;
+use crate::ui::syntax::{styled_spans, wrap_spans};
 use crate::ui::{LINE_PREFIX_WIDTH, render_scrollbar};
 use ratatui::{
     Frame,
@@ -575,10 +575,18 @@ fn draw_log_view_wrapped(
             Span::raw(" ")
         };
 
-        // Wrap the main message
-        let wrapped_parts = wrap_text(&message, msg_width);
+        // Style the full message first, then wrap — preserves syntax highlighting across wrap boundaries
+        let styled_message = styled_spans(
+            &message,
+            hl_regex,
+            Style::default(),
+            syntax_on && !is_selected,
+            None,
+            theme,
+        );
+        let wrapped_parts = wrap_spans(styled_message, msg_width);
 
-        for (i, part) in wrapped_parts.iter().enumerate() {
+        for (i, part) in wrapped_parts.into_iter().enumerate() {
             if visual_lines.len() >= viewport_height {
                 break;
             }
@@ -608,14 +616,11 @@ fn draw_log_view_wrapped(
                     ),
                     Span::raw(" "),
                 ]);
-                spans.extend(styled_spans(
-                    part,
-                    hl_regex,
-                    Style::default(),
-                    syntax_on && !is_selected,
-                    ul_range,
-                    theme,
-                ));
+                let mut msg_spans = part;
+                if let Some((start, end)) = ul_range {
+                    msg_spans = crate::ui::syntax::apply_underline(msg_spans, start, end);
+                }
+                spans.extend(msg_spans);
                 if let Some(ref ind) = indicator {
                     let style = if !is_expanded
                         && hl_regex
@@ -642,14 +647,11 @@ fn draw_log_view_wrapped(
                     spans.push(cluster_continuation_span(cluster_info, cg_width, theme));
                 }
                 spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
-                spans.extend(styled_spans(
-                    part,
-                    hl_regex,
-                    Style::default(),
-                    syntax_on && !is_selected,
-                    ul_range,
-                    theme,
-                ));
+                let mut msg_spans = part;
+                if let Some((start, end)) = ul_range {
+                    msg_spans = crate::ui::syntax::apply_underline(msg_spans, start, end);
+                }
+                spans.extend(msg_spans);
                 Line::from(spans)
             };
 
