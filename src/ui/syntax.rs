@@ -87,26 +87,60 @@ fn apply_search_overlay(
     regex: &Regex,
     hl_style: Style,
 ) -> Vec<Span<'static>> {
+    // Reconstruct full text and find matches across the whole string,
+    // then walk through spans splitting at match boundaries.
+    let full_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+    let matches: Vec<(usize, usize)> = regex
+        .find_iter(&full_text)
+        .map(|m| (m.start(), m.end()))
+        .collect();
+
+    if matches.is_empty() {
+        return spans;
+    }
+
     let mut result = Vec::new();
+    // byte position within full_text for the start of the current span
+    let mut span_start = 0;
 
     for span in spans {
         let text = span.content.to_string();
         let style = span.style;
-        let mut last_end = 0;
+        let span_end = span_start + text.len();
 
-        for m in regex.find_iter(&text) {
-            if m.start() > last_end {
-                result.push(Span::styled(text[last_end..m.start()].to_string(), style));
+        let mut pos = span_start; // current byte within full_text
+
+        for &(m_start, m_end) in &matches {
+            if m_end <= pos || m_start >= span_end {
+                continue;
             }
-            result.push(Span::styled(text[m.start()..m.end()].to_string(), hl_style));
-            last_end = m.end();
+            // Part before match (still in this span)
+            let before_start = pos;
+            let before_end = m_start.max(pos);
+            if before_end > before_start {
+                result.push(Span::styled(
+                    text[before_start - span_start..before_end - span_start].to_string(),
+                    style,
+                ));
+            }
+            // Highlighted part (clipped to this span)
+            let hl_start = m_start.max(pos);
+            let hl_end = m_end.min(span_end);
+            if hl_end > hl_start {
+                result.push(Span::styled(
+                    text[hl_start - span_start..hl_end - span_start].to_string(),
+                    hl_style,
+                ));
+            }
+            pos = hl_end;
         }
 
-        if last_end < text.len() {
-            result.push(Span::styled(text[last_end..].to_string(), style));
-        } else if last_end == 0 {
-            result.push(Span::styled(text, style));
+        // Remaining tail of span after all matches
+        if pos < span_end {
+            result.push(Span::styled(text[pos - span_start..].to_string(), style));
         }
+
+        span_start = span_end;
     }
 
     result
@@ -201,4 +235,26 @@ pub fn styled_spans(
     }
 
     spans
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_overlay_multi_span_bug() {
+        let theme = Theme::dark();
+        let text = "URL: http://example.com/foo.bar is here";
+        // Syntax highlighting will likely pick up the URL as a separate span.
+        // If we search for something that starts before the URL and ends inside it,
+        // it might fail if implemented per-span.
+        
+        let regex = Regex::new("URL: http").unwrap();
+        let spans = styled_spans(text, Some(&regex), Style::default(), true, None, &theme);
+        
+        let hl_style = theme.search_highlight_style();
+        let has_highlight = spans.iter().any(|s| s.style.fg == hl_style.fg);
+        
+        assert!(has_highlight, "Should highlight 'URL: http' even with syntax highlighting on");
+    }
 }
