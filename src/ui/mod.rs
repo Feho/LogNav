@@ -93,8 +93,18 @@ pub fn extract_message(raw_line: &str, offset: Option<usize>) -> Cow<'_, str> {
     // Find the message after timestamp
     // Pattern: either after "HH:mm:ss.fff " or just return the whole line
     if let Some(pos) = raw_line.find(|c: char| c.is_ascii_digit()) {
-        // Skip past timestamp pattern "MM-dd HH:mm:ss.fff"
-        if raw_line.len() > pos + 18 {
+        // Skip past timestamp pattern "MM-dd HH:mm:ss.fff" (e.g. "03-21 14:23:01.234")
+        // Validate the span actually looks like a timestamp before skipping
+        let ts_candidate = raw_line.get(pos..pos + 18).unwrap_or("");
+        let looks_like_ts = ts_candidate.len() == 18
+            && ts_candidate.chars().enumerate().all(|(i, c)| match i {
+                2 | 5 => c == '-',
+                8 => c == ' ',
+                11 | 14 => c == ':',
+                17 => c == '.',
+                _ => c.is_ascii_digit(),
+            });
+        if looks_like_ts && raw_line.len() > pos + 18 {
             let msg = raw_line[pos + 18..].trim_start();
             // Strip outer quotes (wd.log wraps messages in "...")
             // The message part after component prefix looks like: `SPL|Context "actual message"`
@@ -141,4 +151,17 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         Constraint::Percentage((100 - percent_x) / 2),
     ])
     .split(popup_layout[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_message_heuristic_bug() {
+        let line = "1 Error: something went wrong and it is long enough";
+        let extracted = extract_message(line, None);
+        // Heuristic should not eat the message if it's not a real timestamp
+        assert!(extracted.contains("Error"), "Should contain the word 'Error'");
+    }
 }
