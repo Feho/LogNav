@@ -323,7 +323,8 @@ fn compute_path_completions(text: &str) -> Vec<String> {
                 let parent = if parent.is_empty() { "." } else { parent };
                 (parent, fname)
             }
-            None => return Vec::new(),
+            // "." and ".." have no file_name(); list the directory itself
+            None => (expanded.as_str(), ""),
         }
     };
 
@@ -399,4 +400,17 @@ fn longest_common_prefix(strings: &[String]) -> String {
         end -= 1;
     }
     first[..end].to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_autocomplete_dotdot_bug() {
+        let text = "..";
+        let matches = compute_path_completions(text);
+        assert!(!matches.is_empty(), "Should be able to autocomplete '..'");
+        assert!(matches.iter().any(|m| m.starts_with("../") || m.starts_with("..\\")), "Completions for '..' should include '../'");
+    }
 }
