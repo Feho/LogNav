@@ -196,13 +196,15 @@ impl App {
         }
 
         // Count visual lines from scroll_offset through selected_index (inclusive).
-        // Use backward walk when the index gap is large AND there are no folded
-        // clusters (folded entries have 0 visual lines, so a large index gap can
-        // still be a small visual gap — the forward scan is correct in that case).
+        // Use backward walk when the index gap is large: walk back from selected_index
+        // until we've accumulated a full viewport of visual lines.
+        // Bound iterations to avoid O(N) cost when many entries are folded (0 visual lines).
         let gap = self.selected_index - self.scroll_offset;
-        if gap > viewport_height * 2 && self.folded_clusters.is_empty() {
-            let mut visual_lines = 0;
+        if gap > viewport_height * 2 {
+            let max_walk = gap.min(viewport_height * 4 + self.folded_clusters.len() * 2 + 1);
+            let mut visual_lines = 0usize;
             let mut new_offset = self.selected_index;
+            let mut steps = 0;
             loop {
                 let lines = self.visual_lines_for_entry(new_offset, viewport_width);
                 if visual_lines + lines > viewport_height {
@@ -210,10 +212,11 @@ impl App {
                     break;
                 }
                 visual_lines += lines;
-                if new_offset == 0 {
+                if new_offset == 0 || steps >= max_walk {
                     break;
                 }
                 new_offset -= 1;
+                steps += 1;
             }
             self.scroll_offset = new_offset.min(self.selected_index);
             return;
