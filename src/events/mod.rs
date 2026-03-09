@@ -73,15 +73,17 @@ fn clean_pasted_path(text: &str) -> String {
     if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
         s = s[1..s.len() - 1].to_string();
     }
-    // Tilde expansion
-    if s == "~" {
-        if let Ok(home) = std::env::var("HOME") {
-            return home;
+    // Tilde expansion: check HOME then USERPROFILE (Windows)
+    let home_dir = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
+    if let Some(ref home) = home_dir {
+        if s == "~" {
+            return home.clone();
+        } else if let Some(rest) = s.strip_prefix("~/").or_else(|| s.strip_prefix("~\\")) {
+            let sep = std::path::MAIN_SEPARATOR;
+            return format!("{}{}{}", home, sep, rest);
         }
-    } else if let Some(rest) = s.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return format!("{}/{}", home, rest);
     }
     s
 }
