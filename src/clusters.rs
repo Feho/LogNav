@@ -293,11 +293,13 @@ fn strip_component_prefix(template: &str) -> &str {
         }
     }
 
-    // WD: "LVL|Component message" — skip past first space after pipe
+    // WD: "LVL|Component message" — pipe immediately follows a 3-char level token
     if let Some(pipe) = s.find('|') {
-        let after_pipe = &s[pipe + 1..];
-        if let Some(space_pos) = after_pipe.find(' ') {
-            return after_pipe[space_pos..].trim_start();
+        if pipe <= 3 {
+            let after_pipe = &s[pipe + 1..];
+            if let Some(space_pos) = after_pipe.find(' ') {
+                return after_pipe[space_pos..].trim_start();
+            }
         }
     }
 
@@ -662,6 +664,12 @@ mod tests {
             strip_component_prefix("plain message with no prefix"),
             "plain message with no prefix"
         );
+    }
+
+    #[test]
+    fn test_strip_component_prefix_pipe_bug() {
+        let template = "ERROR Message with | pipe";
+        assert_eq!(strip_component_prefix(template), "ERROR Message with | pipe");
     }
 }
 
