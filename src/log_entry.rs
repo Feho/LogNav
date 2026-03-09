@@ -109,7 +109,14 @@ impl LogEntry {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed)
                 && let Ok(pretty) = serde_json::to_string_pretty(&val)
             {
-                self.pretty_continuation = Some(pretty.lines().map(str::to_owned).collect());
+                // Skip the first line if it's the prefix we injected (e.g. "{")
+                // — it already appears at the end of raw_line
+                let mut lines = pretty.lines().map(str::to_owned);
+                if lines.next().as_deref() == Some(prefix) {
+                    self.pretty_continuation = Some(lines.collect());
+                } else {
+                    self.pretty_continuation = Some(pretty.lines().map(str::to_owned).collect());
+                }
                 return;
             }
         }
@@ -403,5 +410,26 @@ mod tests {
         assert_eq!(entries.len(), 1);
         let ts = entries[0].timestamp.unwrap();
         assert_eq!(ts.to_string(), "2026-01-09 18:48:38");
+    }
+
+    #[test]
+    fn test_pretty_json_duplication() {
+        let mut entry = LogEntry {
+            index: 0,
+            level: LogLevel::Info,
+            timestamp: None,
+            raw_line: "INFO {".to_string(),
+            continuation_lines: vec!["  \"foo\": \"bar\"".to_string(), "}".to_string()],
+            cached_full_text: None,
+            pretty_continuation: None,
+            source_idx: 0,
+            source_local_idx: 0,
+            message_offset: None,
+        };
+
+        entry.ensure_pretty_continuation();
+        let display = entry.display_continuation();
+        // If duplicated, display[0] will be "{" which matches the end of raw_line
+        assert_ne!(display[0], "{", "Should not duplicate the opening brace in continuation");
     }
 }
