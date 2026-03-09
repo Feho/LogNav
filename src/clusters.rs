@@ -282,7 +282,7 @@ fn strip_component_prefix(template: &str) -> &str {
     let s = template.trim_start();
 
     // WPC: "[{N}] ComponentName   message" or "[ {N}] ComponentName   message"
-    if s.starts_with('[') || s.starts_with("{N}]") {
+    if s.starts_with('[') {
         // Skip past "] "
         if let Some(bracket_end) = s.find("] ") {
             let after_bracket = s[bracket_end + 2..].trim_start();

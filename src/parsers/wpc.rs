@@ -32,11 +32,24 @@ impl LogParser for WpcParser {
     }
 
     fn parse_line(&self, line: &str) -> Option<(LogLevel, Option<NaiveDateTime>)> {
-        WPC_PATTERN.captures(line).map(|caps| {
+        WPC_PATTERN.captures(line.trim_start()).map(|caps| {
             let level = parse_wpc_level(&caps[1]);
             let timestamp = parse_timestamp(&caps[2]);
             (level, timestamp)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wpc_parser_indented() {
+        let parser = WpcParser;
+        let line = "  INF 03-21 14:23:01.234 Test message";
+        assert!(parser.detect(line) > 0.0, "Should detect indented WPC line");
+        assert!(parser.parse_line(line).is_some(), "Should parse indented WPC line");
     }
 }
 
