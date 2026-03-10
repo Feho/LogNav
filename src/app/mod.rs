@@ -670,18 +670,9 @@ impl App {
         };
 
         // Always compute raw 1-min buckets for zoom/pan support.
-        // Floor t_min to local midnight so day-level bars align to calendar days.
+        // Floor t_min to the minute so the first bar aligns to the first log entry.
         let (buckets, bucket_base_ms, zoom_idx) = if let Some((t_min, t_max)) = time_range {
-            use chrono::{Datelike, Local, TimeZone};
-            let base_ms = chrono::DateTime::from_timestamp_millis(t_min)
-                .and_then(|dt| {
-                    let local = dt.with_timezone(&Local);
-                    Local
-                        .with_ymd_and_hms(local.year(), local.month(), local.day(), 0, 0, 0)
-                        .single()
-                })
-                .map(|midnight| midnight.timestamp_millis())
-                .unwrap_or(t_min);
+            let base_ms = (t_min / 60_000) * 60_000;
 
             let span_ms = (t_max - base_ms).max(1);
             let bms: i64 = 60_000; // 1-min raw buckets
