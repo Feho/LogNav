@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::hash::{DefaultHasher, Hasher};
 use std::time::SystemTime;
 
@@ -33,50 +32,27 @@ const DEFAULT_TIPS: &[&str] = &[
 #[derive(Debug, Clone)]
 pub struct TipsManager {
     all_tips: Vec<String>,
-    seen_tips: HashSet<usize>,
     current_tip_idx: usize,
-    counter: u64,
 }
 
 impl TipsManager {
-    /// Create a new tips manager with default tips
+    /// Create a new tips manager with default tips, starting at a random tip
     pub fn new() -> Self {
         let all_tips: Vec<String> = DEFAULT_TIPS.iter().map(|s| s.to_string()).collect();
         let seed = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
-        let initial_idx = Self::pseudo_random(seed, all_tips.len());
-        let mut seen_tips = HashSet::new();
-        seen_tips.insert(initial_idx);
+        let current_tip_idx = Self::pseudo_random(seed, all_tips.len());
         Self {
             all_tips,
-            seen_tips,
-            current_tip_idx: initial_idx,
-            counter: seed,
+            current_tip_idx,
         }
     }
 
     /// Get the current tip text
     pub fn get_current_tip(&self) -> &str {
         &self.all_tips[self.current_tip_idx]
-    }
-
-    /// Advance to the next random tip (avoiding repeats within cycle)
-    pub fn next_tip(&mut self) {
-        if self.seen_tips.len() >= self.all_tips.len() {
-            self.seen_tips.clear();
-        }
-
-        let available: Vec<usize> = (0..self.all_tips.len())
-            .filter(|i| !self.seen_tips.contains(i))
-            .collect();
-
-        self.counter = self.counter.wrapping_add(1);
-        let pick = Self::pseudo_random(self.counter, available.len());
-        let idx = available[pick];
-        self.seen_tips.insert(idx);
-        self.current_tip_idx = idx;
     }
 
     /// Simple hash-based pseudo-random index
@@ -102,35 +78,5 @@ mod tests {
         let tips = TipsManager::new();
         let tip = tips.get_current_tip();
         assert!(!tip.is_empty());
-    }
-
-    #[test]
-    fn test_no_repeat_tips_in_cycle() {
-        let mut tips = TipsManager::new();
-        let mut seen = HashSet::new();
-        seen.insert(tips.get_current_tip().to_string());
-
-        for _ in 1..DEFAULT_TIPS.len() {
-            tips.next_tip();
-            let tip = tips.get_current_tip().to_string();
-            assert!(
-                seen.insert(tip.clone()),
-                "Tip repeated within a cycle: {}",
-                tip
-            );
-        }
-    }
-
-    #[test]
-    fn test_cycle_resets_after_all_seen() {
-        let mut tips = TipsManager::new();
-        // Exhaust all tips
-        for _ in 1..DEFAULT_TIPS.len() {
-            tips.next_tip();
-        }
-        assert_eq!(tips.seen_tips.len(), DEFAULT_TIPS.len());
-        // Next tip should reset and succeed
-        tips.next_tip();
-        assert!(tips.seen_tips.len() <= 2); // cleared then picked one
     }
 }

@@ -87,9 +87,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref path) = initial_file {
         app.file_path = path.clone();
         attach_source(&mut app, &mut tailers, &tailer_tx, &mut config, path, 0);
-    } else if config.session.is_some() {
-        // A saved session exists; let the user resume it manually with 'r'
-        app.has_saved_session = true;
+    } else {
+        if config.session.is_some() {
+            // A saved session exists; let the user resume it manually with 'r'
+            app.has_saved_session = true;
+        }
+        app.toast = Some((
+            format!("Tip: {}", app.tips_manager.get_current_tip()),
+            std::time::Instant::now(),
+        ));
     }
 
     // Main event loop

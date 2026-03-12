@@ -180,13 +180,9 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // Fold/unfold cluster occurrence at cursor, or refresh tip on start screen
+        // Fold/unfold cluster occurrence at cursor
         (_, KeyCode::Char(' ')) => {
-            // On start screen, refresh the tip
-            if app.sources.is_empty() && app.entries.is_empty() {
-                app.tips_manager.next_tip();
-            } else if let Some(&(cluster_id, _, _)) = app.cluster_map.get(&app.selected_index) {
-                // Otherwise toggle cluster fold
+            if let Some(&(cluster_id, _, _)) = app.cluster_map.get(&app.selected_index) {
                 app.toggle_fold_cluster(cluster_id);
             }
         }
