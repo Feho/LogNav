@@ -41,6 +41,7 @@ pub struct LogTailer {
     watcher: Option<RecommendedWatcher>,
     event_tx: mpsc::Sender<TailerEvent>,
     cancel_token: Option<CancellationToken>,
+    load_cancel_token: Option<CancellationToken>,
 }
 
 impl LogTailer {
@@ -60,6 +61,7 @@ impl LogTailer {
             watcher: None,
             event_tx,
             cancel_token: None,
+            load_cancel_token: None,
         }
     }
 
@@ -82,13 +84,16 @@ impl LogTailer {
 
     /// Start loading the file in the background (fire-and-forget).
     /// Entries arrive via the event channel as LoadBatch events.
-    pub fn start_loading(&self) {
+    pub fn start_loading(&mut self) {
+        let cancel = CancellationToken::new();
+        self.load_cancel_token = Some(cancel.clone());
+
         let path = self.path.clone();
         let source_idx = self.source_idx;
         let tx = self.event_tx.clone();
 
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = Self::load_initial_blocking(&path, source_idx, &tx) {
+            if let Err(e) = Self::load_initial_blocking(&path, source_idx, &tx, cancel) {
                 let _ = tx.blocking_send(TailerEvent::Error {
                     source_idx,
                     message: e,
@@ -97,11 +102,19 @@ impl LogTailer {
         });
     }
 
+    /// Cancel an in-progress background load, if any.
+    pub fn cancel_loading(&mut self) {
+        if let Some(token) = self.load_cancel_token.take() {
+            token.cancel();
+        }
+    }
+
     /// Blocking implementation of streaming batch load
     fn load_initial_blocking(
         path: &Path,
         source_idx: u8,
         tx: &mpsc::Sender<TailerEvent>,
+        cancel: CancellationToken,
     ) -> Result<(), String> {
         let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
         let metadata = file
@@ -173,6 +186,9 @@ impl LogTailer {
 
                     // Send batch if full
                     if batch.len() >= BATCH_SIZE {
+                        if cancel.is_cancelled() {
+                            return Ok(());
+                        }
                         tx.blocking_send(TailerEvent::LoadBatch {
                             source_idx,
                             entries: std::mem::take(&mut batch),
@@ -211,7 +227,10 @@ impl LogTailer {
             batch.push(p);
         }
 
-        // Send final batch
+        // Send final batch (skip if cancelled)
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
         tx.blocking_send(TailerEvent::LoadBatch {
             source_idx,
             entries: batch,
@@ -409,11 +428,12 @@ impl LogTailer {
         Ok(())
     }
 
-    /// Stop watching the file
+    /// Stop watching the file and cancel any in-progress background load.
     pub fn stop_watching(&mut self) {
         if let Some(token) = self.cancel_token.take() {
             token.cancel();
         }
         self.watcher = None;
+        self.cancel_loading();
     }
 }

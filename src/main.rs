@@ -200,7 +200,7 @@ fn attach_source(
     }
     app.loading_sources.insert(source_idx);
 
-    let t = LogTailer::new(path, source_idx, tailer_tx.clone());
+    let mut t = LogTailer::new(path, source_idx, tailer_tx.clone());
     t.start_loading();
 
     config.add_recent_file(path);
