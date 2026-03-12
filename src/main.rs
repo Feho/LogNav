@@ -86,21 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tailers: Vec<LogTailer> = Vec::new();
     if let Some(ref path) = initial_file {
         app.file_path = path.clone();
-        app.sources
-            .push(SourceFile::new(path, app.theme.source_color(0)));
-        app.source_entry_counts.push(0);
-        app.loading_sources.insert(0);
-
-        let t = LogTailer::new(path, 0, tailer_tx.clone());
-        t.start_loading();
-
-        config.add_recent_file(path);
-        app.recent_files = config.recent_files.clone();
-        // Store bookmark stable IDs; actual bookmarks rebuilt as entries arrive
-        let loaded_bookmarks = config.load_bookmarks(path);
-        app.bookmark_stable_ids = loaded_bookmarks.iter().map(|&idx| (0u8, idx)).collect();
-
-        tailers.push(t);
+        attach_source(&mut app, &mut tailers, &tailer_tx, &mut config, path, 0);
+    } else if let Some(session) = config.session.take() {
+        // Restore last session when no CLI argument is given
+        restore_session(&mut app, session, &mut tailers, tailer_tx.clone(), &mut config);
     }
 
     // Main event loop
@@ -139,6 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     save_bookmarks_for_sources(&app, &mut config);
+    config.save_session(&app);
     let _ = config.save();
 
     if let Err(e) = result {
@@ -146,6 +136,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Restore a saved session: open source files and apply filter/scroll state
+fn restore_session(
+    app: &mut App,
+    session: config::SessionState,
+    tailers: &mut Vec<LogTailer>,
+    tailer_tx: mpsc::Sender<TailerEvent>,
+    config: &mut Config,
+) {
+    use chrono::NaiveDateTime;
+
+    let sources = session.sources;
+    if sources.is_empty() {
+        return;
+    }
+
+    // Open each source file
+    for (si, path) in sources.iter().enumerate() {
+        if si == 0 {
+            app.file_path = path.clone();
+        }
+        attach_source(app, tailers, &tailer_tx, config, path, si as u8);
+    }
+
+    // Restore filter state (applies immediately; entries arrive later)
+    app.level_filters = session.level_filters;
+    app.date_from = session
+        .date_from
+        .and_then(|s| NaiveDateTime::parse_from_str(&s, config::DATETIME_FMT).ok());
+    app.date_to = session
+        .date_to
+        .and_then(|s| NaiveDateTime::parse_from_str(&s, config::DATETIME_FMT).ok());
+    for p in session.exclude_patterns {
+        let _ = app.add_filter(app::FilterKind::Exclude, &p.query, p.regex_mode);
+    }
+    for p in session.include_patterns {
+        let _ = app.add_filter(app::FilterKind::Include, &p.query, p.regex_mode);
+    }
+
+    // Defer scroll restoration until entries finish loading
+    app.pending_scroll = Some((session.scroll_offset, session.selected_index));
+}
+
+/// Attach a source file: push SourceFile, init entry count, mark loading, start tailer, load bookmarks
+fn attach_source(
+    app: &mut App,
+    tailers: &mut Vec<LogTailer>,
+    tailer_tx: &mpsc::Sender<TailerEvent>,
+    config: &mut Config,
+    path: &str,
+    source_idx: u8,
+) {
+    app.sources
+        .push(SourceFile::new(path, app.theme.source_color(source_idx)));
+    while app.source_entry_counts.len() <= source_idx as usize {
+        app.source_entry_counts.push(0);
+    }
+    app.loading_sources.insert(source_idx);
+
+    let t = LogTailer::new(path, source_idx, tailer_tx.clone());
+    t.start_loading();
+
+    config.add_recent_file(path);
+    app.recent_files = config.recent_files.clone();
+
+    let loaded = config.load_bookmarks(path);
+    for &local_idx in &loaded {
+        app.bookmark_stable_ids.insert((source_idx, local_idx));
+    }
+
+    tailers.push(t);
 }
 
 /// Save bookmarks for each source file
@@ -200,7 +262,7 @@ async fn run_app(
         tokio::select! {
             Some(event) = tailer_rx.recv() => {
                 if let Some(lc) = handle_tailer_event(app, event) {
-                    finish_load(app, tailers, config, lc);
+                    finish_load(app, tailers, lc);
                 }
             }
             Some(clusters) = cluster_rx.recv() => {
@@ -252,7 +314,7 @@ async fn run_app(
         // Drain pending tailer events too
         while let Ok(event) = tailer_rx.try_recv() {
             if let Some(lc) = handle_tailer_event(app, event) {
-                finish_load(app, tailers, config, lc);
+                finish_load(app, tailers, lc);
             }
         }
 
@@ -270,49 +332,17 @@ async fn run_app(
             tailers.clear();
             app.remove_all_sources();
             app.reset_all_filters();
-            app.set_primary_source(&path);
             app.loading_sources.clear();
-            app.loading_sources.insert(0);
             app.loading_entry_count = 0;
 
-            let new_tailer = LogTailer::new(&path, 0, tailer_tx.clone());
-            new_tailer.start_loading();
-
-            config.add_recent_file(&path);
-            app.recent_files = config.recent_files.clone();
-            // Store bookmark stable IDs; actual bookmarks rebuilt as entries arrive
-            let loaded = config.load_bookmarks(&path);
-            app.bookmark_stable_ids = loaded.iter().map(|&idx| (0u8, idx)).collect();
-
-            tailers.push(new_tailer);
+            attach_source(app, tailers, &tailer_tx, config, &path, 0);
         }
 
         // Handle merge file request
         if let Some(merge_path) = app.pending_merge_path.take() {
             let source_idx = app.sources.len() as u8;
-            app.sources.push(SourceFile::new(
-                &merge_path,
-                app.theme.source_color(source_idx),
-            ));
-            while app.source_entry_counts.len() <= source_idx as usize {
-                app.source_entry_counts.push(0);
-            }
-
-            config.add_recent_file(&merge_path);
-            app.recent_files = config.recent_files.clone();
-            app.loading_sources.insert(source_idx);
             app.loading_entry_count = 0;
-
-            let new_tailer = LogTailer::new(&merge_path, source_idx, tailer_tx.clone());
-            new_tailer.start_loading();
-
-            // Store bookmark stable IDs for this source
-            let loaded = config.load_bookmarks(&merge_path);
-            for &local_idx in &loaded {
-                app.bookmark_stable_ids.insert((source_idx, local_idx));
-            }
-
-            tailers.push(new_tailer);
+            attach_source(app, tailers, &tailer_tx, config, &merge_path, source_idx);
         }
 
         // Handle tail toggle (once after all events)
@@ -331,7 +361,7 @@ async fn run_app(
 }
 
 /// Handle load completion: configure tailer for tailing, rebuild bookmarks
-fn finish_load(app: &mut App, tailers: &mut [LogTailer], config: &mut Config, lc: LoadComplete) {
+fn finish_load(app: &mut App, tailers: &mut [LogTailer], lc: LoadComplete) {
     if let Some(tailer) = tailers.iter_mut().find(|t| t.source_idx() == lc.source_idx) {
         tailer.configure_for_tailing(lc.parser, lc.file_size, lc.entry_count);
         if app.tail_enabled {
@@ -341,6 +371,15 @@ fn finish_load(app: &mut App, tailers: &mut [LogTailer], config: &mut Config, lc
 
     // Rebuild bookmarks now that entries exist
     app.rebuild_bookmarks_from_stable();
+
+    // Apply deferred scroll once all sources have finished loading
+    if app.loading_sources.is_empty()
+        && let Some((offset, sel)) = app.pending_scroll.take()
+    {
+        let max = app.filtered_indices.len().saturating_sub(1);
+        app.scroll_offset = offset.min(max);
+        app.selected_index = sel.min(max);
+    }
 
     if app.sources.len() > 1 && lc.source_idx > 0 {
         app.status_message = Some(format!(
@@ -353,10 +392,6 @@ fn finish_load(app: &mut App, tailers: &mut [LogTailer], config: &mut Config, lc
         ));
     }
 
-    // Save bookmarks path association
-    if let Some(source) = app.sources.get(lc.source_idx as usize) {
-        let _ = config.load_bookmarks(&source.path);
-    }
 }
 
 /// A "plain" char key: printable character with no modifier, Shift, or

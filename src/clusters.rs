@@ -294,12 +294,12 @@ fn strip_component_prefix(template: &str) -> &str {
     }
 
     // WD: "LVL|Component message" — pipe immediately follows a 3-char level token
-    if let Some(pipe) = s.find('|') {
-        if pipe <= 3 {
-            let after_pipe = &s[pipe + 1..];
-            if let Some(space_pos) = after_pipe.find(' ') {
-                return after_pipe[space_pos..].trim_start();
-            }
+    if let Some(pipe) = s.find('|')
+        && pipe <= 3
+    {
+        let after_pipe = &s[pipe + 1..];
+        if let Some(space_pos) = after_pipe.find(' ') {
+            return after_pipe[space_pos..].trim_start();
         }
     }
 

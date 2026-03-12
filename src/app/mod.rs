@@ -384,6 +384,9 @@ pub struct App {
     pub theme: Theme,
     pub dark_overrides: HashMap<String, String>,
     pub light_overrides: HashMap<String, String>,
+
+    /// Scroll position to restore after initial load completes (scroll_offset, selected_index)
+    pub pending_scroll: Option<(usize, usize)>,
 }
 
 impl Default for App {
@@ -449,6 +452,7 @@ impl App {
             theme: Theme::dark(),
             dark_overrides: HashMap::new(),
             light_overrides: HashMap::new(),
+            pending_scroll: None,
         }
     }
 
@@ -1261,15 +1265,6 @@ impl App {
         use crate::ui::LINE_PREFIX_WIDTH;
         let source_gutter = if self.is_merged() { 1 } else { 0 };
         LINE_PREFIX_WIDTH + source_gutter + self.cluster_gutter_width()
-    }
-
-    /// Set the primary source file (single-file mode)
-    pub fn set_primary_source(&mut self, path: &str) {
-        self.sources.clear();
-        self.sources
-            .push(SourceFile::new(path, self.theme.source_color(0)));
-        self.source_entry_counts = vec![0];
-        self.file_path = path.to_string();
     }
 
     /// Remove all sources and clear entries (used when opening a new file while merged)

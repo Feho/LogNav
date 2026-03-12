@@ -5,12 +5,28 @@ use std::fs;
 use std::path::PathBuf;
 
 const MAX_RECENT_FILES: usize = 10;
+pub const DATETIME_FMT: &str = "%Y-%m-%dT%H:%M:%S";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AlertKeyword {
     pub query: String,
     #[serde(default)]
     pub regex_mode: bool,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SessionState {
+    /// Ordered source file paths; index 0 is the primary file
+    pub sources: Vec<String>,
+    pub scroll_offset: usize,
+    pub selected_index: usize,
+    /// Level filter toggles: [ERR, WRN, INF, DBG, TRC, PRF]
+    pub level_filters: [bool; 6],
+    /// ISO 8601 date-range bounds
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub exclude_patterns: Vec<AlertKeyword>,
+    pub include_patterns: Vec<AlertKeyword>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -32,6 +48,9 @@ pub struct Config {
     pub dark_overrides: HashMap<String, String>,
     #[serde(default)]
     pub light_overrides: HashMap<String, String>,
+    /// Last session state, restored when no CLI file argument is given
+    #[serde(default)]
+    pub session: Option<SessionState>,
 }
 
 fn default_theme_name() -> String {
@@ -95,6 +114,42 @@ impl Config {
             .get(path)
             .map(|v| v.iter().copied().collect())
             .unwrap_or_default()
+    }
+
+    /// Capture current app state into session for next startup
+    pub fn save_session(&mut self, app: &crate::app::App) {
+        if app.sources.is_empty() {
+            self.session = None;
+            return;
+        }
+        self.session = Some(SessionState {
+            sources: app.sources.iter().map(|s| s.path.clone()).collect(),
+            scroll_offset: app.scroll_offset,
+            selected_index: app.selected_index,
+            level_filters: app.level_filters,
+            date_from: app
+                .date_from
+                .map(|dt| dt.format(DATETIME_FMT).to_string()),
+            date_to: app
+                .date_to
+                .map(|dt| dt.format(DATETIME_FMT).to_string()),
+            exclude_patterns: app
+                .exclude_patterns
+                .iter()
+                .map(|p| AlertKeyword {
+                    query: p.query.clone(),
+                    regex_mode: p.regex_mode,
+                })
+                .collect(),
+            include_patterns: app
+                .include_patterns
+                .iter()
+                .map(|p| AlertKeyword {
+                    query: p.query.clone(),
+                    regex_mode: p.regex_mode,
+                })
+                .collect(),
+        });
     }
 
     /// Add a file to recent files list
