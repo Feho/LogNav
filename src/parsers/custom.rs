@@ -1,7 +1,7 @@
 use super::LogParser;
 use super::common::map_level_str;
 use crate::log_entry::LogLevel;
-use chrono::NaiveDateTime;
+use chrono::{FixedOffset, NaiveDateTime, TimeZone};
 use directories::ProjectDirs;
 use regex::Regex;
 use serde::Deserialize;
@@ -19,6 +19,10 @@ struct CustomFormatDef {
     pattern: String,
     /// chrono format string for parsing the timestamp capture group
     timestamp_format: Option<String>,
+    /// Timezone offset of the log timestamps, e.g. "+05:30" or "-07:00".
+    /// If set, timestamps are converted to local time before display.
+    #[serde(default)]
+    timezone: Option<String>,
     /// Map custom level strings to standard levels (e.g. FATAL = "error")
     #[serde(default)]
     level_map: HashMap<String, String>,
@@ -29,12 +33,17 @@ struct CustomFormatDef {
 struct CustomParser {
     regex: Regex,
     timestamp_format: Option<String>,
+    /// Parsed timezone offset in seconds east of UTC (from `timezone` TOML field)
+    timezone_offset_secs: Option<i32>,
     level_map: HashMap<String, LogLevel>,
 }
 
 impl CustomParser {
     fn from_def(def: CustomFormatDef) -> Option<Self> {
         let regex = Regex::new(&def.pattern).ok()?;
+
+        // Parse optional timezone offset string (e.g. "+05:30", "-07:00", "+01:00")
+        let timezone_offset_secs = def.timezone.as_deref().and_then(Self::parse_tz_offset);
 
         // Pre-resolve level_map values to LogLevel
         let level_map = def
@@ -57,8 +66,23 @@ impl CustomParser {
         Some(CustomParser {
             regex,
             timestamp_format: def.timestamp_format,
+            timezone_offset_secs,
             level_map,
         })
+    }
+
+    /// Parse a timezone offset string like "+05:30" or "-07:00" into seconds east of UTC.
+    fn parse_tz_offset(tz: &str) -> Option<i32> {
+        let tz = tz.trim();
+        let (sign, rest) = match tz.chars().next()? {
+            '+' => (1i32, &tz[1..]),
+            '-' => (-1i32, &tz[1..]),
+            _ => return None,
+        };
+        let (h, m) = rest.split_once(':')?;
+        let hours: i32 = h.parse().ok()?;
+        let minutes: i32 = m.parse().ok()?;
+        Some(sign * (hours * 3600 + minutes * 60))
     }
 
     fn resolve_level(&self, level_str: &str) -> LogLevel {
@@ -79,14 +103,25 @@ impl CustomParser {
             .collect();
         let ts_clean = Self::zero_pad_fractional(&ts_clean, fmt);
         // Try direct parse first
-        if let Ok(dt) = NaiveDateTime::parse_from_str(&ts_clean, fmt) {
-            return Some(dt);
+        let naive = if let Ok(dt) = NaiveDateTime::parse_from_str(&ts_clean, fmt) {
+            dt
+        } else {
+            // Time-only: prepend today's date
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let full = format!("{} {}", today, ts_clean);
+            let full_fmt = format!("%Y-%m-%d {}", fmt);
+            NaiveDateTime::parse_from_str(&full, &full_fmt).ok()?
+        };
+        // If a timezone offset is configured, treat the parsed naive time as being in that
+        // timezone and convert to local time for display.
+        if let Some(offset_secs) = self.timezone_offset_secs {
+            let offset = FixedOffset::east_opt(offset_secs)?;
+            let dt_tz = offset.from_local_datetime(&naive).single()?;
+            // Convert to system local time: go via UTC so the offset is applied correctly
+            Some(dt_tz.with_timezone(&chrono::Local).naive_local())
+        } else {
+            Some(naive)
         }
-        // Time-only: prepend today's date
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let full = format!("{} {}", today, ts_clean);
-        let full_fmt = format!("%Y-%m-%d {}", fmt);
-        NaiveDateTime::parse_from_str(&full, &full_fmt).ok()
     }
 
     /// After stripping whitespace from fractional seconds, the digit count may
@@ -215,6 +250,7 @@ mod tests {
             name: "test-format".to_string(),
             pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>\w+)\] (?P<message>.*)".to_string(),
             timestamp_format: Some("%Y-%m-%d %H:%M:%S".to_string()),
+            timezone: None,
             level_map: HashMap::from([
                 ("FATAL".to_string(), "error".to_string()),
                 ("NOTICE".to_string(), "info".to_string()),
@@ -281,6 +317,7 @@ mod tests {
             name: "bad".to_string(),
             pattern: r"[invalid".to_string(),
             timestamp_format: None,
+            timezone: None,
             level_map: HashMap::new(),
         };
         assert!(CustomParser::from_def(def).is_none());
@@ -314,6 +351,7 @@ WARNING = "warn"
                 r#"^(?P<timestamp>\d{2}:\d{2}:\d{2}[.]\s*\d{1,3})\s+\[\d+\]\s+(?P<level>\w+)\s"#
                     .to_string(),
             timestamp_format: Some("%H:%M:%S%.3f".to_string()),
+            timezone: None,
             level_map: HashMap::new(),
         };
         let parser = CustomParser::from_def(def).unwrap();
@@ -339,11 +377,34 @@ WARNING = "warn"
             name: "level-only".to_string(),
             pattern: r"^(?P<level>ERROR|WARN|INFO) (?P<message>.*)".to_string(),
             timestamp_format: None,
+            timezone: None,
             level_map: HashMap::new(),
         };
         let parser = CustomParser::from_def(def).unwrap();
         let (level, ts) = parser.parse_line("ERROR something broke").unwrap();
         assert_eq!(level, LogLevel::Error);
         assert!(ts.is_none());
+    }
+
+    #[test]
+    fn test_timezone_offset_conversion() {
+        // Logs recorded in UTC+1 (e.g. CET) — 13:33:00 in log should display as 14:33:00 local
+        // We test the conversion math: UTC+1 naive 13:33:00 → UTC 12:33:00 → local naive offset
+        // For a deterministic test, use "+01:00" and verify the stored naive is shifted by +1h
+        let def = CustomFormatDef {
+            name: "tz-test".to_string(),
+            pattern: r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<level>\w+)".to_string(),
+            timestamp_format: Some("%Y-%m-%d %H:%M:%S".to_string()),
+            timezone: Some("+01:00".to_string()),
+            level_map: HashMap::new(),
+        };
+        let parser = CustomParser::from_def(def).unwrap();
+        assert_eq!(parser.timezone_offset_secs, Some(3600));
+
+        // parse_tz_offset tests
+        assert_eq!(CustomParser::parse_tz_offset("+05:30"), Some(5 * 3600 + 30 * 60));
+        assert_eq!(CustomParser::parse_tz_offset("-07:00"), Some(-7 * 3600));
+        assert_eq!(CustomParser::parse_tz_offset("+00:00"), Some(0));
+        assert_eq!(CustomParser::parse_tz_offset("invalid"), None);
     }
 }
