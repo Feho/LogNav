@@ -341,6 +341,9 @@ pub struct App {
     pub status_message: Option<String>,
     pub should_quit: bool,
 
+    // Toast notification (auto-dismissing tip)
+    pub toast: Option<(String, Instant)>,
+
     // Fuzzy matcher for command palette
     fuzzy_matcher: SkimMatcherV2,
 
@@ -429,6 +432,7 @@ impl App {
             loading_entry_count: 0,
             status_message: None,
             should_quit: false,
+            toast: None,
             fuzzy_matcher: SkimMatcherV2::default(),
             clipboard: arboard::Clipboard::new().ok(),
             search_dirty: None,

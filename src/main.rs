@@ -90,6 +90,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some(session) = config.session.take() {
         // Restore last session when no CLI argument is given
         restore_session(&mut app, session, &mut tailers, tailer_tx.clone(), &mut config);
+        app.toast = Some((
+            format!("Tip: {}", app.tips_manager.get_current_tip()),
+            std::time::Instant::now(),
+        ));
     }
 
     // Main event loop
@@ -243,6 +247,13 @@ async fn run_app(
             && dirty_at.elapsed() >= SEARCH_DEBOUNCE
         {
             events::flush_search(app);
+        }
+
+        // Auto-dismiss toast after 15 seconds
+        if let Some((_, created)) = &app.toast
+            && created.elapsed() >= Duration::from_secs(15)
+        {
+            app.toast = None;
         }
 
         // Draw UI

@@ -1,8 +1,10 @@
 use crate::app::{App, FocusState};
+use crate::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState},
+    style::Style,
+    widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use std::borrow::Cow;
 
@@ -60,6 +62,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         FocusState::Clusters { .. } => clusters_panel::draw_clusters(frame, app),
         FocusState::ThemePicker { .. } => overlays::draw_theme_picker(frame, app),
         FocusState::Stats { .. } => overlays::draw_stats(frame, app),
+    }
+
+    // Toast notification (bottom-right, above status bar)
+    if matches!(app.focus, FocusState::Normal)
+        && let Some((ref msg, _)) = app.toast
+    {
+        draw_toast(frame, msg, chunks[0], &app.theme);
     }
 }
 
@@ -152,6 +161,21 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         Constraint::Percentage((100 - percent_x) / 2),
     ])
     .split(popup_layout[1])[1]
+}
+
+/// Draw a toast notification in the bottom-right corner
+fn draw_toast(frame: &mut Frame, msg: &str, content_area: Rect, theme: &Theme) {
+    let width = (msg.len() as u16 + 4).min(content_area.width.saturating_sub(2));
+    let height = 3;
+    let x = content_area.x + content_area.width.saturating_sub(width + 1);
+    let y = content_area.y + content_area.height.saturating_sub(height + 1);
+    let area = Rect::new(x, y, width, height);
+    frame.render_widget(Clear, area);
+    let block = Block::bordered().border_style(Style::default().fg(theme.accent).bg(theme.bg));
+    let paragraph = Paragraph::new(msg)
+        .style(Style::default().fg(theme.fg).bg(theme.bg))
+        .block(block);
+    frame.render_widget(paragraph, area);
 }
 
 #[cfg(test)]
