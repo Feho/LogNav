@@ -173,6 +173,13 @@ pub fn handle_normal_key(app: &mut App, key: KeyEvent) {
         (_, KeyCode::Left) | (_, KeyCode::Char('h')) => app.scroll_left(4),
         (_, KeyCode::Right) | (_, KeyCode::Char('l')) => app.scroll_right(4),
 
+        // r: resume last session (only on start screen)
+        (_, KeyCode::Char('r')) => {
+            if app.sources.is_empty() && app.entries.is_empty() && app.has_saved_session {
+                app.pending_resume = true;
+            }
+        }
+
         // Fold/unfold cluster occurrence at cursor, or refresh tip on start screen
         (_, KeyCode::Char(' ')) => {
             // On start screen, refresh the tip

@@ -390,6 +390,11 @@ pub struct App {
 
     /// Scroll position to restore after initial load completes (scroll_offset, selected_index)
     pub pending_scroll: Option<(usize, usize)>,
+
+    /// Whether a saved session exists that can be restored with 'r' on the start screen
+    pub has_saved_session: bool,
+    /// Set to true to trigger session restore in the main event loop
+    pub pending_resume: bool,
 }
 
 impl Default for App {
@@ -457,6 +462,8 @@ impl App {
             dark_overrides: HashMap::new(),
             light_overrides: HashMap::new(),
             pending_scroll: None,
+            has_saved_session: false,
+            pending_resume: false,
         }
     }
 

@@ -87,13 +87,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref path) = initial_file {
         app.file_path = path.clone();
         attach_source(&mut app, &mut tailers, &tailer_tx, &mut config, path, 0);
-    } else if let Some(session) = config.session.take() {
-        // Restore last session when no CLI argument is given
-        restore_session(&mut app, session, &mut tailers, tailer_tx.clone(), &mut config);
-        app.toast = Some((
-            format!("Tip: {}", app.tips_manager.get_current_tip()),
-            std::time::Instant::now(),
-        ));
+    } else if config.session.is_some() {
+        // A saved session exists; let the user resume it manually with 'r'
+        app.has_saved_session = true;
     }
 
     // Main event loop
@@ -132,7 +128,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     save_bookmarks_for_sources(&app, &mut config);
-    config.save_session(&app);
+    // Only overwrite the saved session when there's something to save.
+    // If the user quit from the start screen without resuming, keep the old session intact.
+    if !app.sources.is_empty() || !app.has_saved_session {
+        config.save_session(&app);
+    }
     let _ = config.save();
 
     if let Err(e) = result {
@@ -265,7 +265,7 @@ async fn run_app(
         }
 
         // Snapshot state before handling events
-        let previous_path = app.file_path.clone();
+        let mut previous_path = app.file_path.clone();
         let previous_tail_enabled = app.tail_enabled;
 
         // Wait for at least one event
@@ -326,6 +326,16 @@ async fn run_app(
         while let Ok(event) = tailer_rx.try_recv() {
             if let Some(lc) = handle_tailer_event(app, event) {
                 finish_load(app, tailers, lc);
+            }
+        }
+
+        // Handle pending session resume
+        if app.pending_resume {
+            app.pending_resume = false;
+            if let Some(session) = config.session.take() {
+                restore_session(app, session, tailers, tailer_tx.clone(), config);
+                // Prevent the file-change handler below from triggering a double-load
+                previous_path = app.file_path.clone();
             }
         }
 

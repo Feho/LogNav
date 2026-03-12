@@ -218,7 +218,7 @@ fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
     let theme = &app.theme;
     let tip = app.tips_manager.get_current_tip().to_string();
 
-    let hints: Vec<Line<'_>> = vec![
+    let mut hints: Vec<Line<'_>> = vec![
         Line::from(vec![
             Span::styled(
                 "LogNav",
@@ -230,6 +230,14 @@ fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
             ),
         ]),
         Line::from(""),
+    ];
+    if app.has_saved_session {
+        hints.push(Line::from(vec![
+            Span::styled("r       ", Style::default().fg(theme.accent)),
+            Span::styled("Resume last session", Style::default().fg(theme.muted)),
+        ]));
+    }
+    hints.extend([
         Line::from(vec![
             Span::styled("o       ", Style::default().fg(theme.accent)),
             Span::styled("Open file", Style::default().fg(theme.muted)),
@@ -250,7 +258,7 @@ fn draw_start_screen(frame: &mut Frame, app: &mut App, area: Rect) {
             Span::styled("q       ", Style::default().fg(theme.accent)),
             Span::styled("Quit", Style::default().fg(theme.muted)),
         ]),
-    ];
+    ]);
 
     let tips: Vec<Line<'_>> = vec![
         Line::from(vec![
