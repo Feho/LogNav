@@ -42,28 +42,13 @@ fn source_gutter_span(source_idx: u8, theme: &Theme) -> Span<'static> {
     Span::styled("▌", Style::default().fg(color))
 }
 
-/// Build a single OR-joined regex from all active alert patterns (for highlighting).
-fn compile_alert_regex(app: &App) -> Option<Regex> {
-    if app.alert_patterns.is_empty() {
-        return None;
-    }
-    let parts: Vec<String> = app
-        .alert_patterns
+/// Build per-pattern alert highlight styles: each alert keyword gets a distinct color.
+fn compile_alert_styles(app: &App) -> Vec<(Regex, ratatui::style::Style)> {
+    app.alert_patterns
         .iter()
-        .map(|p| format!("(?:{})", p.regex.as_str()))
-        .collect();
-    Regex::new(&parts.join("|")).ok()
-}
-
-/// Merge two optional regexes into one OR-alternation.
-fn merge_regexes(a: Option<Regex>, b: Option<Regex>) -> Option<Regex> {
-    match (a, b) {
-        (Some(ra), Some(rb)) => {
-            Regex::new(&format!("(?:{})|(?:{})", ra.as_str(), rb.as_str())).ok()
-        }
-        (Some(r), None) | (None, Some(r)) => Some(r),
-        (None, None) => None,
-    }
+        .enumerate()
+        .map(|(i, p)| (p.regex.clone(), app.theme.alert_highlight_style(i)))
+        .collect()
 }
 
 /// Compile regex from the live search overlay query
@@ -189,9 +174,8 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
     // Compute highlight regex once: merge search/overlay with alert keywords
     let overlay_regex = compile_overlay_regex(app);
     let search_regex = app.search.regex.as_ref().or(overlay_regex.as_ref()).cloned();
-    let alert_regex = compile_alert_regex(app);
-    let hl_regex = merge_regexes(search_regex, alert_regex);
-    let hl_regex_ref = hl_regex.as_ref();
+    let hl_regex_ref = search_regex.as_ref();
+    let alert_styles = compile_alert_styles(app);
 
     // Show start screen when no file loaded
     if app.sources.is_empty() && app.entries.is_empty() {
@@ -207,9 +191,10 @@ pub fn draw_log_view(frame: &mut Frame, app: &mut App, area: Rect) {
             viewport_height,
             viewport_width,
             hl_regex_ref,
+            &alert_styles,
         );
     } else {
-        draw_log_view_nowrap(frame, app, area, viewport_height, hl_regex_ref);
+        draw_log_view_nowrap(frame, app, area, viewport_height, hl_regex_ref, &alert_styles);
     }
 }
 
@@ -279,6 +264,7 @@ fn draw_log_view_nowrap(
     area: Rect,
     viewport_height: usize,
     hl_regex: Option<&Regex>,
+    alert_styles: &[(Regex, ratatui::style::Style)],
 ) {
     app.ensure_selected_visible_with_height(viewport_height, 0); // 0 = no wrapping
     let syntax_on = app.syntax_highlight;
@@ -375,6 +361,7 @@ fn draw_log_view_nowrap(
         spans.extend(styled_spans(
             &display_msg,
             hl_regex,
+            alert_styles,
             Style::default(),
             syntax_on && !is_selected,
             ul_range,
@@ -431,7 +418,7 @@ fn draw_log_view_nowrap(
                     Span::raw(" "),
                 ]);
                 cont_spans.extend(styled_spans(
-                    &display, hl_regex, cont_style, syntax_on, ul_range, theme,
+                    &display, hl_regex, alert_styles, cont_style, syntax_on, ul_range, theme,
                 ));
                 let line = Line::from(cont_spans);
                 // Highlight continuation lines only in visual select, not for cursor
@@ -485,6 +472,7 @@ fn draw_log_view_wrapped(
     viewport_height: usize,
     viewport_width: usize,
     hl_regex: Option<&Regex>,
+    alert_styles: &[(Regex, ratatui::style::Style)],
 ) {
     // For wrapped mode, we need to calculate how many visual lines each entry takes
     // and handle scrolling based on visual lines, not entries
@@ -577,6 +565,7 @@ fn draw_log_view_wrapped(
         let styled_message = styled_spans(
             &message,
             hl_regex,
+            alert_styles,
             Style::default(),
             syntax_on && !is_selected,
             None,
@@ -679,7 +668,7 @@ fn draw_log_view_wrapped(
                     }
                     cont_spans.push(Span::raw(" ".repeat(LINE_PREFIX_WIDTH)));
                     cont_spans.extend(styled_spans(
-                        &part, hl_regex, cont_style, syntax_on, ul_range, theme,
+                        &part, hl_regex, alert_styles, cont_style, syntax_on, ul_range, theme,
                     ));
                     let line = Line::from(cont_spans);
                     // Highlight continuation lines only in visual select, not for cursor

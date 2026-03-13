@@ -193,10 +193,12 @@ fn apply_underline_overlay(
     result
 }
 
-/// Build styled spans with optional syntax highlighting, search overlay, and underline
+/// Build styled spans with optional syntax highlighting, alert overlays, search overlay, and underline.
+/// Order: base/syntax → alert patterns (each with own color) → search (always on top).
 pub fn styled_spans(
     text: &str,
     hl_regex: Option<&Regex>,
+    alert_patterns: &[(Regex, Style)],
     base_style: Style,
     syntax_enabled: bool,
     underline_range: Option<(usize, usize)>,
@@ -204,35 +206,26 @@ pub fn styled_spans(
 ) -> Vec<Span<'static>> {
     let hl_style = theme.search_highlight_style();
 
-    let mut spans = match (syntax_enabled, hl_regex) {
-        (false, None) => vec![Span::styled(text.to_string(), base_style)],
-        (false, Some(regex)) => {
-            let mut spans = Vec::new();
-            let mut last_end = 0;
-            for m in regex.find_iter(text) {
-                if m.start() > last_end {
-                    spans.push(Span::styled(
-                        text[last_end..m.start()].to_string(),
-                        base_style,
-                    ));
-                }
-                spans.push(Span::styled(text[m.start()..m.end()].to_string(), hl_style));
-                last_end = m.end();
-            }
-            if last_end < text.len() {
-                spans.push(Span::styled(text[last_end..].to_string(), base_style));
-            }
-            if spans.is_empty() {
-                spans.push(Span::styled(text.to_string(), base_style));
-            }
-            spans
-        }
-        (true, None) => syntax_highlight_spans(text, base_style, theme),
-        (true, Some(regex)) => {
-            let spans = syntax_highlight_spans(text, base_style, theme);
-            apply_search_overlay(spans, regex, hl_style)
-        }
+    // Step 1: base or syntax-highlighted spans (no search yet)
+    let mut spans = if syntax_enabled {
+        syntax_highlight_spans(text, base_style, theme)
+    } else {
+        vec![Span::styled(text.to_string(), base_style)]
     };
+
+    // Step 2: alert keyword highlights (each pattern gets its own color)
+    for (regex, style) in alert_patterns {
+        spans = apply_search_overlay(spans, regex, *style);
+    }
+
+    // Step 3: search highlight on top (wins over alert colors)
+    if let Some(regex) = hl_regex {
+        spans = apply_search_overlay(spans, regex, hl_style);
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_string(), base_style));
+    }
 
     if let Some((start, end)) = underline_range {
         spans = apply_underline_overlay(spans, start, end);
@@ -371,7 +364,7 @@ mod tests {
         // it might fail if implemented per-span.
         
         let regex = Regex::new("URL: http").unwrap();
-        let spans = styled_spans(text, Some(&regex), Style::default(), true, None, &theme);
+        let spans = styled_spans(text, Some(&regex), &[], Style::default(), true, None, &theme);
         
         let hl_style = theme.search_highlight_style();
         let has_highlight = spans.iter().any(|s| s.style.fg == hl_style.fg);

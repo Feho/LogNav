@@ -659,6 +659,7 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
         let spans = styled_spans(
             &wrapped_line,
             None,
+            &[],
             Style::default(),
             syntax_on,
             None,
@@ -678,7 +679,8 @@ pub fn draw_detail_popup(frame: &mut Frame, app: &mut App) {
         let display = entry.display_continuation();
         for cont_line in display {
             for wrapped_line in wrap_text(cont_line, inner.width as usize) {
-                let spans = styled_spans(&wrapped_line, None, cont_style, syntax_on, None, theme);
+                let spans =
+                    styled_spans(&wrapped_line, None, &[], cont_style, syntax_on, None, theme);
                 lines.push(Line::from(spans));
             }
         }

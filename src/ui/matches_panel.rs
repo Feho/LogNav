@@ -93,6 +93,7 @@ pub fn draw_matches_panel(frame: &mut Frame, app: &mut App, area: Rect) {
         spans.extend(styled_spans(
             display_msg,
             hl_regex,
+            &[],
             Style::default(),
             syntax_on && !is_selected,
             None,

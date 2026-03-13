@@ -928,6 +928,12 @@ impl Theme {
     pub fn source_color(&self, idx: u8) -> Color {
         self.source_colors[idx as usize % self.source_colors.len()]
     }
+
+    /// Alert keyword highlight style for a given pattern index (cycles through source colors)
+    pub fn alert_highlight_style(&self, idx: usize) -> Style {
+        let bg = self.source_colors[idx % self.source_colors.len()];
+        Style::new().fg(self.bg).bg(bg).add_modifier(Modifier::BOLD)
+    }
 }
 
 /// Parse a color string. Supports:
