@@ -51,6 +51,9 @@ pub struct Config {
     /// Last session state, restored when no CLI file argument is given
     #[serde(default)]
     pub session: Option<SessionState>,
+    /// Path to a network folder or local directory to check for updates
+    #[serde(default)]
+    pub update_path: Option<String>,
 }
 
 fn default_theme_name() -> String {

@@ -13,6 +13,9 @@ notify = "8.2.0"
 ratatui = "0.30.0"
 rayon = "1.10"
 regex = "1.12.3"
+self_update = { version = "0.41", default-features = false, features = ["rustls", "archive-tar", "archive-zip", "compression-flate2"] }
+self-replace = "1.5.0"
+semver = "1.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 toml = "0.8"

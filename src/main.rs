@@ -10,6 +10,7 @@ mod text_utils;
 mod theme;
 mod tips;
 mod ui;
+mod update;
 
 use app::{App, SourceFile};
 use config::Config;
@@ -82,6 +83,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (cluster_tx, mut cluster_rx) = mpsc::channel(1);
     app.cluster_tx = Some(cluster_tx);
 
+    // Create update channel and spawn startup check if update_path is configured
+    let (update_tx, mut update_rx) = mpsc::channel::<String>(1);
+    if let Some(ref update_path) = config.update_path {
+        tokio::spawn(update::check_and_update(update_tx, update_path.clone()));
+    }
+
     // Load initial file if provided (fire-and-forget streaming load)
     let mut tailers: Vec<LogTailer> = Vec::new();
     if let Some(ref path) = initial_file {
@@ -104,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut app,
         &mut tailer_rx,
         &mut cluster_rx,
+        &mut update_rx,
         &mut tailers,
         tailer_tx,
         &mut config,
@@ -241,6 +249,7 @@ async fn run_app(
     app: &mut App,
     tailer_rx: &mut mpsc::Receiver<TailerEvent>,
     cluster_rx: &mut mpsc::Receiver<Vec<crate::clusters::Cluster>>,
+    update_rx: &mut mpsc::Receiver<String>,
     tailers: &mut Vec<LogTailer>,
     tailer_tx: mpsc::Sender<TailerEvent>,
     config: &mut Config,
@@ -277,6 +286,13 @@ async fn run_app(
         // Wait for at least one event
         let mut pending: Vec<Event> = Vec::new();
         tokio::select! {
+            Some(msg) = update_rx.recv() => {
+                if msg.starts_with("Update available") {
+                    app.toast = Some((msg, std::time::Instant::now()));
+                } else {
+                    app.status_message = Some(msg);
+                }
+            }
             Some(event) = tailer_rx.recv() => {
                 if let Some(lc) = handle_tailer_event(app, event) {
                     finish_load(app, tailers, lc);
