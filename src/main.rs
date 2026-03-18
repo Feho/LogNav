@@ -10,6 +10,7 @@ mod text_utils;
 mod theme;
 mod tips;
 mod ui;
+mod update;
 
 use app::{App, SourceFile};
 use config::Config;
@@ -39,12 +40,25 @@ struct LoadComplete {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Init file logger (best-effort, silent fail if dir unavailable)
+    if let Some(dir) = Config::config_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(file) = std::fs::File::create(dir.join("lognav.log")) {
+            let _ = simplelog::WriteLogger::init(
+                simplelog::LevelFilter::Info,
+                simplelog::Config::default(),
+                file,
+            );
+        }
+    }
+
     // Parse CLI args
     let args: Vec<String> = std::env::args().collect();
     let initial_file = args.get(1).cloned();
 
     // Load config
     let mut config = Config::load();
+    log::info!("lognav v{} starting", env!("CARGO_PKG_VERSION"));
 
     // Setup terminal
     enable_raw_mode()?;
@@ -74,6 +88,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dark_overrides: config.dark_overrides.clone(),
         light_overrides: config.light_overrides.clone(),
     });
+
+    // Spawn background update check if cooldown elapsed
+    if config.should_check_update() {
+        let (update_tx, update_rx) = tokio::sync::oneshot::channel();
+        app.update_rx = Some(update_rx);
+        config.mark_update_checked();
+        std::thread::spawn(move || update::check_and_update(update_tx));
+    } else {
+        log::debug!("update check skipped (cooldown or disabled)");
+    }
 
     // Create tailer channel (shared across all tailers)
     let (tailer_tx, mut tailer_rx) = mpsc::channel::<TailerEvent>(100);
@@ -260,6 +284,16 @@ async fn run_app(
             && created.elapsed() >= Duration::from_secs(15)
         {
             app.toast = None;
+        }
+
+        // Check for background update result
+        if let Some(ref mut rx) = app.update_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            if let Some(msg) = result {
+                app.toast = Some((msg, std::time::Instant::now()));
+            }
+            app.update_rx = None;
         }
 
         // Draw UI

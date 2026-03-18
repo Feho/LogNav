@@ -344,6 +344,9 @@ pub struct App {
     // Toast notification (auto-dismissing tip)
     pub toast: Option<(String, Instant)>,
 
+    // Background update check result
+    pub update_rx: Option<tokio::sync::oneshot::Receiver<Option<String>>>,
+
     // Fuzzy matcher for command palette
     fuzzy_matcher: SkimMatcherV2,
 
@@ -438,6 +441,7 @@ impl App {
             status_message: None,
             should_quit: false,
             toast: None,
+            update_rx: None,
             fuzzy_matcher: SkimMatcherV2::default(),
             clipboard: arboard::Clipboard::new().ok(),
             search_dirty: None,

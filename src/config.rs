@@ -51,16 +51,31 @@ pub struct Config {
     /// Last session state, restored when no CLI file argument is given
     #[serde(default)]
     pub session: Option<SessionState>,
+    /// Auto-update enabled (default true)
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
+    /// Last update check timestamp (RFC 3339)
+    #[serde(default)]
+    pub last_update_check: Option<String>,
 }
 
 fn default_theme_name() -> String {
     "dark".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Config {
+    /// Get the config directory path
+    pub fn config_dir() -> Option<PathBuf> {
+        ProjectDirs::from("", "", "lognav").map(|dirs| dirs.config_dir().to_path_buf())
+    }
+
     /// Get the config file path
     fn config_path() -> Option<PathBuf> {
-        ProjectDirs::from("", "", "lognav").map(|dirs| dirs.config_dir().join("config.json"))
+        Self::config_dir().map(|d| d.join("config.json"))
     }
 
     /// Load config from disk
@@ -150,6 +165,24 @@ impl Config {
                 })
                 .collect(),
         });
+    }
+
+    /// Whether enough time has passed since last update check (5 min cooldown)
+    pub fn should_check_update(&self) -> bool {
+        if !self.auto_update {
+            return false;
+        }
+        let Some(last) = &self.last_update_check else {
+            return true;
+        };
+        chrono::DateTime::parse_from_rfc3339(last)
+            .map(|t| chrono::Utc::now().signed_duration_since(t).num_seconds() >= 300)
+            .unwrap_or(true)
+    }
+
+    /// Record that an update check was performed now
+    pub fn mark_update_checked(&mut self) {
+        self.last_update_check = Some(chrono::Utc::now().to_rfc3339());
     }
 
     /// Add a file to recent files list

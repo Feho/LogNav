@@ -18,3 +18,6 @@ serde_json = "1.0.149"
 toml = "0.8"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = "0.7"
+log = "0.4"
+simplelog = "0.12"
+self_update = { version = "0.41", default-features = false, features = ["rustls", "archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate"] }
