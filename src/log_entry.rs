@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_parse_wd_log_info() {
-        let content = "  INFO  02-03 18:11:02.577 [Alarm] SPL|WatchdocContext \"msg\"";
+        let content = "  INFO  02-03 18:11:02.577 [Alarm] SPL|SomeContext \"msg\"";
         let entries = parse_log(content);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, LogLevel::Info);

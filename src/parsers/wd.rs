@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 ///   ~~~~~ 02-03 18:10:37.564 [T32289|#6] HTTP|DspWebConnection "msg"
 ///   ===== 02-03 18:11:02.570 [Alarm] SCHED|Scheduler "msg"
 ///   TRACE 02-03 18:10:39.720 [#10] HTTP|DspWebServer "msg"
-///   INFO  02-03 18:11:02.577 [Alarm] SPL|WatchdocContext "msg"
+///   INFO  02-03 18:11:02.577 [Alarm] SPL|SomeContext "msg"
 /// * ERROR 02-05 11:23:38.795 [#34] API|PrintApiController10 "msg"
 /// ! WARN  02-05 11:23:38.801 [#10] HTTP|DspWebServer "msg"
 /// ? AUDIT 02-12 11:37:17.453 [#111] AUTH|MetaAuthority "msg"

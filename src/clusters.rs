@@ -377,9 +377,9 @@ mod tests {
 
     #[test]
     fn test_templatize_quoted() {
-        let input = r#"FindDN(DOXENSE,"$NOCOLOR",group,True)"#;
+        let input = r#"FindDN(TEST,"$NOCOLOR",group,True)"#;
         let result = templatize(input);
-        assert_eq!(result, "FindDN(DOXENSE,{STR},group,True)");
+        assert_eq!(result, "FindDN(TEST,{STR},group,True)");
     }
 
     #[test]
@@ -451,9 +451,9 @@ mod tests {
     fn test_sequence_cluster_basic() {
         // Create a 3-line sequence that repeats twice
         let pattern = [
-            "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,user1,person,False)\"",
+            "01-01 00:00:00.000 INF|Auth \"FindDN(TEST,user1,person,False)\"",
             "01-01 00:00:00.000 INF|Auth \"GetFromCache(dn_cache, User:user1)\"",
-            "01-01 00:00:00.000 INF|Auth \"Aliased to DOXENSE\\user1\"",
+            "01-01 00:00:00.000 INF|Auth \"Aliased to TEST\\user1\"",
         ];
 
         let mut entries = Vec::new();
@@ -484,7 +484,7 @@ mod tests {
             entries.push(make_entry(
                 base,
                 &format!(
-                    "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,{},person,False)\"",
+                    "01-01 00:00:00.000 INF|Auth \"FindDN(TEST,{},person,False)\"",
                     user
                 ),
             ));
@@ -498,7 +498,7 @@ mod tests {
             entries.push(make_entry(
                 base + 2,
                 &format!(
-                    "01-01 00:00:00.000 INF|Auth \"Aliased to DOXENSE\\{}\"",
+                    "01-01 00:00:00.000 INF|Auth \"Aliased to TEST\\{}\"",
                     user
                 ),
             ));
@@ -525,7 +525,7 @@ mod tests {
             entries.push(make_entry(
                 base,
                 &format!(
-                    "01-01 00:00:00.000 INF|Auth \"FindDN(DOXENSE,\"{}\",group,True)\"",
+                    "01-01 00:00:00.000 INF|Auth \"FindDN(TEST,\"{}\",group,True)\"",
                     val
                 ),
             ));
@@ -652,8 +652,8 @@ mod tests {
     fn test_strip_component_prefix_wd() {
         // WD format: "LVL|Component message"
         assert_eq!(
-            strip_component_prefix("INF|Auth FindDN(DOXENSE,{STR},person,False)"),
-            "FindDN(DOXENSE,{STR},person,False)"
+            strip_component_prefix("INF|Auth FindDN(TEST,{STR},person,False)"),
+            "FindDN(TEST,{STR},person,False)"
         );
     }
 
