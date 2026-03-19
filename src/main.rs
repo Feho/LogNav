@@ -40,6 +40,13 @@ struct LoadComplete {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse CLI args
+    let args: Vec<String> = std::env::args().collect();
+    let initial_file = args.get(1).cloned();
+
+    // Load config
+    let mut config = Config::load();
+
     // Init file logger (best-effort, silent fail if dir unavailable)
     if let Some(dir) = Config::config_dir() {
         let _ = std::fs::create_dir_all(&dir);
@@ -48,25 +55,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .append(true)
             .open(dir.join("lognav.log"))
         {
+            let level = config
+                .log_level
+                .as_deref()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(simplelog::LevelFilter::Info);
             let log_config = simplelog::ConfigBuilder::new()
                 .set_time_format_custom(time::macros::format_description!(
                     "[year]-[month]-[day] [hour]:[minute]:[second]"
                 ))
+                .set_time_offset_to_local()
+                .unwrap_or_else(|b| b)
                 .build();
-            let _ = simplelog::WriteLogger::init(
-                simplelog::LevelFilter::Info,
-                log_config,
-                file,
-            );
+            let _ = simplelog::WriteLogger::init(level, log_config, file);
         }
     }
-
-    // Parse CLI args
-    let args: Vec<String> = std::env::args().collect();
-    let initial_file = args.get(1).cloned();
-
-    // Load config
-    let mut config = Config::load();
     log::info!("lognav v{} starting", env!("CARGO_PKG_VERSION"));
 
     // Setup terminal

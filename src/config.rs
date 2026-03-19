@@ -57,6 +57,9 @@ pub struct Config {
     /// Last update check timestamp (RFC 3339)
     #[serde(default)]
     pub last_update_check: Option<String>,
+    /// Log level: "off", "error", "warn", "info" (default), "debug", "trace"
+    #[serde(default)]
+    pub log_level: Option<String>,
 }
 
 fn default_theme_name() -> String {
