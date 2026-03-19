@@ -13,6 +13,7 @@ A fast, keyboard-driven terminal log viewer built in Rust.
   - [Search](#search)
   - [Date Filter](#date-filter)
   - [Exclude Filters](#exclude-filters)
+  - [Alert Keywords](#alert-keywords)
   - [Multi-line Entries](#multi-line-entries)
   - [Bookmarks](#bookmarks)
   - [Jump to Errors and Warnings](#jump-to-errors-and-warnings)
@@ -108,6 +109,10 @@ Press `Ctrl+D` to open the date filter dialog.
 Press `x` to open the exclude filter manager. Type a pattern and press `Enter` to hide all matching entries. `Ctrl+R` toggles regex mode. Press `X` to clear all exclude filters at once.
 
 **Quick exclude**: `Alt+Click` on any word to instantly exclude it.
+
+### Alert Keywords
+
+Press `!` to open the alert keywords manager. Add patterns that trigger a terminal bell when matched during live mode and highlight them with distinct colors — useful for getting notified about specific errors or events without watching the screen. `Ctrl+R` toggles regex mode.
 
 ### Multi-line Entries
 
@@ -231,6 +236,7 @@ Custom parsers are loaded automatically on startup and detected at 0.9 confidenc
 | `Ctrl+D` | Date filter |
 | `x` | Exclude filter manager |
 | `X` | Clear exclude filters |
+| `!` | Alert keywords manager |
 | `t` | Toggle live mode |
 | `Alt+W` | Toggle word wrap |
 | `s` | Toggle syntax highlighting |
