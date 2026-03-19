@@ -53,7 +53,7 @@ Requires Rust 1.93+ (Edition 2024).
 
 ```bash
 lognav /path/to/app.log   # Open a file directly
-lognav                     # Launch and open with 'o'
+lognav                    # Launch and open with 'o'
 ```
 
 LogNav auto-detects the log format and starts displaying entries.
@@ -171,6 +171,8 @@ Timeline controls:
 | `e` | Export as HTML |
 
 The HTML export includes interactive Chart.js charts with drag-to-zoom and print-friendly styling.
+
+![Statistics Dashboard](demo-stats.png)
 
 ### Export
 
