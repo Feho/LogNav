@@ -160,30 +160,6 @@ Press `Ctrl+P` to fuzzy-search all available commands. The fastest way to discov
 
 LogNav auto-detects the format from file content. If no known format matches, it falls back to a generic parser that learns level tokens from a sample of lines.
 
-### wd.log
-
-```
-  INFO  02-03 18:11:02.577 [Alarm] SPL|Context "Server starting"
-  TRACE 02-03 18:10:39.720 [#10] HTTP|Server "Request received"
-* ERROR 02-05 11:23:38.795 [#34] API|Controller "Auth failed"
-! WARN  02-05 11:23:38.801 [#10] HTTP|Server "Rate limit exceeded"
-```
-
-### wpc.log
-
-```
-INF 03-21 14:23:01.234 Application started
-ERR 03-21 14:23:02.456 Connection failed
-  stack trace here...
-```
-
-### qconsole.log
-
-```
-[2026-01-09 18:48:38 UTC+1.000] Server initialized
-[2026-01-09 19:05:01 UTC+1.000] Script Error: file not found
-```
-
 ### Custom Formats
 
 Define your own format by adding a TOML file to:
