@@ -43,10 +43,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Init file logger (best-effort, silent fail if dir unavailable)
     if let Some(dir) = Config::config_dir() {
         let _ = std::fs::create_dir_all(&dir);
-        if let Ok(file) = std::fs::File::create(dir.join("lognav.log")) {
+        if let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("lognav.log"))
+        {
+            let log_config = simplelog::ConfigBuilder::new()
+                .set_time_format_custom(time::macros::format_description!(
+                    "[year]-[month]-[day] [hour]:[minute]:[second]"
+                ))
+                .build();
             let _ = simplelog::WriteLogger::init(
                 simplelog::LevelFilter::Info,
-                simplelog::Config::default(),
+                log_config,
                 file,
             );
         }

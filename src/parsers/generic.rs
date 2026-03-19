@@ -29,15 +29,15 @@ macro_rules! ts_pattern {
 /// Timestamp patterns ordered by specificity (most specific first)
 static TS_PATTERNS: LazyLock<Vec<TsPattern>> = LazyLock::new(|| {
     vec![
-        // ISO 8601 with fractional seconds
+        // ISO 8601 / RFC 3339 with fractional seconds (up to 9 digits, optional Z/offset)
         ts_pattern!(
-            r"\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{1,6})\]?",
+            r"\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]\d{1,9})(?:Z|[+-]\d{2}:\d{2})?\]?",
             "%Y-%m-%d %H:%M:%S%.f",
             false
         ),
-        // ISO 8601 no fraction
+        // ISO 8601 no fraction (optional Z/offset)
         ts_pattern!(
-            r"\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})\]?",
+            r"\[?(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})(?:Z|[+-]\d{2}:\d{2})?\]?",
             "%Y-%m-%d %H:%M:%S",
             false
         ),
@@ -203,11 +203,17 @@ impl LogParser for GenericParser {
             end = end.max(m.end());
         }
 
-        // Find end of level match
+        // Find end of level match, skipping trailing bracket/paren
         if self.has_level
             && let Some(m) = LEVEL_PATTERN.find(line)
         {
-            end = end.max(m.end());
+            let mut pos = m.end();
+            let rest = &line[pos..];
+            let trimmed = rest.trim_start_matches(' ');
+            if let Some(b']' | b')') = trimmed.as_bytes().first() {
+                pos = line.len() - trimmed.len() + 1;
+            }
+            end = end.max(pos);
         }
 
         if end > 0 { Some(end) } else { None }
