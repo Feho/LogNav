@@ -2,6 +2,8 @@
 
 A fast, keyboard-driven terminal log viewer built in Rust.
 
+![LogNav Demo](demo.gif)
+
 ## Table of Contents
 
 - [Why LogNav?](#why-lognav)
