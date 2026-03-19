@@ -2,6 +2,31 @@
 
 A fast, keyboard-driven terminal log viewer built in Rust.
 
+## Table of Contents
+
+- [Why LogNav?](#why-lognav)
+- [Installation](#installation)
+- [Getting Started](#getting-started)
+- [Features](#features)
+  - [Navigation](#navigation)
+  - [Filter by Severity](#filter-by-severity)
+  - [Search](#search)
+  - [Date Filter](#date-filter)
+  - [Exclude Filters](#exclude-filters)
+  - [Multi-line Entries](#multi-line-entries)
+  - [Bookmarks](#bookmarks)
+  - [Jump to Errors and Warnings](#jump-to-errors-and-warnings)
+  - [Live Mode](#live-mode)
+  - [Merge Multiple Files](#merge-multiple-files)
+  - [Cluster Detection](#cluster-detection)
+  - [Statistics Dashboard](#statistics-dashboard)
+  - [Export](#export)
+  - [Themes](#themes)
+  - [Command Palette](#command-palette)
+- [Supported Log Formats](#supported-log-formats)
+  - [Custom Formats](#custom-formats)
+- [Key Reference](#key-reference)
+
 ## Why LogNav?
 
 Debugging means digging through logs. Traditional tools force you to juggle multiple programs — `tail -f` for live output, `grep` for patterns, `less` for scrolling. LogNav combines all of this into one fast binary with vim-style navigation. Errors are colored red so they jump out. Filters update instantly. New lines stream in without losing your place.
