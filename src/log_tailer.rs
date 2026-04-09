@@ -31,12 +31,48 @@ pub enum TailerEvent {
     FileReset { source_idx: u8 },
 }
 
+/// Fingerprint identifying a specific file instance, used to detect rotation
+/// where the new file may be same size or larger than the old one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFingerprint {
+    #[cfg(unix)]
+    dev: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(windows)]
+    created: Option<std::time::SystemTime>,
+}
+
+impl FileFingerprint {
+    fn from_metadata(_meta: &std::fs::Metadata) -> Option<Self> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            Some(Self {
+                dev: _meta.dev(),
+                inode: _meta.ino(),
+            })
+        }
+        #[cfg(windows)]
+        {
+            Some(Self {
+                created: _meta.created().ok(),
+            })
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            None
+        }
+    }
+}
+
 pub struct LogTailer {
     path: PathBuf,
     source_idx: u8,
     parser: Arc<dyn LogParser>,
     last_position: u64,
     last_size: u64,
+    last_fingerprint: Option<FileFingerprint>,
     entry_count: usize,
     watcher: Option<RecommendedWatcher>,
     event_tx: mpsc::Sender<TailerEvent>,
@@ -57,6 +93,7 @@ impl LogTailer {
             parser: parsers::fallback_parser(),
             last_position: 0,
             last_size: 0,
+            last_fingerprint: None,
             entry_count: 0,
             watcher: None,
             event_tx,
@@ -80,6 +117,9 @@ impl LogTailer {
         self.last_position = file_size;
         self.last_size = file_size;
         self.entry_count = entry_count;
+        self.last_fingerprint = std::fs::metadata(&self.path)
+            .ok()
+            .and_then(|m| FileFingerprint::from_metadata(&m));
     }
 
     /// Start loading the file in the background (fire-and-forget).
@@ -160,12 +200,21 @@ impl LogTailer {
         let mut in_header = true;
         let mut line_buf: Vec<u8> = Vec::new();
 
+        let mut lines_since_cancel_check: usize = 0;
         loop {
             line_buf.clear();
             match reader.read_until(b'\n', &mut line_buf) {
                 Ok(0) => break, // EOF
                 Ok(_) => {}
                 Err(e) => return Err(format!("Failed to read: {}", e)),
+            }
+
+            lines_since_cancel_check += 1;
+            if lines_since_cancel_check >= 1024 {
+                if cancel.is_cancelled() {
+                    return Ok(());
+                }
+                lines_since_cancel_check = 0;
             }
 
             let line_cow = String::from_utf8_lossy(&line_buf);
@@ -181,7 +230,6 @@ impl LogTailer {
                 // New entry detected — flush pending into batch
                 if let Some(mut p) = pending.take() {
                     p.ensure_search_cache();
-                    p.source_idx = source_idx;
                     batch.push(p);
 
                     // Send batch if full
@@ -210,7 +258,7 @@ impl LogTailer {
                     continuation_lines: Vec::new(),
                     cached_full_text: None,
                     pretty_continuation: None,
-                    source_idx: 0,
+                    source_idx,
                     source_local_idx: index,
                     message_offset: msg_off,
                 });
@@ -223,7 +271,6 @@ impl LogTailer {
         // Flush pending entry
         if let Some(mut p) = pending.take() {
             p.ensure_search_cache();
-            p.source_idx = source_idx;
             batch.push(p);
         }
 
@@ -267,7 +314,7 @@ impl LogTailer {
         let (notify_tx, mut notify_rx) = mpsc::channel::<Event>(100);
 
         // Create watcher
-        let watcher = RecommendedWatcher::new(
+        let mut watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     let _ = notify_tx.blocking_send(event);
@@ -277,18 +324,19 @@ impl LogTailer {
         )
         .map_err(|e| format!("Failed to create watcher: {}", e))?;
 
-        self.watcher = Some(watcher);
-
-        if let Some(ref mut w) = self.watcher {
-            w.watch(&path, RecursiveMode::NonRecursive)
-                .map_err(|e| format!("Failed to watch file: {}", e))?;
+        if let Err(e) = watcher.watch(&path, RecursiveMode::NonRecursive) {
+            // Don't stash a watcher that never started.
+            self.cancel_token = None;
+            return Err(format!("Failed to watch file: {}", e));
         }
+        self.watcher = Some(watcher);
 
         // Spawn task to handle file events
         let path_clone = self.path.clone();
         let parser = Arc::clone(&self.parser);
         let mut last_position = self.last_position;
         let mut last_size = self.last_size;
+        let mut last_fingerprint = self.last_fingerprint;
         let mut entry_count = self.entry_count;
         let source_idx = self.source_idx;
 
@@ -309,6 +357,7 @@ impl LogTailer {
                             source_idx,
                             &mut last_position,
                             &mut last_size,
+                            &mut last_fingerprint,
                             &mut entry_count,
                             &tx,
                         ).await {
@@ -323,6 +372,7 @@ impl LogTailer {
                             source_idx,
                             &mut last_position,
                             &mut last_size,
+                            &mut last_fingerprint,
                             &mut entry_count,
                             &tx,
                         ).await {
@@ -337,18 +387,21 @@ impl LogTailer {
     }
 
     /// Check for new content in the file
+    #[allow(clippy::too_many_arguments)]
     async fn check_for_changes(
         path: &Path,
         parser: &dyn LogParser,
         source_idx: u8,
         last_position: &mut u64,
         last_size: &mut u64,
+        last_fingerprint: &mut Option<FileFingerprint>,
         entry_count: &mut usize,
         tx: &mpsc::Sender<TailerEvent>,
     ) -> Result<(), String> {
         let path = path.to_path_buf();
         let pos = *last_position;
         let prev_size = *last_size;
+        let prev_fp = *last_fingerprint;
 
         let result = tokio::task::spawn_blocking(move || {
             let file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
@@ -356,15 +409,21 @@ impl LogTailer {
                 .metadata()
                 .map_err(|e| format!("Failed to get metadata: {}", e))?;
             let current_size = metadata.len();
+            let current_fp = FileFingerprint::from_metadata(&metadata);
 
-            // Check for truncation (file rotation)
-            if current_size < prev_size {
-                return Ok::<_, String>((None, 0, current_size, true));
+            // Detect rotation: shrink OR fingerprint changed (same/larger new file).
+            let rotated = current_size < prev_size
+                || match (prev_fp, current_fp) {
+                    (Some(a), Some(b)) => a != b,
+                    _ => false,
+                };
+            if rotated {
+                return Ok::<_, String>((None, 0, current_size, current_fp, true));
             }
 
             // No new content
             if current_size == pos {
-                return Ok((None, pos, current_size, false));
+                return Ok((None, pos, current_size, current_fp, false));
             }
 
             // Read new content
@@ -372,34 +431,47 @@ impl LogTailer {
             file.seek(SeekFrom::Start(pos))
                 .map_err(|e| format!("Failed to seek: {}", e))?;
 
+            // Cap bytes read per tick so a large burst doesn't balloon memory.
+            // Any remainder is picked up on the next poll/event.
+            const MAX_CHUNK_BYTES: usize = 1 << 20; // 1 MiB
             let mut reader = BufReader::new(file);
             let mut new_content = String::new();
             let mut raw_line: Vec<u8> = Vec::new();
+            let mut bytes_read: usize = 0;
 
-            loop {
+            while bytes_read < MAX_CHUNK_BYTES {
                 raw_line.clear();
                 match reader.read_until(b'\n', &mut raw_line) {
                     Ok(0) => break,
-                    Ok(_) => new_content.push_str(&String::from_utf8_lossy(&raw_line)),
+                    Ok(n) => {
+                        bytes_read += n;
+                        new_content.push_str(&String::from_utf8_lossy(&raw_line));
+                    }
                     Err(e) => return Err(format!("Failed to read: {}", e)),
                 }
             }
 
-            Ok((Some(new_content), current_size, current_size, false))
+            let advanced_to = pos + bytes_read as u64;
+            Ok((Some(new_content), advanced_to, current_size, current_fp, false))
         })
         .await
         .map_err(|e| format!("Task failed: {}", e))??;
 
-        let (content, new_pos, new_size, truncated) = result;
+        let (content, new_pos, new_size, new_fp, truncated) = result;
 
         if truncated {
             *last_position = 0;
             *last_size = new_size;
+            *last_fingerprint = new_fp;
             *entry_count = 0;
             tx.send(TailerEvent::FileReset { source_idx })
                 .await
                 .map_err(|e| format!("Failed to send: {}", e))?;
             return Ok(());
+        }
+
+        if last_fingerprint.is_none() {
+            *last_fingerprint = new_fp;
         }
 
         if let Some(content) = content
