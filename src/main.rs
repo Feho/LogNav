@@ -34,7 +34,7 @@ use tokio::sync::mpsc;
 struct LoadComplete {
     source_idx: u8,
     parser: Arc<dyn LogParser>,
-    file_size: u64,
+    loaded_through: u64,
     entry_count: usize,
 }
 
@@ -436,7 +436,7 @@ async fn run_app(
 /// Handle load completion: configure tailer for tailing, rebuild bookmarks
 fn finish_load(app: &mut App, tailers: &mut [LogTailer], lc: LoadComplete) {
     if let Some(tailer) = tailers.iter_mut().find(|t| t.source_idx() == lc.source_idx) {
-        tailer.configure_for_tailing(lc.parser, lc.file_size, lc.entry_count);
+        tailer.configure_for_tailing(lc.parser, lc.loaded_through, lc.entry_count);
         if app.tail_enabled {
             let _ = tailer.start_watching();
         }
@@ -541,7 +541,7 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete
             entries,
             done,
             parser,
-            file_size,
+            loaded_through,
         } => {
             let count = entries.len();
             app.loading_entry_count += count;
@@ -556,7 +556,8 @@ fn handle_tailer_event(app: &mut App, event: TailerEvent) -> Option<LoadComplete
                 return Some(LoadComplete {
                     source_idx,
                     parser: parser.expect("final LoadBatch must include parser"),
-                    file_size: file_size.expect("final LoadBatch must include file_size"),
+                    loaded_through: loaded_through
+                        .expect("final LoadBatch must include loaded_through"),
                     entry_count,
                 });
             }

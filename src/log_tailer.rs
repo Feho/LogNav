@@ -10,6 +10,14 @@ use tokio_util::sync::CancellationToken;
 
 const BATCH_SIZE: usize = 10_000;
 
+fn complete_line_prefix_len(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .rposition(|&b| b == b'\n')
+        .map(|idx| idx + 1)
+        .unwrap_or(0)
+}
+
 pub enum TailerEvent {
     /// A batch of entries from initial load (may be partial)
     LoadBatch {
@@ -18,7 +26,8 @@ pub enum TailerEvent {
         done: bool,
         /// Sent with final batch so caller can configure tailer for tailing
         parser: Option<Arc<dyn LogParser>>,
-        file_size: Option<u64>,
+        /// Byte offset of the last complete (newline-terminated) line parsed
+        loaded_through: Option<u64>,
     },
     /// New entries detected during tailing
     NewEntries {
@@ -110,12 +119,12 @@ impl LogTailer {
     pub fn configure_for_tailing(
         &mut self,
         parser: Arc<dyn LogParser>,
-        file_size: u64,
+        loaded_through: u64,
         entry_count: usize,
     ) {
         self.parser = parser;
-        self.last_position = file_size;
-        self.last_size = file_size;
+        self.last_position = loaded_through;
+        self.last_size = loaded_through;
         self.entry_count = entry_count;
         self.last_fingerprint = std::fs::metadata(&self.path)
             .ok()
@@ -157,10 +166,6 @@ impl LogTailer {
         cancel: CancellationToken,
     ) -> Result<(), String> {
         let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
-        let metadata = file
-            .metadata()
-            .map_err(|e| format!("Failed to get metadata: {}", e))?;
-        let file_size = metadata.len();
 
         let mut reader = BufReader::with_capacity(1 << 20, file);
 
@@ -199,15 +204,27 @@ impl LogTailer {
         let mut index: usize = 0;
         let mut in_header = true;
         let mut line_buf: Vec<u8> = Vec::new();
+        let mut last_complete_position = 0u64;
 
         let mut lines_since_cancel_check: usize = 0;
         loop {
             line_buf.clear();
+            let line_start = reader
+                .stream_position()
+                .map_err(|e| format!("Failed to get position: {}", e))?;
             match reader.read_until(b'\n', &mut line_buf) {
                 Ok(0) => break, // EOF
                 Ok(_) => {}
                 Err(e) => return Err(format!("Failed to read: {}", e)),
             }
+
+            if !line_buf.ends_with(b"\n") {
+                last_complete_position = line_start;
+                break;
+            }
+            last_complete_position = reader
+                .stream_position()
+                .map_err(|e| format!("Failed to get position: {}", e))?;
 
             lines_since_cancel_check += 1;
             if lines_since_cancel_check >= 1024 {
@@ -242,7 +259,7 @@ impl LogTailer {
                             entries: std::mem::take(&mut batch),
                             done: false,
                             parser: None,
-                            file_size: None,
+                            loaded_through: None,
                         })
                         .map_err(|e| format!("Failed to send batch: {}", e))?;
                     }
@@ -283,7 +300,7 @@ impl LogTailer {
             entries: batch,
             done: true,
             parser: Some(parser),
-            file_size: Some(file_size),
+            loaded_through: Some(last_complete_position),
         })
         .map_err(|e| format!("Failed to send final batch: {}", e))?;
 
@@ -435,7 +452,7 @@ impl LogTailer {
             // Any remainder is picked up on the next poll/event.
             const MAX_CHUNK_BYTES: usize = 1 << 20; // 1 MiB
             let mut reader = BufReader::new(file);
-            let mut new_content = String::new();
+            let mut new_content = Vec::new();
             let mut raw_line: Vec<u8> = Vec::new();
             let mut bytes_read: usize = 0;
 
@@ -445,14 +462,20 @@ impl LogTailer {
                     Ok(0) => break,
                     Ok(n) => {
                         bytes_read += n;
-                        new_content.push_str(&String::from_utf8_lossy(&raw_line));
+                        new_content.extend_from_slice(&raw_line);
                     }
                     Err(e) => return Err(format!("Failed to read: {}", e)),
                 }
             }
 
-            let advanced_to = pos + bytes_read as u64;
-            Ok((Some(new_content), advanced_to, current_size, current_fp, false))
+            let complete_len = complete_line_prefix_len(&new_content);
+            let advanced_to = pos + complete_len as u64;
+            let content = if complete_len > 0 {
+                Some(String::from_utf8_lossy(&new_content[..complete_len]).into_owned())
+            } else {
+                None
+            };
+            Ok((content, advanced_to, current_size, current_fp, false))
         })
         .await
         .map_err(|e| format!("Task failed: {}", e))??;
@@ -507,5 +530,27 @@ impl LogTailer {
         }
         self.watcher = None;
         self.cancel_loading();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::complete_line_prefix_len;
+
+    #[test]
+    fn complete_line_prefix_keeps_full_lines_only() {
+        let content = b"[ts] first\n[ts] second\n[ts] partial";
+        assert_eq!(complete_line_prefix_len(content), 23);
+    }
+
+    #[test]
+    fn complete_line_prefix_returns_zero_without_newline() {
+        assert_eq!(complete_line_prefix_len(b"[ts] partial"), 0);
+    }
+
+    #[test]
+    fn complete_line_prefix_accepts_trailing_newline() {
+        let content = b"[ts] first\n";
+        assert_eq!(complete_line_prefix_len(content), content.len());
     }
 }

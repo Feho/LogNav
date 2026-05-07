@@ -413,6 +413,29 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_qconsole_mohaa_kill_feed_entries() {
+        // Covers: spaces in player names, bracketed names like [NL]VanDijk,
+        // apostrophes in weapon descriptions, and @all chat lines.
+        // The trailing apostrophe in "HansMuller's'" is intentional — it
+        // mirrors the game engine's possessive notation (weapon owner suffix).
+        let content = "\
+[2026-05-07 09:57:34 UTC+1.000] GhostRider was sniped by Lopez_92
+[2026-05-07 09:57:35 UTC+1.000] Lopez_92 was machine-gunned by Brighton UK
+[2026-05-07 09:57:43 UTC+1.000] bot1 was machine-gunned by Brighton UK
+[2026-05-07 09:57:56 UTC+1.000] Ivanovich was perforated by HansMuller's' SMG in the lower torso
+[2026-05-07 09:58:04 UTC+1.000] Lopez_92 was rifled by [NL]VanDijk
+[2026-05-07 09:58:40 UTC+1.000] [NL]VanDijk shouts @all: Go on and run, you yellow-bellies!";
+        let entries = parse_log(content);
+        assert_eq!(entries.len(), 6);
+        assert!(entries[0].raw_line.contains("GhostRider was sniped by Lopez_92"));
+        assert!(entries[1].raw_line.contains("Brighton UK"));
+        assert!(entries[2].raw_line.contains("bot1 was machine-gunned"));
+        assert!(entries[3].raw_line.contains("Ivanovich was perforated"));
+        assert!(entries[4].raw_line.contains("Lopez_92 was rifled by [NL]VanDijk"));
+        assert!(entries[5].raw_line.contains("@all: Go on and run"));
+    }
+
+    #[test]
     fn test_pretty_json_duplication() {
         let mut entry = LogEntry {
             index: 0,
