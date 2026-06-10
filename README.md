@@ -40,26 +40,28 @@ Debugging means digging through logs. Traditional tools force you to juggle mult
 
 ## Installation
 
-Install from [crates.io](https://crates.io/crates/lognav):
+**Windows ([winget](https://learn.microsoft.com/windows/package-manager/)):**
+
+```powershell
+winget install Feho.LogNav
+```
+
+**Any platform ([crates.io](https://crates.io/crates/lognav)):**
 
 ```bash
 cargo install lognav
 ```
 
-Or build from a local checkout:
+**From source:**
 
 ```bash
-cargo install --path .
-```
+cargo install --path .       # from a local checkout
 
-Or build manually:
-
-```bash
-cargo build --release
+cargo build --release        # or build manually
 # Binary: target/release/lognav
 ```
 
-Requires Rust 1.85+ (Edition 2024).
+Building from source requires Rust 1.85+ (Edition 2024).
 
 ## Getting Started
 
