@@ -2,6 +2,15 @@
 name = "lognav"
 version = "0.2.0"
 edition = "2024"
+rust-version = "1.85"
+description = "A fast, keyboard-driven terminal log viewer for any log format"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Feho/LogNav"
+homepage = "https://github.com/Feho/LogNav"
+readme = "README.md"
+keywords = ["tui", "log", "viewer", "logs", "terminal"]
+categories = ["command-line-utilities"]
+exclude = ["demo.gif", "demo-stats.png", "*.log", "scripts/"]
 
 [dependencies]
 arboard = "3.4"

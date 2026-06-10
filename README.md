@@ -1,5 +1,8 @@
 # LogNav
 
+[![crates.io](https://img.shields.io/crates/v/lognav.svg)](https://crates.io/crates/lognav)
+[![License](https://img.shields.io/crates/l/lognav.svg)](#license)
+
 A fast, keyboard-driven terminal log viewer built in Rust.
 
 ![LogNav Demo](demo.gif)
@@ -29,12 +32,21 @@ A fast, keyboard-driven terminal log viewer built in Rust.
 - [Supported Log Formats](#supported-log-formats)
   - [Custom Formats](#custom-formats)
 - [Key Reference](#key-reference)
+- [License](#license)
 
 ## Why LogNav?
 
 Debugging means digging through logs. Traditional tools force you to juggle multiple programs — `tail -f` for live output, `grep` for patterns, `less` for scrolling. LogNav combines all of this into one fast binary with vim-style navigation. Errors are colored red so they jump out. Filters update instantly. New lines stream in without losing your place.
 
 ## Installation
+
+Install from [crates.io](https://crates.io/crates/lognav):
+
+```bash
+cargo install lognav
+```
+
+Or build from a local checkout:
 
 ```bash
 cargo install --path .
@@ -47,7 +59,7 @@ cargo build --release
 # Binary: target/release/lognav
 ```
 
-Requires Rust 1.93+ (Edition 2024).
+Requires Rust 1.85+ (Edition 2024).
 
 ## Getting Started
 
@@ -278,3 +290,9 @@ Custom parsers are loaded automatically on startup and detected at 0.9 confidenc
 | Scroll | Navigate up/down |
 | `Ctrl+Click` | Search for word under cursor |
 | `Alt+Click` | Exclude word under cursor |
+
+---
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
