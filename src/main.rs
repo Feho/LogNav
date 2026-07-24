@@ -404,7 +404,10 @@ async fn run_app(
             }
             tailers.clear();
             app.remove_all_sources();
-            app.reset_all_filters();
+            // Keep the user's filter criteria (levels, date range, include/exclude
+            // patterns) so they carry over to the new file; they re-apply when the
+            // new entries load. Only clear file-tied derived state (search panel).
+            app.reset_filter_state_for_new_file();
             app.loading_sources.clear();
             app.loading_entry_count = 0;
 

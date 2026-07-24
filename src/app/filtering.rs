@@ -164,14 +164,18 @@ impl App {
         self.clusters_dirty = true;
     }
 
-    /// Reset all filters (levels, date, search, exclude, include, search panel)
-    pub fn reset_all_filters(&mut self) {
-        self.level_filters = [true, true, true, true, true, true];
-        self.date_from = None;
-        self.date_to = None;
-        self.exclude_patterns.clear();
-        self.include_patterns.clear();
-        self.search.clear();
+    /// Clear only the derived/positional filter state that is tied to the
+    /// currently loaded entries, while preserving the user's filter *criteria*
+    /// (level toggles, date range, include/exclude patterns).
+    ///
+    /// Used when switching to another file so filters carry over: the preserved
+    /// criteria are re-applied automatically once the new entries load (via
+    /// `set_entries` / `merge_entries_from_source` -> `apply_filters`).
+    ///
+    /// The committed search results panel holds positions into `filtered_indices`
+    /// of the old file, so it is closed here. The search *query* is preserved in
+    /// `self.search` and can be re-run against the new file.
+    pub fn reset_filter_state_for_new_file(&mut self) {
         self.close_search_panel();
     }
 
